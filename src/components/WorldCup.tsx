@@ -41,6 +41,7 @@ interface BracketMatchNodeProps {
   handleSaveBracketSlot: (slotId: string, teamVal: string) => Promise<void>;
   createKnockoutMatch: (team1: string, team2: string, roundName: 'Son 16' | 'Çeyrek Final' | 'Yarı Final' | 'Final', slotNum: string) => Promise<void>;
   handleKnockoutScoreUpdate: (matchId: string, score1: string, score2: string) => Promise<void>;
+  onOpenDetail?: (match: WcMatch) => void;
 }
 
 function BracketMatchNode({
@@ -54,7 +55,8 @@ function BracketMatchNode({
   isAdmin,
   handleSaveBracketSlot,
   createKnockoutMatch,
-  handleKnockoutScoreUpdate
+  handleKnockoutScoreUpdate,
+  onOpenDetail
 }: BracketMatchNodeProps) {
   const t1 = bracketState[slotA] || '';
   const t2 = bracketState[slotB] || '';
@@ -155,7 +157,7 @@ function BracketMatchNode({
           {!dbMatch ? (
             <button 
               onClick={() => createKnockoutMatch(t1, t2, roundName, matchNumStr)}
-              className="w-full text-[9px] font-black uppercase text-brand-gold bg-brand-maroon rounded py-1"
+              className="w-full text-[9px] font-black uppercase text-brand-gold bg-brand-maroon rounded py-1 cursor-pointer"
             >
               Kupon Oluştur
             </button>
@@ -179,6 +181,16 @@ function BracketMatchNode({
           )}
         </div>
       )}
+
+      {dbMatch && (
+        <button
+          type="button"
+          onClick={() => onOpenDetail?.(dbMatch)}
+          className="w-full text-[9px] font-black uppercase text-[#800000] border border-[#800000] rounded py-1.5 cursor-pointer hover:bg-[#800000]/10 tracking-wider font-sans mt-1"
+        >
+          Detayları Gör
+        </button>
+      )}
     </div>
   );
 }
@@ -191,6 +203,14 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
   const [teams, setTeams] = useState<WcTeam[]>([]);
   const [matches, setMatches] = useState<WcMatch[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Selected Match Detail Modal states
+  const [selectedWcMatch, setSelectedWcMatch] = useState<WcMatch | null>(null);
+  const [matchScore1, setMatchScore1] = useState('');
+  const [matchScore2, setMatchScore2] = useState('');
+  const [matchPlayed, setMatchPlayed] = useState(false);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [savingMatch, setSavingMatch] = useState(false);
 
   // Admin "Takım Ekle" Modal states
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -480,6 +500,25 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
     }
   };
 
+  const handleSaveWcMatchScore = async () => {
+    if (!selectedWcMatch) return;
+    setSavingMatch(true);
+    try {
+      await updateDoc(doc(db, 'wc_matches', selectedWcMatch.id), {
+        score1: String(matchScore1),
+        score2: String(matchScore2),
+        played: matchPlayed
+      });
+      setDetailModalOpen(false);
+      setSelectedWcMatch(null);
+    } catch (e) {
+      console.error(e);
+      alert('Kaydedilirken bir hata oluştu.');
+    } finally {
+      setSavingMatch(false);
+    }
+  };
+
   // Statistics goals calculation
   const getGoalScorers = () => {
     // Collect all scorers inside wc_teams
@@ -570,6 +609,13 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
         handleSaveBracketSlot={handleSaveBracketSlot}
         createKnockoutMatch={createKnockoutMatch}
         handleKnockoutScoreUpdate={handleKnockoutScoreUpdate}
+        onOpenDetail={(m) => {
+          setSelectedWcMatch(m);
+          setMatchScore1(m.score1);
+          setMatchScore2(m.score2);
+          setMatchPlayed(m.played);
+          setDetailModalOpen(true);
+        }}
       />
     );
   };
@@ -673,14 +719,31 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
                   {matches.filter(m => m.group).length === 0 ? (
                     <span className="text-xs text-gray-400 font-bold block text-center p-4">Henüz oluşturulmuş grup maçı bulunmuyor.</span>
                   ) : (
-                    // Sort matches: unplayed first, played last
-                    [...matches.filter(m => m.group)].sort((a,b) => (a.played ? 1 : 0) - (b.played ? 1 : 0)).map((m) => {
-                      const logo1 = teamLogos[m.team1] || `https://ui-avatars.com/api/?name=${m.team1}&background=800000`;
-                      const logo2 = teamLogos[m.team2] || `https://ui-avatars.com/api/?name=${m.team2}&background=800000`;
+                    // Sort: Group first (A, B, C...) alphabetically, then unplayed matches first within groups
+                    [...matches.filter(m => m.group)].sort((a, b) => {
+                      const grpA = a.group || '';
+                      const grpB = b.group || '';
+                      if (grpA !== grpB) {
+                        return grpA.localeCompare(grpB);
+                      }
+                      return (a.played ? 1 : 0) - (b.played ? 1 : 0);
+                    }).map((m) => {
+                      const wcTeam1 = teams.find(t => t.teamName.toLowerCase() === m.team1.toLowerCase());
+                      const wcTeam2 = teams.find(t => t.teamName.toLowerCase() === m.team2.toLowerCase());
+                      const logo1 = wcTeam1?.teamLogo || teamLogos[m.team1] || `https://ui-avatars.com/api/?name=${encodeURIComponent(m.team1)}&background=800000&color=ffd700`;
+                      const logo2 = wcTeam2?.teamLogo || teamLogos[m.team2] || `https://ui-avatars.com/api/?name=${encodeURIComponent(m.team2)}&background=800000&color=ffd700`;
                       return (
                         <div 
                           key={m.id}
-                          className="bg-white rounded-2xl p-4 md:p-5 border-b-4 border-brand-maroon flex items-center justify-between shadow-sm select-text"
+                          onClick={() => {
+                            setSelectedWcMatch(m);
+                            setMatchScore1(m.score1);
+                            setMatchScore2(m.score2);
+                            setMatchPlayed(m.played);
+                            setDetailModalOpen(true);
+                          }}
+                          className="bg-white rounded-2xl p-4 md:p-5 border-b-4 border-brand-maroon flex items-center justify-between shadow-sm cursor-pointer hover:border-brand-gold hover:scale-[1.01] transition-all select-text"
+                          title="Detayları görmek ve skoru düzenlemek için tıklayın"
                         >
                           <div className="text-[10px] font-black text-brand-maroon shrink-0 uppercase tracking-widest pl-1">
                             GRUP {m.group}
@@ -853,6 +916,151 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
           </div>
         </div>
       )}
+
+      {/* MATCH DETAIL / EDIT SCORE MODAL */}
+      {detailModalOpen && selectedWcMatch && (() => {
+        const t1Info = teams.find(t => t.teamName.toLowerCase() === selectedWcMatch.team1.toLowerCase());
+        const t2Info = teams.find(t => t.teamName.toLowerCase() === selectedWcMatch.team2.toLowerCase());
+        const logo1 = t1Info?.teamLogo || teamLogos[selectedWcMatch.team1] || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedWcMatch.team1)}&background=800000&color=ffd700`;
+        const logo2 = t2Info?.teamLogo || teamLogos[selectedWcMatch.team2] || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedWcMatch.team2)}&background=800000&color=ffd700`;
+        const player1 = t1Info?.playerName || 'Yıldız Oyuncu';
+        const player2 = t2Info?.playerName || 'Yıldız Oyuncu';
+        const photo1 = t1Info?.playerPhoto || 'https://via.placeholder.com/80?text=Logo';
+        const photo2 = t2Info?.playerPhoto || 'https://via.placeholder.com/80?text=Logo';
+
+        return (
+          <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+            <div className="bg-[#f2ede1] text-[#3d3d3d] w-full max-w-md rounded-3xl p-6 border-b-8 border-brand-maroon relative animate-scale-up select-text">
+              <button 
+                onClick={() => {
+                  setDetailModalOpen(false);
+                  setSelectedWcMatch(null);
+                }} 
+                className="absolute top-4 right-4 text-xl font-black text-brand-maroon hover:scale-105 cursor-pointer"
+              >
+                ✕
+              </button>
+              
+              <h3 className="text-center font-black text-xs uppercase tracking-widest text-[#800000]/60 mb-2">
+                🏆 DÜNYA KUPASI 2026 MAÇ DETAYI
+              </h3>
+              
+              <h4 className="text-center font-black text-[10px] uppercase text-brand-dark bg-yellow-400/20 text-[#800000] py-1 px-3 w-max mx-auto rounded-full mb-6">
+                {selectedWcMatch.group ? `GRUP ${selectedWcMatch.group} MÜCADELESİ` : `${selectedWcMatch.round || 'Kupa'} Karşılaşması`}
+              </h4>
+
+              {/* Scoreboard Arena */}
+              <div className="flex items-center justify-between gap-2 border-b border-[#ebdcb9] pb-6 mb-6">
+                {/* Team 1 Area */}
+                <div className="flex-1 flex flex-col items-center text-center">
+                  <img src={logo1} className="w-16 h-16 rounded-full border bg-white object-cover shadow-sm mb-2" alt="logo1" />
+                  <span className="font-black text-xs md:text-sm uppercase text-brand-dark tracking-tight leading-tight mb-1">{selectedWcMatch.team1}</span>
+                  <div className="text-[10px] font-bold text-gray-400 uppercase leading-none">{player1}</div>
+                </div>
+
+                {/* VS / SCORE BADGE */}
+                <div className="flex flex-col items-center justify-center shrink-0 min-w-[80px]">
+                  {selectedWcMatch.played ? (
+                    <div className="bg-brand-dark text-brand-gold font-sans font-black text-lg md:text-2xl py-2 px-4 rounded-2xl border-2 border-brand-gold shadow-md">
+                      {selectedWcMatch.score1} - {selectedWcMatch.score2}
+                    </div>
+                  ) : (
+                    <div className="bg-brand-dark text-brand-gold font-black text-xs py-1.5 px-3.5 rounded-xl border border-brand-gold uppercase tracking-wide">
+                      VS
+                    </div>
+                  )}
+                  <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest mt-2 block">
+                    {selectedWcMatch.played ? 'OYNANDI' : 'BEKLENİYOR'}
+                  </span>
+                </div>
+
+                {/* Team 2 Area */}
+                <div className="flex-1 flex flex-col items-center text-center">
+                  <img src={logo2} className="w-16 h-16 rounded-full border bg-white object-cover shadow-sm mb-2" alt="logo2" />
+                  <span className="font-black text-xs md:text-sm uppercase text-brand-dark tracking-tight leading-tight mb-1">{selectedWcMatch.team2}</span>
+                  <div className="text-[10px] font-bold text-gray-400 uppercase leading-none">{player2}</div>
+                </div>
+              </div>
+
+              {/* Star Players Showcase */}
+              <div className="bg-white/50 border border-[#ebdcb9] rounded-2xl p-4 mb-6 space-y-3">
+                <h5 className="font-black text-[10px] text-brand-maroon uppercase tracking-wider text-center border-b border-[#ebdcb9] pb-1.5 mb-2">⭐ TAKIM YILDIZLARI SPOT IŞIĞI</h5>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="flex items-center gap-2">
+                    <img src={photo1} className="w-8 h-8 rounded-lg object-cover border" alt="p1" />
+                    <div className="truncate mb-1">
+                      <div className="text-[10px] font-black text-brand-dark uppercase truncate leading-tight">{player1}</div>
+                      <div className="text-[8px] font-black text-gray-400 uppercase">Star Player</div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 justify-end text-right">
+                    <div className="truncate mb-1">
+                      <div className="text-[10px] font-black text-brand-dark uppercase truncate leading-tight">{player2}</div>
+                      <div className="text-[8px] font-black text-gray-400 uppercase">Star Player</div>
+                    </div>
+                    <img src={photo2} className="w-8 h-8 rounded-lg object-cover border justify-self-end" alt="p2" />
+                  </div>
+                </div>
+              </div>
+
+              {/* ADMIN PANEL ZONE */}
+              {isAdmin ? (
+                <div className="bg-[#800000]/5 border border-[#800000]/10 rounded-2xl p-4 space-y-4">
+                  <h5 className="font-black text-[10px] text-[#800000] uppercase tracking-widest text-center">⚙️ YÖNETİCİ SKOR PANELİ</h5>
+                  
+                  <div className="grid grid-cols-2 gap-4 text-xs font-bold">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[9px] font-black text-gray-500 uppercase">{selectedWcMatch.team1} Skoru</label>
+                      <input 
+                        type="number" 
+                        value={matchScore1} 
+                        onChange={(e) => setMatchScore1(e.target.value)} 
+                        className="bg-white border rounded p-2 text-xs font-black w-full text-center text-[#333] focus:border-brand-maroon outline-none" 
+                        placeholder="0"
+                      />
+                    </div>
+                    
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[9px] font-black text-gray-500 uppercase">{selectedWcMatch.team2} Skoru</label>
+                      <input 
+                        type="number" 
+                        value={matchScore2} 
+                        onChange={(e) => setMatchScore2(e.target.value)} 
+                        className="bg-white border rounded p-2 text-xs font-black w-full text-center text-[#333] focus:border-brand-maroon outline-none" 
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 border-t border-[#ebdcb9] pt-3 mt-1.5 text-xs font-black text-[#555]">
+                    <span>Oynandı Olarak İşaretle</span>
+                    <input 
+                      type="checkbox" 
+                      checked={matchPlayed} 
+                      onChange={(e) => setMatchPlayed(e.target.checked)} 
+                      className="w-4 h-4 accent-brand-maroon cursor-pointer"
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleSaveWcMatchScore}
+                    disabled={savingMatch}
+                    className="w-full py-2 bg-brand-maroon text-brand-gold hover:bg-black font-black rounded-lg text-[10px] uppercase tracking-wider transition-all cursor-pointer"
+                  >
+                    {savingMatch ? 'Kaydediliyor...' : 'Değişiklikleri Kaydet'}
+                  </button>
+                </div>
+              ) : (
+                <div className="text-center text-[10px] font-black text-gray-400 bg-gray-150 py-2.5 px-4 rounded-xl uppercase tracking-wider">
+                  ⚠️ Skoru düzenlemek için yönetici yetkisi gerekir.
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
