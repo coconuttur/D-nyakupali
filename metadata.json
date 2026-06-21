@@ -1,0 +1,6 @@
+{
+  "name": "Bobblekolik",
+  "description": "Bobblekolik futbol ligi iddaa, forum ve Dünya Kupası 2026 turnuvası platformu.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
