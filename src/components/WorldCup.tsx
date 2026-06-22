@@ -42,6 +42,7 @@ interface BracketMatchNodeProps {
   createKnockoutMatch: (team1: string, team2: string, roundName: 'Son 16' | 'Çeyrek Final' | 'Yarı Final' | 'Final', slotNum: string) => Promise<void>;
   handleKnockoutScoreUpdate: (matchId: string, score1: string, score2: string) => Promise<void>;
   onOpenDetail?: (match: WcMatch) => void;
+  loading?: boolean;
 }
 
 function BracketMatchNode({
@@ -56,7 +57,8 @@ function BracketMatchNode({
   handleSaveBracketSlot,
   createKnockoutMatch,
   handleKnockoutScoreUpdate,
-  onOpenDetail
+  onOpenDetail,
+  loading
 }: BracketMatchNodeProps) {
   const t1 = bracketState[slotA] || '';
   const t2 = bracketState[slotB] || '';
@@ -74,111 +76,136 @@ function BracketMatchNode({
     else if (s2 > s1) winner = dbMatch.team2;
   }
 
+  // Auto-create knockout matches silently in background if they don't exist yet and both teams are ready
+  useEffect(() => {
+    if (t1 && t2 && !dbMatch && !loading && isAdmin) {
+      const mId = `wc-ko-${roundName.replace(/\s+/g, '-')}-${matchNumStr}`.replace(/\s+/g, '-');
+      setDoc(doc(db, 'wc_matches', mId), {
+        team1: t1,
+        team2: t2,
+        score1: '0',
+        score2: '0',
+        played: false,
+        round: roundName
+      }).catch(console.error);
+    }
+  }, [t1, t2, dbMatch, loading, isAdmin, roundName, matchNumStr]);
+
+  // Keep team names in sync on unplayed matches if they change in the bracket state
+  useEffect(() => {
+    if (dbMatch && !dbMatch.played && (dbMatch.team1 !== t1 || dbMatch.team2 !== t2) && t1 && t2 && isAdmin) {
+      const mId = `wc-ko-${roundName.replace(/\s+/g, '-')}-${matchNumStr}`.replace(/\s+/g, '-');
+      updateDoc(doc(db, 'wc_matches', mId), {
+        team1: t1,
+        team2: t2
+      }).catch(console.error);
+    }
+  }, [t1, t2, dbMatch, isAdmin, roundName, matchNumStr]);
+
   // Populate advanced slots automatically under reactive context!
   useEffect(() => {
-    if (winner) {
-      let destSlot = '';
-      if (roundName === 'Son 16') {
-        const num = parseInt(matchNumStr);
-        if (num === 1) destSlot = 'q1_t1';
-        if (num === 2) destSlot = 'q1_t2';
-        if (num === 3) destSlot = 'q2_t1';
-        if (num === 4) destSlot = 'q2_t2';
-        if (num === 5) destSlot = 'q3_t1';
-        if (num === 6) destSlot = 'q3_t2';
-        if (num === 7) destSlot = 'q4_t1';
-        if (num === 8) destSlot = 'q4_t2';
-      } else if (roundName === 'Çeyrek Final') {
-        const num = parseInt(matchNumStr);
-        if (num === 1) destSlot = 's1_t1';
-        if (num === 2) destSlot = 's1_t2';
-        if (num === 3) destSlot = 's2_t1';
-        if (num === 4) destSlot = 's2_t2';
-      } else if (roundName === 'Yarı Final') {
-        const num = parseInt(matchNumStr);
-        if (num === 1) destSlot = 'f_t1';
-        if (num === 2) destSlot = 'f_t2';
-      } else if (roundName === 'Final') {
-        destSlot = 'champ';
-      }
+    let destSlot = '';
+    if (roundName === 'Son 16') {
+      const num = parseInt(matchNumStr);
+      if (num === 1) destSlot = 'q1_t1';
+      if (num === 2) destSlot = 'q1_t2';
+      if (num === 3) destSlot = 'q2_t1';
+      if (num === 4) destSlot = 'q2_t2';
+      if (num === 5) destSlot = 'q3_t1';
+      if (num === 6) destSlot = 'q3_t2';
+      if (num === 7) destSlot = 'q4_t1';
+      if (num === 8) destSlot = 'q4_t2';
+    } else if (roundName === 'Çeyrek Final') {
+      const num = parseInt(matchNumStr);
+      if (num === 1) destSlot = 's1_t1';
+      if (num === 2) destSlot = 's1_t2';
+      if (num === 3) destSlot = 's2_t1';
+      if (num === 4) destSlot = 's2_t2';
+    } else if (roundName === 'Yarı Final') {
+      const num = parseInt(matchNumStr);
+      if (num === 1) destSlot = 'f_t1';
+      if (num === 2) destSlot = 'f_t2';
+    } else if (roundName === 'Final') {
+      destSlot = 'champ';
+    }
 
-      if (destSlot && bracketState[destSlot] !== winner) {
-        handleSaveBracketSlot(destSlot, winner);
-      }
+    if (destSlot && bracketState[destSlot] !== winner) {
+      handleSaveBracketSlot(destSlot, winner);
     }
   }, [winner, roundName, matchNumStr]);
 
   const activeList = teams.map(t => t.teamName);
 
+  const team1Info = teams.find(t => t.teamName.toLowerCase() === t1.toLowerCase());
+  const team2Info = teams.find(t => t.teamName.toLowerCase() === t2.toLowerCase());
+  const logo1 = team1Info?.teamLogo;
+  const logo2 = team2Info?.teamLogo;
+
   return (
-    <div className="bg-white p-3 rounded-2xl border border-gray-200 flex flex-col gap-2.5 shadow-sm min-w-[180px]">
-      <div className="flex justify-between items-center text-[10px] font-black text-brand-maroon uppercase tracking-wide">
+    <div className="bg-white p-4.5 rounded-2xl border-2 border-gray-150 flex flex-col gap-3 py-4 shadow-md min-w-[220px] transition-transform hover:scale-[1.02]">
+      <div className="flex justify-between items-center text-[10px] font-black text-brand-maroon uppercase tracking-wider select-none">
         <span>{roundName} - M{matchNumStr}</span>
-        {dbMatch && dbMatch.played && <span className="text-green-600 bg-green-50 px-1.5 py-0.5 rounded">BİTTİ</span>}
+        {dbMatch && dbMatch.played && <span className="text-green-600 bg-green-50 px-2 py-0.5 rounded font-black text-[9px]">BİTTİ</span>}
       </div>
 
       {/* Team 1 box */}
-      <div className="flex items-center justify-between border border-gray-150 p-1.5 rounded-lg bg-gray-50 select-text">
-        {isAdmin ? (
-          <select 
-            value={t1} 
-            onChange={(e) => handleSaveBracketSlot(slotA, e.target.value)}
-            className="text-xs font-black outline-none bg-transparent w-full text-[#333]"
-          >
-            <option value="">Seçiniz (T1)</option>
-            {activeList.map(n => <option key={n} value={n}>{n}</option>)}
-          </select>
-        ) : (
-          <span className="text-xs font-black truncate text-brand-dark">{t1 || 'Seçilmedi'}</span>
-        )}
-        {dbMatch && <strong className="text-sm font-black text-brand-maroon pr-1">{dbMatch.score1}</strong>}
+      <div className="flex items-center justify-between border border-gray-150 p-2 rounded-xl bg-gray-50/50 select-text">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          {logo1 && <img src={logo1} className="w-6 h-6 rounded-full object-cover border shrink-0 bg-white" alt="flag" referrerPolicy="no-referrer" />}
+          {isAdmin ? (
+            <select 
+              value={t1} 
+              onChange={(e) => handleSaveBracketSlot(slotA, e.target.value)}
+              className="text-xs font-black outline-none bg-transparent w-full text-[#333]"
+            >
+              <option value="">Seçiniz</option>
+              {activeList.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          ) : (
+            <span className="text-xs font-black truncate text-brand-dark uppercase leading-none">{t1 || 'Seçilmedi'}</span>
+          )}
+        </div>
+        {dbMatch && <strong className="text-sm font-black text-brand-maroon pr-1 shrink-0 ml-1.5">{dbMatch.score1}</strong>}
       </div>
 
       {/* Team 2 box */}
-      <div className="flex items-center justify-between border border-gray-150 p-1.5 rounded-lg bg-gray-50 select-text">
-        {isAdmin ? (
-          <select 
-            value={t2} 
-            onChange={(e) => handleSaveBracketSlot(slotB, e.target.value)}
-            className="text-xs font-black outline-none bg-transparent w-full text-[#333]"
-          >
-            <option value="">Seçiniz (T2)</option>
-            {activeList.map(n => <option key={n} value={n}>{n}</option>)}
-          </select>
-        ) : (
-          <span className="text-xs font-black truncate text-brand-dark">{t2 || 'Seçilmedi'}</span>
-        )}
-        {dbMatch && <strong className="text-sm font-black text-brand-maroon pr-1">{dbMatch.score2}</strong>}
+      <div className="flex items-center justify-between border border-gray-150 p-2 rounded-xl bg-gray-50/50 select-text">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          {logo2 && <img src={logo2} className="w-6 h-6 rounded-full object-cover border shrink-0 bg-white" alt="flag" referrerPolicy="no-referrer" />}
+          {isAdmin ? (
+            <select 
+              value={t2} 
+              onChange={(e) => handleSaveBracketSlot(slotB, e.target.value)}
+              className="text-xs font-black outline-none bg-transparent w-full text-[#333]"
+            >
+              <option value="">Seçiniz</option>
+              {activeList.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          ) : (
+            <span className="text-xs font-black truncate text-brand-dark uppercase leading-none">{t2 || 'Seçilmedi'}</span>
+          )}
+        </div>
+        {dbMatch && <strong className="text-sm font-black text-brand-maroon pr-1 shrink-0 ml-1.5">{dbMatch.score2}</strong>}
       </div>
 
-      {/* Action Button */}
-      {isAdmin && t1 && t2 && (
-        <div className="flex gap-2">
-          {!dbMatch ? (
-            <button 
-              onClick={() => createKnockoutMatch(t1, t2, roundName, matchNumStr)}
-              className="w-full text-[9px] font-black uppercase text-brand-gold bg-brand-maroon rounded py-1 cursor-pointer"
-            >
-              Kupon Oluştur
-            </button>
-          ) : (
-            <div className="flex gap-1 w-full scale-90">
-              <input 
-                type="number" 
-                placeholder="S1" 
-                defaultValue={dbMatch.score1} 
-                onBlur={(e) => handleKnockoutScoreUpdate(mId, e.target.value, dbMatch.score2)}
-                className="w-10 text-xs font-black text-center bg-gray-100 rounded order-1 text-[#333]" 
-              />
-              <input 
-                type="number" 
-                placeholder="S2" 
-                defaultValue={dbMatch.score2} 
-                onBlur={(e) => handleKnockoutScoreUpdate(mId, dbMatch.score1, e.target.value)}
-                className="w-10 text-xs font-black text-center bg-gray-100 rounded order-2 text-[#333]" 
-              />
-            </div>
-          )}
+      {/* Action Button - Enter Scores Directly */}
+      {isAdmin && t1 && t2 && dbMatch && (
+        <div className="flex gap-1.5 w-full justify-center pt-1">
+          <input 
+            type="number" 
+            placeholder="S1" 
+            value={dbMatch.score1} 
+            onChange={(e) => handleKnockoutScoreUpdate(dbMatch.id, e.target.value, dbMatch.score2)}
+            className="w-12 text-xs font-black text-center bg-gray-100 rounded p-1 text-[#333]" 
+          />
+          <span className="text-xs font-black text-gray-400 self-center px-1">-</span>
+          <input 
+            type="number" 
+            placeholder="S2" 
+            value={dbMatch.score2} 
+            onChange={(e) => handleKnockoutScoreUpdate(dbMatch.id, dbMatch.score1, e.target.value)}
+            className="w-12 text-xs font-black text-center bg-gray-100 rounded p-1 text-[#333]" 
+          />
         </div>
       )}
 
@@ -186,13 +213,60 @@ function BracketMatchNode({
         <button
           type="button"
           onClick={() => onOpenDetail?.(dbMatch)}
-          className="w-full text-[9px] font-black uppercase text-[#800000] border border-[#800000] rounded py-1.5 cursor-pointer hover:bg-[#800000]/10 tracking-wider font-sans mt-1"
+          className="w-full text-[9px] font-black uppercase text-[#800000] border border-[#800000] rounded-lg py-2 cursor-pointer hover:bg-[#800000]/10 tracking-wider font-sans mt-1.5"
         >
           Detayları Gör
         </button>
       )}
     </div>
   );
+}
+
+function findAssignments(bestFour: any[]) {
+  const matches_assignment = { m1: '', m3: '', m5: '', m7: '' };
+  if (!bestFour || bestFour.length < 4) return matches_assignment;
+
+  const targets = [
+    { name: 'm1', allowed: ['A', 'D', 'E', 'F'] },
+    { name: 'm3', allowed: ['A', 'B', 'C', 'D'] },
+    { name: 'm5', allowed: ['A', 'B', 'C', 'D'] },
+    { name: 'm7', allowed: ['A', 'B', 'E', 'F'] },
+  ];
+
+  let found: any[] | null = null;
+  
+  function permute(tempAssigned: any[], remaining: any[]) {
+    if (found) return;
+    if (tempAssigned.length === 4) {
+      found = [...tempAssigned];
+      return;
+    }
+    const currentTarget = targets[tempAssigned.length];
+    for (let i = 0; i < remaining.length; i++) {
+      const candidate = remaining[i];
+      if (currentTarget.allowed.includes(candidate.originalGroup)) {
+        permute([...tempAssigned, candidate], remaining.filter((_, idx) => idx !== i));
+      }
+    }
+  }
+
+  permute([], bestFour);
+
+  if (found) {
+    return {
+      m1: found[0].teamName,
+      m3: found[1].teamName,
+      m5: found[2].teamName,
+      m7: found[3].teamName
+    };
+  } else {
+    return {
+      m1: bestFour[0]?.teamName || '',
+      m3: bestFour[1]?.teamName || '',
+      m5: bestFour[2]?.teamName || '',
+      m7: bestFour[3]?.teamName || ''
+    };
+  }
 }
 
 export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCupProps) {
@@ -335,9 +409,37 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
   const getGroupStandings = (group: 'A' | 'B' | 'C' | 'D' | 'E' | 'F') => {
     const list = Object.values(allStats).filter((x: any) => x.group === group);
     list.sort((a: any, b: any) => {
+      // 1. Puan (Points)
       if (b.p !== a.p) return b.p - a.p;
+      
+      // 2. Averaj (Goal Difference)
       if (b.av !== a.av) return b.av - a.av;
-      return b.ag - a.ag;
+
+      // 3. İkili Averaj (Head-to-head)
+      const directMatch = matches.find(m => 
+        m.group === group && m.played &&
+        ((m.team1 === a.teamName && m.team2 === b.teamName) || 
+         (m.team1 === b.teamName && m.team2 === a.teamName))
+      );
+      if (directMatch) {
+        const score1 = parseInt(directMatch.score1) || 0;
+        const score2 = parseInt(directMatch.score2) || 0;
+        if (directMatch.team1 === a.teamName) {
+          if (score1 !== score2) {
+            return score2 - score1;
+          }
+        } else {
+          if (score1 !== score2) {
+            return score1 - score2;
+          }
+        }
+      }
+
+      // Atılan Gol (Goals Scored - sensible fallback before alphabet)
+      if (b.ag !== a.ag) return b.ag - a.ag;
+
+      // 4. Alfabeye göre sıralama (Alphabetical)
+      return a.teamName.localeCompare(b.teamName, 'tr');
     });
     return list;
   };
@@ -355,10 +457,120 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
     thirds.sort((a, b) => {
       if (b.p !== a.p) return b.p - a.p;
       if (b.av !== a.av) return b.av - a.av;
-      return b.ag - a.ag;
+      if (b.ag !== a.ag) return b.ag - a.ag;
+      return a.teamName.localeCompare(b.teamName, 'tr');
     });
     return thirds;
   };
+
+  // Merge Firestore config and dynamically calculated slots on client side for immediate viewing by everyone
+  const getMergedBracketState = () => {
+    const gA = getGroupStandings('A');
+    const gB = getGroupStandings('B');
+    const gC = getGroupStandings('C');
+    const gD = getGroupStandings('D');
+    const gE = getGroupStandings('E');
+    const gF = getGroupStandings('F');
+
+    const A1 = gA[0]?.teamName || '';
+    const A2 = gA[1]?.teamName || '';
+    const B1 = gB[0]?.teamName || '';
+    const B2 = gB[1]?.teamName || '';
+    const C1 = gC[0]?.teamName || '';
+    const C2 = gC[1]?.teamName || '';
+    const D1 = gD[0]?.teamName || '';
+    const D2 = gD[1]?.teamName || '';
+    const E1 = gE[0]?.teamName || '';
+    const E2 = gE[1]?.teamName || '';
+    const F1 = gF[0]?.teamName || '';
+    const F2 = gF[1]?.teamName || '';
+
+    const bestFourThirds = getThirdPlacedStandings().slice(0, 4);
+    const thirdsAssigned = findAssignments(bestFourThirds);
+
+    const targetSlots: Record<string, string> = {
+      s16_m1_t1: B1,
+      s16_m1_t2: thirdsAssigned.m1,
+      s16_m2_t1: A1,
+      s16_m2_t2: C2,
+      s16_m3_t1: F1,
+      s16_m3_t2: thirdsAssigned.m3,
+      s16_m4_t1: D2,
+      s16_m4_t2: E2,
+      s16_m5_t1: E1,
+      s16_m5_t2: thirdsAssigned.m5,
+      s16_m6_t1: D1,
+      s16_m6_t2: F2,
+      s16_m7_t1: C1,
+      s16_m7_t2: thirdsAssigned.m7,
+      s16_m8_t1: A2,
+      s16_m8_t2: B2
+    };
+
+    return { ...targetSlots, ...bracketState };
+  };
+
+  // Auto-sync calculated R16 slots with bracket config whenever group match standings change
+  useEffect(() => {
+    if (loading || teams.length === 0) return;
+
+    const gA = getGroupStandings('A');
+    const gB = getGroupStandings('B');
+    const gC = getGroupStandings('C');
+    const gD = getGroupStandings('D');
+    const gE = getGroupStandings('E');
+    const gF = getGroupStandings('F');
+
+    const A1 = gA[0]?.teamName || '';
+    const A2 = gA[1]?.teamName || '';
+    const B1 = gB[0]?.teamName || '';
+    const B2 = gB[1]?.teamName || '';
+    const C1 = gC[0]?.teamName || '';
+    const C2 = gC[1]?.teamName || '';
+    const D1 = gD[0]?.teamName || '';
+    const D2 = gD[1]?.teamName || '';
+    const E1 = gE[0]?.teamName || '';
+    const E2 = gE[1]?.teamName || '';
+    const F1 = gF[0]?.teamName || '';
+    const F2 = gF[1]?.teamName || '';
+
+    const bestFourThirds = getThirdPlacedStandings().slice(0, 4);
+    const thirdsAssigned = findAssignments(bestFourThirds);
+
+    const targetSlots: Record<string, string> = {
+      s16_m1_t1: B1,
+      s16_m1_t2: thirdsAssigned.m1,
+      s16_m2_t1: A1,
+      s16_m2_t2: C2,
+      s16_m3_t1: F1,
+      s16_m3_t2: thirdsAssigned.m3,
+      s16_m4_t1: D2,
+      s16_m4_t2: E2,
+      s16_m5_t1: E1,
+      s16_m5_t2: thirdsAssigned.m5,
+      s16_m6_t1: D1,
+      s16_m6_t2: F2,
+      s16_m7_t1: C1,
+      s16_m7_t2: thirdsAssigned.m7,
+      s16_m8_t1: A2,
+      s16_m8_t2: B2
+    };
+
+    let changed = false;
+    const updates: Record<string, string> = {};
+    Object.keys(targetSlots).forEach((k) => {
+      if (bracketState[k] !== targetSlots[k]) {
+        changed = true;
+        updates[k] = targetSlots[k];
+      }
+    });
+
+    if (changed && isAdmin) {
+      updateDoc(doc(db, 'wc_config', 'bracket'), updates).catch((err) => {
+        setDoc(doc(db, 'wc_config', 'bracket'), targetSlots, { merge: true }).catch(console.error);
+      });
+    }
+  }, [matches, teams, loading, isAdmin]);
 
   // Admin add team trigger
   const handleOpenAddModal = (grp: 'A' | 'B' | 'C' | 'D' | 'E' | 'F') => {
@@ -546,42 +758,54 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
+          <table className="w-full text-left text-[13px] border-collapse md:text-sm">
             <thead>
               <tr className="border-b border-gray-200 text-gray-400 font-extrabold select-none">
-                <th className="py-2">Takım</th>
-                <th className="py-2 text-center">O</th>
-                <th className="py-2 text-center text-green-600">G</th>
-                <th className="py-2 text-center text-yellow-600">B</th>
-                <th className="py-2 text-center text-red-600">M</th>
-                <th className="py-2 text-center">Gol/Av</th>
-                <th className="py-2 text-right">P</th>
-                {isAdmin && <th className="py-2 text-right">Sil</th>}
+                <th className="py-2 pb-3">Takım</th>
+                <th className="py-2 pb-3 text-center">O</th>
+                <th className="py-2 pb-3 text-center text-green-600">G</th>
+                <th className="py-2 pb-3 text-center text-yellow-600">B</th>
+                <th className="py-2 pb-3 text-center text-red-600">M</th>
+                <th className="py-2 pb-3 text-center">Gol/Av</th>
+                <th className="py-2 pb-3 text-right">P</th>
+                {isAdmin && <th className="py-2 pb-3 text-right">Sil</th>}
               </tr>
             </thead>
             <tbody className="font-bold text-[#333]">
-              {entries.map((ent: any) => {
+              {entries.map((ent: any, idx: number) => {
                 const rawTeamMatch = teams.find(t => t.teamName === ent.teamName);
+                const isFourth = idx === 3;
+                const thirdPlacedStandings = getThirdPlacedStandings();
+                const eliminatedThirdNames = thirdPlacedStandings.slice(4).map((t) => t.teamName);
+                const isEliminatedThird = idx === 2 && eliminatedThirdNames.includes(ent.teamName);
+                const isRedHighlight = isFourth || isEliminatedThird;
                 return (
-                  <tr key={ent.teamName} className="border-b border-gray-100 hover:bg-white/40">
-                    <td className="py-2.5 flex items-center gap-2">
-                      <img src={ent.teamLogo} className="w-6 h-6 rounded-full border bg-white object-cover shrink-0" alt="logo" />
+                  <tr 
+                    key={ent.teamName} 
+                    className={`border-b border-gray-100 hover:bg-white/40 transition-colors ${
+                      isRedHighlight 
+                        ? 'bg-red-500/5 text-red-950 font-black' 
+                        : ''
+                    }`}
+                  >
+                    <td className="py-3 flex items-center gap-2">
+                      <img src={ent.teamLogo} className="w-7 h-7 rounded-full border bg-white object-cover shrink-0" alt="logo" referrerPolicy="no-referrer" />
                       <div className="min-w-0">
-                        <span className="block truncate uppercase leading-tight font-black text-[11px] md:text-xs">{ent.teamName}</span>
-                        <span className="text-[9px] font-bold text-gray-400 block truncate">{ent.playerName}</span>
+                        <span className="block truncate uppercase leading-tight font-black text-xs md:text-sm">{ent.teamName}</span>
+                        <span className="text-[10px] font-bold text-gray-400 block truncate">{ent.playerName}</span>
                       </div>
                     </td>
-                    <td className="py-2.5 text-center">{ent.o}</td>
-                    <td className="py-2.5 text-center text-green-600">{ent.g}</td>
-                    <td className="py-2.5 text-center text-yellow-600">{ent.b}</td>
-                    <td className="py-2.5 text-center text-red-600">{ent.m}</td>
-                    <td className="py-2.5 text-center text-[10px]" title="Atılan-Yenilen / Averaj">
+                    <td className="py-3 text-center">{ent.o}</td>
+                    <td className="py-3 text-center text-green-600">{ent.g}</td>
+                    <td className="py-3 text-center text-yellow-600">{ent.b}</td>
+                    <td className="py-3 text-center text-red-600">{ent.m}</td>
+                    <td className="py-3 text-center text-xs" title="Atılan-Yenilen / Averaj">
                       {ent.ag}-{ent.yg} / <strong className={ent.av > 0 ? 'text-green-600' : ent.av < 0 ? 'text-red-500' : 'text-gray-500'}>{ent.av > 0 ? `+${ent.av}` : ent.av}</strong>
                     </td>
-                    <td className="py-2.5 text-right font-black text-brand-maroon">{ent.p}</td>
+                    <td className="py-3 text-right font-black text-brand-maroon">{ent.p}</td>
                     {isAdmin && rawTeamMatch && (
-                      <td className="py-2.5 text-right">
-                        <button onClick={() => handleDeleteWcTeam(rawTeamMatch.id, ent.teamName)} className="text-red-500 text-[10px] font-black hover:underline px-2">✕</button>
+                      <td className="py-3 text-right">
+                        <button onClick={() => handleDeleteWcTeam(rawTeamMatch.id, ent.teamName)} className="text-red-500 text-[11px] font-black hover:underline px-2">✕</button>
                       </td>
                     )}
                   </tr>
@@ -596,13 +820,14 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
 
   // Rendering bracket cards
   const renderBracketMatchNode = (slotA: string, slotB: string, roundName: 'Son 16' | 'Çeyrek Final' | 'Yarı Final' | 'Final', matchNumStr: string) => {
+    const mergedState = getMergedBracketState();
     return (
       <BracketMatchNode
         slotA={slotA}
         slotB={slotB}
         roundName={roundName}
         matchNumStr={matchNumStr}
-        bracketState={bracketState}
+        bracketState={mergedState}
         matches={matches}
         teams={teams}
         isAdmin={isAdmin}
@@ -682,20 +907,30 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
                       </tr>
                     </thead>
                     <tbody className="font-bold text-[#333]">
-                      {getThirdPlacedStandings().map((tRecord, idx) => (
-                        <tr key={idx} className="border-b border-gray-100">
-                          <td className="py-2">Grup {tRecord.originalGroup}</td>
-                          <td className="py-2 flex items-center gap-2">
-                            <img src={tRecord.teamLogo} className="w-5 h-5 rounded-full object-cover" alt="logo" />
-                            <span>{tRecord.teamName}</span>
-                          </td>
-                          <td className="py-2 text-center">{tRecord.o}</td>
-                          <td className="py-2 text-center">{tRecord.g}</td>
-                          <td className="py-2 text-center">{tRecord.ag}-{tRecord.yg}</td>
-                          <td className="py-2 text-center text-brand-maroon">{tRecord.av}</td>
-                          <td className="py-2 text-right font-black text-brand-maroon">{tRecord.p}</td>
-                        </tr>
-                      ))}
+                      {getThirdPlacedStandings().map((tRecord, idx) => {
+                        const isEliminated = idx >= 4;
+                        return (
+                          <tr 
+                            key={idx} 
+                            className={`border-b border-gray-100 transition-colors ${
+                              isEliminated 
+                                ? 'bg-red-500/5 text-red-950 font-black' 
+                                : ''
+                            }`}
+                          >
+                            <td className="py-2">Grup {tRecord.originalGroup}</td>
+                            <td className="py-2 flex items-center gap-2">
+                              <img src={tRecord.teamLogo} className="w-5 h-5 rounded-full object-cover" alt="logo" />
+                              <span>{tRecord.teamName}</span>
+                            </td>
+                            <td className="py-2 text-center">{tRecord.o}</td>
+                            <td className="py-2 text-center">{tRecord.g}</td>
+                            <td className="py-2 text-center">{tRecord.ag}-{tRecord.yg}</td>
+                            <td className="py-2 text-center text-brand-maroon">{tRecord.av}</td>
+                            <td className="py-2 text-right font-black text-brand-maroon">{tRecord.p}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -778,47 +1013,55 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
               <h3 className="text-center font-black text-base uppercase text-brand-maroon mb-6">[ SON 16 ELEME AĞACI VE FİKSTÜRÜ ]</h3>
 
               {/* Bracket Grid view */}
-              <div className="flex gap-6 min-w-[900px] justify-between p-4 bg-brand-card/30 border border-gray-150 rounded-3xl">
+              <div className="flex gap-8 min-w-[1050px] justify-between p-6 bg-brand-card/30 border border-gray-150 rounded-3xl h-[1600px]">
                 {/* Round 1: Son 16 (8 Matches) */}
-                <div className="space-y-4">
-                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-1.5">Son 16</h4>
-                  {renderBracketMatchNode('s16_m1_t1', 's16_m1_t2', 'Son 16', '1')}
-                  {renderBracketMatchNode('s16_m2_t1', 's16_m2_t2', 'Son 16', '2')}
-                  {renderBracketMatchNode('s16_m3_t1', 's16_m3_t2', 'Son 16', '3')}
-                  {renderBracketMatchNode('s16_m4_t1', 's16_m4_t2', 'Son 16', '4')}
-                  {renderBracketMatchNode('s16_m5_t1', 's16_m5_t2', 'Son 16', '5')}
-                  {renderBracketMatchNode('s16_m6_t1', 's16_m6_t2', 'Son 16', '6')}
-                  {renderBracketMatchNode('s16_m7_t1', 's16_m7_t2', 'Son 16', '7')}
-                  {renderBracketMatchNode('s16_m8_t1', 's16_m8_t2', 'Son 16', '8')}
+                <div className="flex flex-col h-full w-[240px] shrink-0">
+                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center">Son 16</h4>
+                  <div className="flex-1 flex flex-col justify-around py-4">
+                    {renderBracketMatchNode('s16_m1_t1', 's16_m1_t2', 'Son 16', '1')}
+                    {renderBracketMatchNode('s16_m2_t1', 's16_m2_t2', 'Son 16', '2')}
+                    {renderBracketMatchNode('s16_m3_t1', 's16_m3_t2', 'Son 16', '3')}
+                    {renderBracketMatchNode('s16_m4_t1', 's16_m4_t2', 'Son 16', '4')}
+                    {renderBracketMatchNode('s16_m5_t1', 's16_m5_t2', 'Son 16', '5')}
+                    {renderBracketMatchNode('s16_m6_t1', 's16_m6_t2', 'Son 16', '6')}
+                    {renderBracketMatchNode('s16_m7_t1', 's16_m7_t2', 'Son 16', '7')}
+                    {renderBracketMatchNode('s16_m8_t1', 's16_m8_t2', 'Son 16', '8')}
+                  </div>
                 </div>
 
                 {/* Round 2: Son 8 / Çeyrek Final (4 Matches) */}
-                <div className="space-y-16 pt-10">
-                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-1.5">Çeyrek Final</h4>
-                  {renderBracketMatchNode('q1_t1', 'q1_t2', 'Çeyrek Final', '1')}
-                  {renderBracketMatchNode('q2_t1', 'q2_t2', 'Çeyrek Final', '2')}
-                  {renderBracketMatchNode('q3_t1', 'q3_t2', 'Çeyrek Final', '3')}
-                  {renderBracketMatchNode('q4_t1', 'q4_t2', 'Çeyrek Final', '4')}
+                <div className="flex flex-col h-full w-[240px] shrink-0">
+                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center">Çeyrek Final</h4>
+                  <div className="flex-1 flex flex-col justify-around py-4">
+                    {renderBracketMatchNode('q1_t1', 'q1_t2', 'Çeyrek Final', '1')}
+                    {renderBracketMatchNode('q2_t1', 'q2_t2', 'Çeyrek Final', '2')}
+                    {renderBracketMatchNode('q3_t1', 'q3_t2', 'Çeyrek Final', '3')}
+                    {renderBracketMatchNode('q4_t1', 'q4_t2', 'Çeyrek Final', '4')}
+                  </div>
                 </div>
 
                 {/* Round 3: Son 4 / Yarı Final (2 Matches) */}
-                <div className="space-y-36 pt-24">
-                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-1.5">Yarı Final</h4>
-                  {renderBracketMatchNode('s1_t1', 's1_t2', 'Yarı Final', '1')}
-                  {renderBracketMatchNode('s2_t1', 's2_t2', 'Yarı Final', '2')}
+                <div className="flex flex-col h-full w-[240px] shrink-0">
+                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center">Yarı Final</h4>
+                  <div className="flex-1 flex flex-col justify-around py-4">
+                    {renderBracketMatchNode('s1_t1', 's1_t2', 'Yarı Final', '1')}
+                    {renderBracketMatchNode('s2_t1', 's2_t2', 'Yarı Final', '2')}
+                  </div>
                 </div>
 
                 {/* Round 4: Final (1 Match) */}
-                <div className="space-y-4 pt-48 flex flex-col justify-center">
-                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-1.5">Final</h4>
-                  {renderBracketMatchNode('f_t1', 'f_t2', 'Final', '1')}
+                <div className="flex flex-col h-full w-[240px] shrink-0">
+                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center">Final</h4>
+                  <div className="flex-1 flex flex-col justify-center gap-12 py-4">
+                    {renderBracketMatchNode('f_t1', 'f_t2', 'Final', '1')}
 
-                  {/* Champion display block */}
-                  <div className="bg-[#fff3b0] p-4 rounded-2xl border-2 border-yellow-400 text-center shadow-lg mt-8 font-black text-xs uppercase text-brand-dark animate-pulse">
-                    🏆 ŞAMPİYON
-                    <h5 className="text-base font-black text-brand-maroon block mt-1">
-                      {bracketState['champ'] || 'Bekleniyor...'}
-                    </h5>
+                    {/* Champion display block */}
+                    <div className="bg-[#fff3b0] p-4 rounded-2xl border-2 border-yellow-400 text-center shadow-lg font-black text-xs uppercase text-brand-dark animate-pulse">
+                      🏆 ŞAMPİYON
+                      <h5 className="text-base font-black text-brand-maroon block mt-1">
+                        {getMergedBracketState()['champ'] || 'Bekleniyor...'}
+                      </h5>
+                    </div>
                   </div>
                 </div>
               </div>
