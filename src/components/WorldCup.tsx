@@ -1012,56 +1012,79 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
             <div className="space-y-8 select-text overflow-x-auto pb-6">
               <h3 className="text-center font-black text-base uppercase text-brand-maroon mb-6">[ SON 16 ELEME AĞACI VE FİKSTÜRÜ ]</h3>
 
-              {/* Bracket Grid view */}
-              <div className="flex gap-8 min-w-[1050px] justify-between p-6 bg-brand-card/30 border border-gray-150 rounded-3xl h-[1600px]">
-                {/* Round 1: Son 16 (8 Matches) */}
-                <div className="flex flex-col h-full w-[240px] shrink-0">
-                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center">Son 16</h4>
+              {/* Bracket Grid view: Symmetrical Left-to-Center and Right-to-Center converging layout */}
+              <div className="flex gap-6 min-w-[1650px] justify-between p-6 bg-brand-card/30 border border-gray-150 rounded-3xl h-[1000px] items-stretch">
+                {/* 1. Left Round of 16 (Matches 1-4) */}
+                <div className="flex flex-col h-full w-[220px] shrink-0">
+                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center select-none">Son 16 (Sol)</h4>
                   <div className="flex-1 flex flex-col justify-around py-4">
                     {renderBracketMatchNode('s16_m1_t1', 's16_m1_t2', 'Son 16', '1')}
                     {renderBracketMatchNode('s16_m2_t1', 's16_m2_t2', 'Son 16', '2')}
                     {renderBracketMatchNode('s16_m3_t1', 's16_m3_t2', 'Son 16', '3')}
                     {renderBracketMatchNode('s16_m4_t1', 's16_m4_t2', 'Son 16', '4')}
-                    {renderBracketMatchNode('s16_m5_t1', 's16_m5_t2', 'Son 16', '5')}
-                    {renderBracketMatchNode('s16_m6_t1', 's16_m6_t2', 'Son 16', '6')}
-                    {renderBracketMatchNode('s16_m7_t1', 's16_m7_t2', 'Son 16', '7')}
-                    {renderBracketMatchNode('s16_m8_t1', 's16_m8_t2', 'Son 16', '8')}
                   </div>
                 </div>
 
-                {/* Round 2: Son 8 / Çeyrek Final (4 Matches) */}
-                <div className="flex flex-col h-full w-[240px] shrink-0">
-                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center">Çeyrek Final</h4>
-                  <div className="flex-1 flex flex-col justify-around py-4">
+                {/* 2. Left Quarter Finals (Matches 1-2) */}
+                <div className="flex flex-col h-full w-[220px] shrink-0">
+                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center select-none">Çeyrek Final</h4>
+                  <div className="flex-1 flex flex-col justify-around py-20">
                     {renderBracketMatchNode('q1_t1', 'q1_t2', 'Çeyrek Final', '1')}
                     {renderBracketMatchNode('q2_t1', 'q2_t2', 'Çeyrek Final', '2')}
+                  </div>
+                </div>
+
+                {/* 3. Left Semi Final (Match 1) */}
+                <div className="flex flex-col h-full w-[220px] shrink-0">
+                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center select-none">Yarı Final</h4>
+                  <div className="flex-1 flex flex-col justify-around py-32">
+                    {renderBracketMatchNode('s1_t1', 's1_t2', 'Yarı Final', '1')}
+                  </div>
+                </div>
+
+                {/* 4. Center-piece: Final Match + Champion Display */}
+                <div className="flex flex-col h-full w-[230px] shrink-0 justify-center">
+                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center select-none">FİNAL VE ŞAMPİYON</h4>
+                  <div className="flex-1 flex flex-col justify-center gap-10 py-6 items-center">
+                    <div className="text-center font-bold text-[11px] text-brand-maroon uppercase select-none tracking-wider">🏆 ALTIN KUPA MAÇI</div>
+                    
+                    {renderBracketMatchNode('f_t1', 'f_t2', 'Final', '1')}
+
+                    {/* Symmetrical golden cup champion stand */}
+                    <div className="w-full bg-[#fff3b0] p-4.5 rounded-2xl border-4 border-yellow-400 text-center shadow-xl font-black text-xs uppercase text-brand-dark animate-pulse mt-6 max-w-[220px]">
+                      🏆 ŞAMPİYON
+                      <h5 className="text-base font-black text-brand-maroon block mt-1.5 leading-tight">
+                        {getMergedBracketState()['champ'] || 'Bekleniyor...'}
+                      </h5>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 5. Right Semi Final (Match 2) */}
+                <div className="flex flex-col h-full w-[220px] shrink-0">
+                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center select-none">Yarı Final</h4>
+                  <div className="flex-1 flex flex-col justify-around py-32">
+                    {renderBracketMatchNode('s2_t1', 's2_t2', 'Yarı Final', '2')}
+                  </div>
+                </div>
+
+                {/* 6. Right Quarter Finals (Matches 3-4) */}
+                <div className="flex flex-col h-full w-[220px] shrink-0">
+                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center select-none">Çeyrek Final</h4>
+                  <div className="flex-1 flex flex-col justify-around py-20">
                     {renderBracketMatchNode('q3_t1', 'q3_t2', 'Çeyrek Final', '3')}
                     {renderBracketMatchNode('q4_t1', 'q4_t2', 'Çeyrek Final', '4')}
                   </div>
                 </div>
 
-                {/* Round 3: Son 4 / Yarı Final (2 Matches) */}
-                <div className="flex flex-col h-full w-[240px] shrink-0">
-                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center">Yarı Final</h4>
+                {/* 7. Right Round of 16 (Matches 5-8) */}
+                <div className="flex flex-col h-full w-[220px] shrink-0">
+                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center select-none">Son 16 (Sağ)</h4>
                   <div className="flex-1 flex flex-col justify-around py-4">
-                    {renderBracketMatchNode('s1_t1', 's1_t2', 'Yarı Final', '1')}
-                    {renderBracketMatchNode('s2_t1', 's2_t2', 'Yarı Final', '2')}
-                  </div>
-                </div>
-
-                {/* Round 4: Final (1 Match) */}
-                <div className="flex flex-col h-full w-[240px] shrink-0">
-                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center">Final</h4>
-                  <div className="flex-1 flex flex-col justify-center gap-12 py-4">
-                    {renderBracketMatchNode('f_t1', 'f_t2', 'Final', '1')}
-
-                    {/* Champion display block */}
-                    <div className="bg-[#fff3b0] p-4 rounded-2xl border-2 border-yellow-400 text-center shadow-lg font-black text-xs uppercase text-brand-dark animate-pulse">
-                      🏆 ŞAMPİYON
-                      <h5 className="text-base font-black text-brand-maroon block mt-1">
-                        {getMergedBracketState()['champ'] || 'Bekleniyor...'}
-                      </h5>
-                    </div>
+                    {renderBracketMatchNode('s16_m5_t1', 's16_m5_t2', 'Son 16', '5')}
+                    {renderBracketMatchNode('s16_m6_t1', 's16_m6_t2', 'Son 16', '6')}
+                    {renderBracketMatchNode('s16_m7_t1', 's16_m7_t2', 'Son 16', '7')}
+                    {renderBracketMatchNode('s16_m8_t1', 's16_m8_t2', 'Son 16', '8')}
                   </div>
                 </div>
               </div>
