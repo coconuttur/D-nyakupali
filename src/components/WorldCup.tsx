@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, doc, getDoc, updateDoc, deleteDoc, writeBatch, setDoc, addDoc, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDoc, updateDoc, deleteDoc, writeBatch, setDoc, addDoc, query, where, increment } from 'firebase/firestore';
 import { db } from '../firebase';
 import { UserProfile } from '../types';
 
@@ -26,20 +26,20 @@ interface WcMatch {
   score2: string;
   played: boolean;
   group?: 'A' | 'B' | 'C' | 'D' | 'E' | 'F';
-  round?: 'Son 16' | 'Çeyrek Final' | 'Yarı Final' | 'Final';
+  round?: 'Son 16' | 'Çeyrek Final' | 'Yarı Final' | 'Final' | '3.lük Maçı';
 }
 
 interface BracketMatchNodeProps {
   slotA: string;
   slotB: string;
-  roundName: 'Son 16' | 'Çeyrek Final' | 'Yarı Final' | 'Final';
+  roundName: 'Son 16' | 'Çeyrek Final' | 'Yarı Final' | 'Final' | '3.lük Maçı';
   matchNumStr: string;
   bracketState: Record<string, string>;
   matches: WcMatch[];
   teams: WcTeam[];
   isAdmin: boolean;
   handleSaveBracketSlot: (slotId: string, teamVal: string) => Promise<void>;
-  createKnockoutMatch: (team1: string, team2: string, roundName: 'Son 16' | 'Çeyrek Final' | 'Yarı Final' | 'Final', slotNum: string) => Promise<void>;
+  createKnockoutMatch: (team1: string, team2: string, roundName: 'Son 16' | 'Çeyrek Final' | 'Yarı Final' | 'Final' | '3.lük Maçı', slotNum: string) => Promise<void>;
   handleKnockoutScoreUpdate: (matchId: string, score1: string, score2: string) => Promise<void>;
   onOpenDetail?: (match: WcMatch) => void;
   loading?: boolean;
@@ -69,11 +69,17 @@ function BracketMatchNode({
 
   // Dynamic advancements based on winner:
   let winner = '';
+  let loser = '';
   if (dbMatch && dbMatch.played) {
     const s1 = parseInt(dbMatch.score1) || 0;
     const s2 = parseInt(dbMatch.score2) || 0;
-    if (s1 > s2) winner = dbMatch.team1;
-    else if (s2 > s1) winner = dbMatch.team2;
+    if (s1 > s2) {
+      winner = dbMatch.team1;
+      loser = dbMatch.team2;
+    } else if (s2 > s1) {
+      winner = dbMatch.team2;
+      loser = dbMatch.team1;
+    }
   }
 
   // Auto-create knockout matches silently in background if they don't exist yet and both teams are ready
@@ -105,6 +111,7 @@ function BracketMatchNode({
   // Populate advanced slots automatically under reactive context!
   useEffect(() => {
     let destSlot = '';
+    let loserDestSlot = '';
     if (roundName === 'Son 16') {
       const num = parseInt(matchNumStr);
       if (num === 1) destSlot = 'q1_t1';
@@ -123,16 +130,25 @@ function BracketMatchNode({
       if (num === 4) destSlot = 's2_t2';
     } else if (roundName === 'Yarı Final') {
       const num = parseInt(matchNumStr);
-      if (num === 1) destSlot = 'f_t1';
-      if (num === 2) destSlot = 'f_t2';
+      if (num === 1) {
+        destSlot = 'f_t1';
+        loserDestSlot = 't3_t1';
+      }
+      if (num === 2) {
+        destSlot = 'f_t2';
+        loserDestSlot = 't3_t2';
+      }
     } else if (roundName === 'Final') {
       destSlot = 'champ';
     }
 
-    if (destSlot && bracketState[destSlot] !== winner) {
+    if (destSlot && winner && bracketState[destSlot] !== winner) {
       handleSaveBracketSlot(destSlot, winner);
     }
-  }, [winner, roundName, matchNumStr]);
+    if (loserDestSlot && loser && bracketState[loserDestSlot] !== loser) {
+      handleSaveBracketSlot(loserDestSlot, loser);
+    }
+  }, [winner, loser, roundName, matchNumStr]);
 
   const activeList = teams.map(t => t.teamName);
 
@@ -142,69 +158,141 @@ function BracketMatchNode({
   const logo2 = team2Info?.teamLogo;
 
   return (
-    <div className="bg-white p-4.5 rounded-2xl border-2 border-gray-150 flex flex-col gap-3 py-4 shadow-md min-w-[220px] transition-transform hover:scale-[1.02]">
-      <div className="flex justify-between items-center text-[10px] font-black text-brand-maroon uppercase tracking-wider select-none">
+    <div className="bg-white p-3.5 rounded-2xl border-2 border-gray-150 flex flex-col gap-3 shadow-md w-full min-w-0 transition-transform hover:scale-[1.02]">
+      <div className="flex justify-between items-center text-[9px] font-black text-brand-maroon uppercase tracking-wider select-none border-b border-gray-100 pb-1.5">
         <span>{roundName} - M{matchNumStr}</span>
-        {dbMatch && dbMatch.played && <span className="text-green-600 bg-green-50 px-2 py-0.5 rounded font-black text-[9px]">BİTTİ</span>}
+        {dbMatch && dbMatch.played && <span className="text-green-600 bg-green-50 px-2 py-0.5 rounded font-black text-[8px]">BİTTİ</span>}
       </div>
 
-      {/* Team 1 box */}
-      <div className="flex items-center justify-between border border-gray-150 p-2 rounded-xl bg-gray-50/50 select-text">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          {logo1 && <img src={logo1} className="w-6 h-6 rounded-full object-cover border shrink-0 bg-white" alt="flag" referrerPolicy="no-referrer" />}
+      <div className="flex flex-col gap-2.5">
+        {/* Team 1 box */}
+        <div className="flex items-center select-text">
           {isAdmin ? (
-            <select 
-              value={t1} 
-              onChange={(e) => handleSaveBracketSlot(slotA, e.target.value)}
-              className="text-xs font-black outline-none bg-transparent w-full text-[#333]"
-            >
-              <option value="">Seçiniz</option>
-              {activeList.map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
+            <div className="flex items-center gap-2 w-full">
+              {logo1 ? (
+                <img 
+                  src={logo1} 
+                  className="w-9 h-9 rounded-xl object-cover border shrink-0 bg-white" 
+                  alt={t1} 
+                  title={t1}
+                  referrerPolicy="no-referrer" 
+                />
+              ) : (
+                <div className="w-9 h-9 rounded-xl bg-gray-100 border flex items-center justify-center text-gray-400 font-black text-xs shrink-0 select-none">?</div>
+              )}
+              <select 
+                value={t1} 
+                onChange={(e) => handleSaveBracketSlot(slotA, e.target.value)}
+                className="text-[11px] font-black outline-none bg-gray-50 border rounded p-1 w-full text-[#333]"
+              >
+                <option value="">Seçiniz</option>
+                {activeList.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
           ) : (
-            <span className="text-xs font-black truncate text-brand-dark uppercase leading-none">{t1 || 'Seçilmedi'}</span>
+            <div className="flex items-center gap-2 min-w-0 flex-1" title={t1 || 'Bekleniyor'}>
+              {logo1 ? (
+                <div className="flex items-center gap-2.5">
+                  <img 
+                    src={logo1} 
+                    className="w-10 h-10 rounded-xl object-cover border-2 border-brand-maroon/15 shrink-0 bg-white shadow-sm transition-transform hover:scale-110 cursor-help" 
+                    alt={t1} 
+                    title={t1}
+                    referrerPolicy="no-referrer" 
+                  />
+                  {dbMatch && dbMatch.played && (
+                    <span className="text-sm font-black text-brand-maroon bg-brand-maroon/5 border border-brand-maroon/15 px-2 py-1 rounded-lg min-w-[24px] text-center select-none shadow-sm animate-fade-in">
+                      {dbMatch.score1}
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <div className="w-10 h-10 rounded-xl bg-gray-150 border border-gray-200 flex items-center justify-center text-gray-400 font-extrabold text-sm shrink-0 select-none">
+                    ?
+                  </div>
+                  <span className="text-[9px] font-black text-gray-400 uppercase tracking-tight truncate">
+                    Bekleniyor
+                  </span>
+                </div>
+              )}
+            </div>
           )}
         </div>
-        {dbMatch && <strong className="text-sm font-black text-brand-maroon pr-1 shrink-0 ml-1.5">{dbMatch.score1}</strong>}
-      </div>
 
-      {/* Team 2 box */}
-      <div className="flex items-center justify-between border border-gray-150 p-2 rounded-xl bg-gray-50/50 select-text">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          {logo2 && <img src={logo2} className="w-6 h-6 rounded-full object-cover border shrink-0 bg-white" alt="flag" referrerPolicy="no-referrer" />}
+        {/* Team 2 box */}
+        <div className="flex items-center select-text">
           {isAdmin ? (
-            <select 
-              value={t2} 
-              onChange={(e) => handleSaveBracketSlot(slotB, e.target.value)}
-              className="text-xs font-black outline-none bg-transparent w-full text-[#333]"
-            >
-              <option value="">Seçiniz</option>
-              {activeList.map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
+            <div className="flex items-center gap-2 w-full">
+              {logo2 ? (
+                <img 
+                  src={logo2} 
+                  className="w-9 h-9 rounded-xl object-cover border shrink-0 bg-white" 
+                  alt={t2} 
+                  title={t2}
+                  referrerPolicy="no-referrer" 
+                />
+              ) : (
+                <div className="w-9 h-9 rounded-xl bg-gray-100 border flex items-center justify-center text-gray-400 font-black text-xs shrink-0 select-none">?</div>
+              )}
+              <select 
+                value={t2} 
+                onChange={(e) => handleSaveBracketSlot(slotB, e.target.value)}
+                className="text-[11px] font-black outline-none bg-gray-50 border rounded p-1 w-full text-[#333]"
+              >
+                <option value="">Seçiniz</option>
+                {activeList.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
           ) : (
-            <span className="text-xs font-black truncate text-brand-dark uppercase leading-none">{t2 || 'Seçilmedi'}</span>
+            <div className="flex items-center gap-2 min-w-0 flex-1" title={t2 || 'Bekleniyor'}>
+              {logo2 ? (
+                <div className="flex items-center gap-2.5">
+                  <img 
+                    src={logo2} 
+                    className="w-10 h-10 rounded-xl object-cover border-2 border-brand-maroon/15 shrink-0 bg-white shadow-sm transition-transform hover:scale-110 cursor-help" 
+                    alt={t2} 
+                    title={t2}
+                    referrerPolicy="no-referrer" 
+                  />
+                  {dbMatch && dbMatch.played && (
+                    <span className="text-sm font-black text-brand-maroon bg-brand-maroon/5 border border-brand-maroon/15 px-2 py-1 rounded-lg min-w-[24px] text-center select-none shadow-sm animate-fade-in">
+                      {dbMatch.score2}
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <div className="w-10 h-10 rounded-xl bg-gray-150 border border-gray-200 flex items-center justify-center text-gray-400 font-extrabold text-sm shrink-0 select-none">
+                    ?
+                  </div>
+                  <span className="text-[9px] font-black text-gray-400 uppercase tracking-tight truncate">
+                    Bekleniyor
+                  </span>
+                </div>
+              )}
+            </div>
           )}
         </div>
-        {dbMatch && <strong className="text-sm font-black text-brand-maroon pr-1 shrink-0 ml-1.5">{dbMatch.score2}</strong>}
       </div>
 
       {/* Action Button - Enter Scores Directly */}
       {isAdmin && t1 && t2 && dbMatch && (
-        <div className="flex gap-1.5 w-full justify-center pt-1">
+        <div className="flex gap-1.5 w-full justify-center pt-1 border-t border-dashed border-gray-100 mt-0.5">
           <input 
             type="number" 
             placeholder="S1" 
             value={dbMatch.score1} 
             onChange={(e) => handleKnockoutScoreUpdate(dbMatch.id, e.target.value, dbMatch.score2)}
-            className="w-12 text-xs font-black text-center bg-gray-100 rounded p-1 text-[#333]" 
+            className="w-11 text-xs font-black text-center bg-gray-100 rounded p-1 text-[#333]" 
           />
-          <span className="text-xs font-black text-gray-400 self-center px-1">-</span>
+          <span className="text-xs font-black text-gray-400 self-center px-0.5">-</span>
           <input 
             type="number" 
             placeholder="S2" 
             value={dbMatch.score2} 
             onChange={(e) => handleKnockoutScoreUpdate(dbMatch.id, dbMatch.score1, e.target.value)}
-            className="w-12 text-xs font-black text-center bg-gray-100 rounded p-1 text-[#333]" 
+            className="w-11 text-xs font-black text-center bg-gray-100 rounded p-1 text-[#333]" 
           />
         </div>
       )}
@@ -213,9 +301,9 @@ function BracketMatchNode({
         <button
           type="button"
           onClick={() => onOpenDetail?.(dbMatch)}
-          className="w-full text-[9px] font-black uppercase text-[#800000] border border-[#800000] rounded-lg py-2 cursor-pointer hover:bg-[#800000]/10 tracking-wider font-sans mt-1.5"
+          className="w-full text-[9px] font-black uppercase text-[#800000] border border-[#800000]/30 rounded-xl py-2 cursor-pointer hover:bg-[#800000]/10 tracking-wider font-sans transition-all mt-1"
         >
-          Detayları Gör
+          Detaylar
         </button>
       )}
     </div>
@@ -298,6 +386,14 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
   // Bracket state representation in Firestore or local
   // Standard bracket contains slots for the rounds
   const [bracketState, setBracketState] = useState<Record<string, string>>({});
+
+  // TEAM EDIT MODAL STATES
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingTeam, setEditingTeam] = useState<WcTeam | null>(null);
+  const [editTeamName, setEditTeamName] = useState('');
+  const [editTeamLogoUrl, setEditTeamLogoUrl] = useState('');
+  const [editPlayerName, setEditPlayerName] = useState('');
+  const [editPlayerPhotoUrl, setEditPlayerPhotoUrl] = useState('');
 
   // 1. Check Admin Roles
   useEffect(() => {
@@ -620,6 +716,88 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
     }
   };
 
+  const handleOpenEditModal = (t: WcTeam) => {
+    setEditingTeam(t);
+    setEditTeamName(t.teamName);
+    setEditTeamLogoUrl(t.teamLogo);
+    setEditPlayerName(t.playerName);
+    setEditPlayerPhotoUrl(t.playerPhoto);
+    setEditModalOpen(true);
+  };
+
+  const handleSaveEditTeam = async () => {
+    if (!editingTeam) return;
+    if (!editTeamName.trim() || !editPlayerName.trim()) {
+      alert('Takım adı ve Oyuncu adı zorunludur!');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const oldName = editingTeam.teamName;
+      const newName = editTeamName.trim();
+      
+      // 1. Update the team document
+      await updateDoc(doc(db, 'wc_teams', editingTeam.id), {
+        teamName: newName,
+        teamLogo: editTeamLogoUrl.trim() || editingTeam.teamLogo,
+        playerName: editPlayerName.trim(),
+        playerPhoto: editPlayerPhotoUrl.trim() || editingTeam.playerPhoto
+      });
+
+      // 2. Synchronize the team name changes in matches and brackets
+      if (oldName !== newName) {
+        const batch = writeBatch(db);
+        let count = 0;
+        
+        matches.forEach((m) => {
+          let updated = false;
+          let u1 = m.team1;
+          let u2 = m.team2;
+          if (m.team1 === oldName) {
+            u1 = newName;
+            updated = true;
+          }
+          if (m.team2 === oldName) {
+            u2 = newName;
+            updated = true;
+          }
+          if (updated) {
+            batch.update(doc(db, 'wc_matches', m.id), {
+              team1: u1,
+              team2: u2
+            });
+            count++;
+          }
+        });
+
+        const updatedBracket: Record<string, string> = {};
+        let bracketChanged = false;
+        Object.keys(bracketState).forEach((slotKey) => {
+          if (bracketState[slotKey] === oldName) {
+            updatedBracket[slotKey] = newName;
+            bracketChanged = true;
+          }
+        });
+        if (bracketChanged) {
+          batch.update(doc(db, 'wc_config', 'bracket'), updatedBracket);
+        }
+
+        if (count > 0 || bracketChanged) {
+          await batch.commit();
+        }
+      }
+
+      setEditModalOpen(false);
+      setEditingTeam(null);
+      alert('Takım bilgileri ve ilgili tüm maç kartları başarıyla güncellendi!');
+    } catch (e) {
+      console.error(e);
+      alert('Kaydedilirken bir hata oluştu.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   // Match generation standard round-robin
   const generateGroupMatches = async () => {
     if (!confirm('Tüm grupların fikstür kombinasyonları silinip yeniden oluşturulacaktır. Emin misiniz?')) return;
@@ -682,7 +860,7 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
   };
 
   // Generate Knockout stage match files
-  const createKnockoutMatch = async (team1: string, team2: string, roundName: 'Son 16' | 'Çeyrek Final' | 'Yarı Final' | 'Final', slotNum: string) => {
+  const createKnockoutMatch = async (team1: string, team2: string, roundName: 'Son 16' | 'Çeyrek Final' | 'Yarı Final' | 'Final' | '3.lük Maçı', slotNum: string) => {
     if (!team1 || !team2) return;
     const mId = `wc-ko-${roundName.replace(/\s+/g, '-')}-${slotNum}`.replace(/\s+/g, '-');
     try {
@@ -733,8 +911,35 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
 
   // Statistics goals calculation
   const getGoalScorers = () => {
-    // Collect all scorers inside wc_teams
-    return Object.values(allStats).sort((a: any, b: any) => b.ag - a.ag);
+    const stats: Record<string, any> = {};
+    teams.forEach((t) => {
+      stats[t.teamName.toLowerCase()] = {
+        teamName: t.teamName,
+        teamLogo: t.teamLogo,
+        playerName: t.playerName,
+        playerPhoto: t.playerPhoto,
+        ag: 0
+      };
+    });
+
+    matches.forEach((match) => {
+      if (!match.played) return;
+      
+      const score1 = parseInt(match.score1) || 0;
+      const score2 = parseInt(match.score2) || 0;
+
+      const t1 = stats[match.team1.toLowerCase()];
+      const t2 = stats[match.team2.toLowerCase()];
+
+      if (t1) {
+        t1.ag += score1;
+      }
+      if (t2) {
+        t2.ag += score2;
+      }
+    });
+
+    return Object.values(stats).sort((a: any, b: any) => b.ag - a.ag);
   };
 
   const scorers = getGoalScorers();
@@ -768,7 +973,7 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
                 <th className="py-2 pb-3 text-center text-red-600">M</th>
                 <th className="py-2 pb-3 text-center">Gol/Av</th>
                 <th className="py-2 pb-3 text-right">P</th>
-                {isAdmin && <th className="py-2 pb-3 text-right">Sil</th>}
+                {isAdmin && <th className="py-2 pb-3 text-right">İşlem</th>}
               </tr>
             </thead>
             <tbody className="font-bold text-[#333]">
@@ -805,7 +1010,22 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
                     <td className="py-3 text-right font-black text-brand-maroon">{ent.p}</td>
                     {isAdmin && rawTeamMatch && (
                       <td className="py-3 text-right">
-                        <button onClick={() => handleDeleteWcTeam(rawTeamMatch.id, ent.teamName)} className="text-red-500 text-[11px] font-black hover:underline px-2">✕</button>
+                        <div className="flex items-center justify-end gap-2">
+                          <button 
+                            onClick={() => handleOpenEditModal(rawTeamMatch)} 
+                            className="text-blue-600 text-xs font-black hover:underline cursor-pointer"
+                            title="Takımı Düzenle"
+                          >
+                            ✏️
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteWcTeam(rawTeamMatch.id, ent.teamName)} 
+                            className="text-red-500 text-[11px] font-black hover:underline px-1 cursor-pointer"
+                            title="Takımı Sil"
+                          >
+                            ✕
+                          </button>
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -819,7 +1039,7 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
   };
 
   // Rendering bracket cards
-  const renderBracketMatchNode = (slotA: string, slotB: string, roundName: 'Son 16' | 'Çeyrek Final' | 'Yarı Final' | 'Final', matchNumStr: string) => {
+  const renderBracketMatchNode = (slotA: string, slotB: string, roundName: 'Son 16' | 'Çeyrek Final' | 'Yarı Final' | 'Final' | '3.lük Maçı', matchNumStr: string) => {
     const mergedState = getMergedBracketState();
     return (
       <BracketMatchNode
@@ -854,7 +1074,7 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
       </div>
 
       {/* Navigation sub-tabs */}
-      <div className="flex justify-center gap-2">
+      <div className="flex justify-center flex-wrap gap-2">
         {[
           { id: 'groups', label: '📊 Gruplar ve Fikstür' },
           { id: 'bracket', label: '🌳 Eleme Ağacı (Son 16)' },
@@ -1009,14 +1229,14 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
           )}
 
           {activeTab === 'bracket' && (
-            <div className="space-y-8 select-text overflow-x-auto pb-6">
-              <h3 className="text-center font-black text-base uppercase text-brand-maroon mb-6">[ SON 16 ELEME AĞACI VE FİKSTÜRÜ ]</h3>
+            <div className="space-y-6 select-text overflow-x-auto pb-6">
+              <h3 className="text-center font-black text-base uppercase text-brand-maroon mb-4 select-none">[ SON 16 ELEME AĞACI VE FİKSTÜRÜ ]</h3>
 
               {/* Bracket Grid view: Symmetrical Left-to-Center and Right-to-Center converging layout */}
-              <div className="flex gap-6 min-w-[1650px] justify-between p-6 bg-brand-card/30 border border-gray-150 rounded-3xl h-[1000px] items-stretch">
+              <div className="grid grid-cols-7 gap-2 min-w-[980px] lg:min-w-0 lg:w-full p-4 bg-brand-card/30 border border-gray-150 rounded-3xl min-h-[780px] items-stretch">
                 {/* 1. Left Round of 16 (Matches 1-4) */}
-                <div className="flex flex-col h-full w-[220px] shrink-0">
-                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center select-none">Son 16 (Sol)</h4>
+                <div className="flex flex-col h-full w-full">
+                  <h4 className="text-[10px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center select-none">Son 16 (Sol)</h4>
                   <div className="flex-1 flex flex-col justify-around py-4">
                     {renderBracketMatchNode('s16_m1_t1', 's16_m1_t2', 'Son 16', '1')}
                     {renderBracketMatchNode('s16_m2_t1', 's16_m2_t2', 'Son 16', '2')}
@@ -1026,8 +1246,8 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
                 </div>
 
                 {/* 2. Left Quarter Finals (Matches 1-2) */}
-                <div className="flex flex-col h-full w-[220px] shrink-0">
-                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center select-none">Çeyrek Final</h4>
+                <div className="flex flex-col h-full w-full">
+                  <h4 className="text-[10px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center select-none">Çeyrek Final</h4>
                   <div className="flex-1 flex flex-col justify-around py-20">
                     {renderBracketMatchNode('q1_t1', 'q1_t2', 'Çeyrek Final', '1')}
                     {renderBracketMatchNode('q2_t1', 'q2_t2', 'Çeyrek Final', '2')}
@@ -1035,42 +1255,48 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
                 </div>
 
                 {/* 3. Left Semi Final (Match 1) */}
-                <div className="flex flex-col h-full w-[220px] shrink-0">
-                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center select-none">Yarı Final</h4>
+                <div className="flex flex-col h-full w-full">
+                  <h4 className="text-[10px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center select-none">Yarı Final</h4>
                   <div className="flex-1 flex flex-col justify-around py-32">
                     {renderBracketMatchNode('s1_t1', 's1_t2', 'Yarı Final', '1')}
                   </div>
                 </div>
 
                 {/* 4. Center-piece: Final Match + Champion Display */}
-                <div className="flex flex-col h-full w-[230px] shrink-0 justify-center">
-                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center select-none">FİNAL VE ŞAMPİYON</h4>
-                  <div className="flex-1 flex flex-col justify-center gap-10 py-6 items-center">
-                    <div className="text-center font-bold text-[11px] text-brand-maroon uppercase select-none tracking-wider">🏆 ALTIN KUPA MAÇI</div>
+                <div className="flex flex-col h-full w-full justify-center">
+                  <h4 className="text-[10px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center select-none">FİNAL VE ŞAMPİYON</h4>
+                  <div className="flex-1 flex flex-col justify-center gap-6 py-4 items-center">
+                    <div className="text-center font-bold text-[9px] text-brand-maroon uppercase select-none tracking-wider">🏆 ALTIN KUPA MAÇI</div>
                     
                     {renderBracketMatchNode('f_t1', 'f_t2', 'Final', '1')}
 
                     {/* Symmetrical golden cup champion stand */}
-                    <div className="w-full bg-[#fff3b0] p-4.5 rounded-2xl border-4 border-yellow-400 text-center shadow-xl font-black text-xs uppercase text-brand-dark animate-pulse mt-6 max-w-[220px]">
+                    <div className="w-full bg-[#fff3b0] p-3 rounded-2xl border-4 border-yellow-400 text-center shadow-xl font-black text-xs uppercase text-brand-dark animate-pulse mt-4">
                       🏆 ŞAMPİYON
-                      <h5 className="text-base font-black text-brand-maroon block mt-1.5 leading-tight">
+                      <h5 className="text-base font-black text-brand-maroon block mt-1 leading-tight">
                         {getMergedBracketState()['champ'] || 'Bekleniyor...'}
                       </h5>
+                    </div>
+
+                    {/* Symmetrical 3rd Place match stand */}
+                    <div className="w-full mt-6 pt-4 border-t border-dashed border-gray-200">
+                      <div className="text-center font-bold text-[9px] text-brand-maroon uppercase select-none tracking-wider mb-2">🥉 ÜÇÜNCÜLÜK MAÇI</div>
+                      {renderBracketMatchNode('t3_t1', 't3_t2', '3.lük Maçı', '1')}
                     </div>
                   </div>
                 </div>
 
                 {/* 5. Right Semi Final (Match 2) */}
-                <div className="flex flex-col h-full w-[220px] shrink-0">
-                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center select-none">Yarı Final</h4>
+                <div className="flex flex-col h-full w-full">
+                  <h4 className="text-[10px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center select-none">Yarı Final</h4>
                   <div className="flex-1 flex flex-col justify-around py-32">
                     {renderBracketMatchNode('s2_t1', 's2_t2', 'Yarı Final', '2')}
                   </div>
                 </div>
 
                 {/* 6. Right Quarter Finals (Matches 3-4) */}
-                <div className="flex flex-col h-full w-[220px] shrink-0">
-                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center select-none">Çeyrek Final</h4>
+                <div className="flex flex-col h-full w-full">
+                  <h4 className="text-[10px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center select-none">Çeyrek Final</h4>
                   <div className="flex-1 flex flex-col justify-around py-20">
                     {renderBracketMatchNode('q3_t1', 'q3_t2', 'Çeyrek Final', '3')}
                     {renderBracketMatchNode('q4_t1', 'q4_t2', 'Çeyrek Final', '4')}
@@ -1078,8 +1304,8 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
                 </div>
 
                 {/* 7. Right Round of 16 (Matches 5-8) */}
-                <div className="flex flex-col h-full w-[220px] shrink-0">
-                  <h4 className="text-[11px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center select-none">Son 16 (Sağ)</h4>
+                <div className="flex flex-col h-full w-full">
+                  <h4 className="text-[10px] font-black text-brand-maroon uppercase tracking-wider text-center border-b border-gray-200 pb-2 shrink-0 h-7 flex items-center justify-center select-none">Son 16 (Sağ)</h4>
                   <div className="flex-1 flex flex-col justify-around py-4">
                     {renderBracketMatchNode('s16_m5_t1', 's16_m5_t2', 'Son 16', '5')}
                     {renderBracketMatchNode('s16_m6_t1', 's16_m6_t2', 'Son 16', '6')}
@@ -1116,6 +1342,84 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
               )}
             </div>
           )}
+
+
+        </div>
+      )}
+
+      {/* ADMIN EDIT TEAM MODAL */}
+      {editModalOpen && editingTeam && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 select-text">
+          <div className="bg-[#f2ede1] text-[#3d3d3d] w-full max-w-sm rounded-2xl p-6 border-b-6 border-brand-maroon relative animate-scale-up">
+            <button 
+              onClick={() => {
+                setEditModalOpen(false);
+                setEditingTeam(null);
+              }} 
+              className="absolute top-4 right-4 text-xl font-bold text-brand-maroon hover:scale-105 cursor-pointer"
+            >
+              ✕
+            </button>
+            <h3 className="text-lg font-black text-brand-maroon text-center mb-4 uppercase">Takım Bilgilerini Güncelle</h3>
+
+            <div className="space-y-4 text-xs font-bold">
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-gray-500 uppercase">Takım Adı</label>
+                <input 
+                  type="text" 
+                  value={editTeamName}
+                  onChange={(e) => setEditTeamName(e.target.value)}
+                  placeholder="Örn: Türkiye"
+                  className="bg-white border rounded p-2 font-bold block w-full focus:border-brand-maroon outline-none"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-gray-500 uppercase">Takım Amblemi URL</label>
+                <input 
+                  type="text" 
+                  value={editTeamLogoUrl}
+                  onChange={(e) => setEditTeamLogoUrl(e.target.value)}
+                  placeholder="Amblem web linki (URL)"
+                  className="bg-white border rounded p-2 block w-full font-bold focus:border-brand-maroon outline-none"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-gray-500 uppercase">Oyuncu Adı</label>
+                <input 
+                  type="text" 
+                  value={editPlayerName}
+                  onChange={(e) => setEditPlayerName(e.target.value)}
+                  placeholder="Örn: Hakan Çalhanoğlu"
+                  className="bg-white border rounded p-2 block w-full font-bold focus:border-brand-maroon outline-none"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-gray-500 uppercase">Oyuncu Fotoğrafı URL</label>
+                <input 
+                  type="text" 
+                  value={editPlayerPhotoUrl}
+                  onChange={(e) => setEditPlayerPhotoUrl(e.target.value)}
+                  placeholder="Oyuncu Fotoğrafı web linki (URL)"
+                  className="bg-white border rounded p-2 block w-full font-bold focus:border-brand-maroon outline-none"
+                />
+              </div>
+
+              <div className="bg-yellow-400/15 text-[#800000] p-3 rounded-lg border border-yellow-400/30 text-[10px] leading-tight select-none">
+                💡 Takım ismini değiştirdiğinizde, bu takıma ait tüm <b>grup maçları</b>, <b>eleme kartları</b> ve <b>eleme ağacı (bracket)</b> otomatik olarak yeni isimle güncellenecektir!
+              </div>
+
+              <button 
+                onClick={handleSaveEditTeam}
+                disabled={submitting}
+                className="w-full py-2.5 bg-brand-maroon text-brand-gold font-black rounded-lg uppercase tracking-wider hover:bg-black transition-colors shrink-0 cursor-pointer shadow-sm"
+              >
+                {submitting ? 'Güncelleniyor...' : 'Kaydet ve Maçları Güncelle'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
