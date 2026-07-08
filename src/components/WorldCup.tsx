@@ -16,6 +16,7 @@ interface WcTeam {
   playerName: string;
   playerPhoto: string;
   group: 'A' | 'B' | 'C' | 'D' | 'E' | 'F';
+  goalsOffset?: number;
 }
 
 interface WcMatch {
@@ -97,13 +98,16 @@ function BracketMatchNode({
     }
   }, [t1, t2, dbMatch, loading, isAdmin, roundName, matchNumStr]);
 
-  // Keep team names in sync on unplayed matches if they change in the bracket state
+  // Keep team names in sync on matches if they change in the bracket state (or reset score if teams changed)
   useEffect(() => {
-    if (dbMatch && !dbMatch.played && (dbMatch.team1 !== t1 || dbMatch.team2 !== t2) && t1 && t2 && isAdmin) {
+    if (dbMatch && (dbMatch.team1 !== t1 || dbMatch.team2 !== t2) && isAdmin) {
       const mId = `wc-ko-${roundName.replace(/\s+/g, '-')}-${matchNumStr}`.replace(/\s+/g, '-');
       updateDoc(doc(db, 'wc_matches', mId), {
         team1: t1,
-        team2: t2
+        team2: t2,
+        score1: '0',
+        score2: '0',
+        played: false
       }).catch(console.error);
     }
   }, [t1, t2, dbMatch, isAdmin, roundName, matchNumStr]);
@@ -142,13 +146,32 @@ function BracketMatchNode({
       destSlot = 'champ';
     }
 
-    if (destSlot && winner && bracketState[destSlot] !== winner) {
-      handleSaveBracketSlot(destSlot, winner);
+    if (destSlot) {
+      if (winner) {
+        if (bracketState[destSlot] !== winner) {
+          handleSaveBracketSlot(destSlot, winner);
+        }
+      } else {
+        const currentVal = bracketState[destSlot];
+        if (currentVal && (currentVal === t1 || currentVal === t2 || !t1 || !t2)) {
+          handleSaveBracketSlot(destSlot, '');
+        }
+      }
     }
-    if (loserDestSlot && loser && bracketState[loserDestSlot] !== loser) {
-      handleSaveBracketSlot(loserDestSlot, loser);
+
+    if (loserDestSlot) {
+      if (loser) {
+        if (bracketState[loserDestSlot] !== loser) {
+          handleSaveBracketSlot(loserDestSlot, loser);
+        }
+      } else {
+        const currentVal = bracketState[loserDestSlot];
+        if (currentVal && (currentVal === t1 || currentVal === t2 || !t1 || !t2)) {
+          handleSaveBracketSlot(loserDestSlot, '');
+        }
+      }
     }
-  }, [winner, loser, roundName, matchNumStr]);
+  }, [winner, loser, roundName, matchNumStr, t1, t2, bracketState]);
 
   const activeList = teams.map(t => t.teamName);
 
@@ -297,7 +320,7 @@ function BracketMatchNode({
         </div>
       )}
 
-      {dbMatch && (
+      {dbMatch && t1 && t2 && (
         <button
           type="button"
           onClick={() => onOpenDetail?.(dbMatch)}
@@ -394,6 +417,9 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
   const [editTeamLogoUrl, setEditTeamLogoUrl] = useState('');
   const [editPlayerName, setEditPlayerName] = useState('');
   const [editPlayerPhotoUrl, setEditPlayerPhotoUrl] = useState('');
+  
+  // STATS OFFSET INPUTS STATE
+  const [offsetInputs, setOffsetInputs] = useState<Record<string, string>>({});
 
   // 1. Check Admin Roles
   useEffect(() => {
@@ -443,6 +469,18 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
       unsubBracket();
     };
   }, []);
+
+  // Sync detail modal input states with the latest Firestore match updates while open
+  useEffect(() => {
+    if (detailModalOpen && selectedWcMatch) {
+      const latest = matches.find(m => m.id === selectedWcMatch.id);
+      if (latest) {
+        setMatchScore1(latest.score1);
+        setMatchScore2(latest.score2);
+        setMatchPlayed(latest.played);
+      }
+    }
+  }, [matches, detailModalOpen, selectedWcMatch]);
 
   // Compute calculated standings dynamically from matches
   const getComputedStandings = () => {
@@ -603,7 +641,58 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
       s16_m8_t2: B2
     };
 
-    return { ...targetSlots, ...bracketState };
+    const getPredecessorWinnerOrEmpty = (matchId: string, bracketSlotKey: string) => {
+      const match = matches.find(m => m.id === matchId);
+      if (match) {
+        if (match.played) {
+          const s1 = parseInt(match.score1) || 0;
+          const s2 = parseInt(match.score2) || 0;
+          if (s1 > s2) return match.team1;
+          if (s2 > s1) return match.team2;
+        }
+        return '';
+      }
+      return bracketState[bracketSlotKey] || '';
+    };
+
+    const getPredecessorLoserOrEmpty = (matchId: string, bracketSlotKey: string) => {
+      const match = matches.find(m => m.id === matchId);
+      if (match) {
+        if (match.played) {
+          const s1 = parseInt(match.score1) || 0;
+          const s2 = parseInt(match.score2) || 0;
+          if (s1 > s2) return match.team2;
+          if (s2 > s1) return match.team1;
+        }
+        return '';
+      }
+      return bracketState[bracketSlotKey] || '';
+    };
+
+    const calculatedSlots: Record<string, string> = {
+      q1_t1: getPredecessorWinnerOrEmpty('wc-ko-Son-16-1', 'q1_t1'),
+      q1_t2: getPredecessorWinnerOrEmpty('wc-ko-Son-16-2', 'q1_t2'),
+      q2_t1: getPredecessorWinnerOrEmpty('wc-ko-Son-16-3', 'q2_t1'),
+      q2_t2: getPredecessorWinnerOrEmpty('wc-ko-Son-16-4', 'q2_t2'),
+      q3_t1: getPredecessorWinnerOrEmpty('wc-ko-Son-16-5', 'q3_t1'),
+      q3_t2: getPredecessorWinnerOrEmpty('wc-ko-Son-16-6', 'q3_t2'),
+      q4_t1: getPredecessorWinnerOrEmpty('wc-ko-Son-16-7', 'q4_t1'),
+      q4_t2: getPredecessorWinnerOrEmpty('wc-ko-Son-16-8', 'q4_t2'),
+
+      s1_t1: getPredecessorWinnerOrEmpty('wc-ko-Çeyrek-Final-1', 's1_t1'),
+      s1_t2: getPredecessorWinnerOrEmpty('wc-ko-Çeyrek-Final-2', 's1_t2'),
+      s2_t1: getPredecessorWinnerOrEmpty('wc-ko-Çeyrek-Final-3', 's2_t1'),
+      s2_t2: getPredecessorWinnerOrEmpty('wc-ko-Çeyrek-Final-4', 's2_t2'),
+
+      f_t1: getPredecessorWinnerOrEmpty('wc-ko-Yarı-Final-1', 'f_t1'),
+      f_t2: getPredecessorWinnerOrEmpty('wc-ko-Yarı-Final-2', 'f_t2'),
+      t3_t1: getPredecessorLoserOrEmpty('wc-ko-Yarı-Final-1', 't3_t1'),
+      t3_t2: getPredecessorLoserOrEmpty('wc-ko-Yarı-Final-2', 't3_t2'),
+
+      champ: getPredecessorWinnerOrEmpty('wc-ko-Final-1', 'champ')
+    };
+
+    return { ...targetSlots, ...bracketState, ...calculatedSlots };
   };
 
   // Auto-sync calculated R16 slots with bracket config whenever group match standings change
@@ -914,11 +1003,13 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
     const stats: Record<string, any> = {};
     teams.forEach((t) => {
       stats[t.teamName.toLowerCase()] = {
+        teamId: t.id,
         teamName: t.teamName,
         teamLogo: t.teamLogo,
         playerName: t.playerName,
         playerPhoto: t.playerPhoto,
-        ag: 0
+        goalsOffset: t.goalsOffset || 0,
+        ag: t.goalsOffset || 0
       };
     });
 
@@ -1324,19 +1415,70 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
                 <span className="text-xs text-gray-500 font-bold block text-center p-6">Sorgu çözülemedi.</span>
               ) : (
                 scorers.map((sc, idx) => (
-                  <div key={idx} className="bg-brand-card p-4 rounded-xl flex items-center justify-between border-l-8 border-brand-maroon shadow-sm select-text">
-                    <div className="flex items-center gap-3">
-                      <b className="font-black text-lg text-brand-maroon w-8">{idx + 1}.</b>
-                      <img src={sc.playerPhoto} className="w-10 h-10 rounded-xl object-cover border" alt="scorer" />
-                      <div>
-                        <h4 className="font-extrabold text-brand-dark text-xs md:text-sm uppercase">{sc.playerName}</h4>
-                        <span className="text-[9px] font-black text-gray-400 uppercase">{sc.teamName}</span>
+                  <div key={idx} className="bg-brand-card p-4 rounded-xl flex flex-col gap-3 border-l-8 border-brand-maroon shadow-sm select-text">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <b className="font-black text-lg text-brand-maroon w-8">{idx + 1}.</b>
+                        <img src={sc.playerPhoto} className="w-10 h-10 rounded-xl object-cover border" alt="scorer" />
+                        <div>
+                          <h4 className="font-extrabold text-brand-dark text-xs md:text-sm uppercase">{sc.playerName}</h4>
+                          <span className="text-[9px] font-black text-gray-400 uppercase">{sc.teamName}</span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-xl font-black text-brand-maroon leading-none block">{sc.ag}</span>
+                        <span className="text-[8px] font-black text-gray-400 block tracking-wider mt-0.5 uppercase">KUPA GOLÜ</span>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <span className="text-xl font-black text-brand-maroon leading-none block">{sc.ag}</span>
-                      <span className="text-[8px] font-black text-gray-400 block tracking-wider mt-0.5 uppercase">KUPA GOLÜ</span>
-                    </div>
+
+                    {isAdmin && (
+                      <div className="mt-1 pt-2 border-t border-dashed border-gray-200/60 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-[11px] font-black text-gray-500">
+                        <span>🛡️ Gol Sayısı Ayarı / Düzeltme (Kendi Kalesi vb.):</span>
+                        <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl px-3 py-1.5 shadow-sm self-start sm:self-auto">
+                          <span className="text-[10px] font-bold text-gray-500">
+                            Mevcut: <strong className="text-brand-maroon">{sc.goalsOffset > 0 ? `+${sc.goalsOffset}` : sc.goalsOffset}</strong>
+                          </span>
+                          <div className="h-4 w-px bg-gray-200"></div>
+                          <div className="flex items-center gap-1.5">
+                            <input 
+                              type="text" 
+                              placeholder="Örn: +12 veya -5" 
+                              value={offsetInputs[sc.teamId] || ''}
+                              onChange={(e) => {
+                                setOffsetInputs(prev => ({
+                                  ...prev,
+                                  [sc.teamId]: e.target.value
+                                }));
+                              }}
+                              className="w-24 text-[10px] font-extrabold text-center bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5 text-brand-dark outline-none focus:border-brand-maroon" 
+                            />
+                            <button 
+                              type="button"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                const valStr = (offsetInputs[sc.teamId] || '').trim();
+                                if (!valStr) return;
+                                const numVal = parseInt(valStr.replace('+', ''));
+                                if (isNaN(numVal)) {
+                                  alert('Geçersiz sayı! Örn: +12 veya -5');
+                                  return;
+                                }
+                                const currentOffset = sc.goalsOffset || 0;
+                                const newOffset = currentOffset + numVal;
+                                await updateDoc(doc(db, 'wc_teams', sc.teamId), { goalsOffset: newOffset });
+                                setOffsetInputs(prev => ({
+                                  ...prev,
+                                  [sc.teamId]: ''
+                                }));
+                              }}
+                              className="bg-brand-maroon text-brand-gold text-[10px] font-black uppercase px-2 py-1 rounded cursor-pointer hover:bg-black transition-all active:scale-95"
+                            >
+                              Ekle
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))
               )}
@@ -1489,10 +1631,13 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
 
       {/* MATCH DETAIL / EDIT SCORE MODAL */}
       {detailModalOpen && selectedWcMatch && (() => {
-        const t1Info = teams.find(t => t.teamName.toLowerCase() === selectedWcMatch.team1.toLowerCase());
-        const t2Info = teams.find(t => t.teamName.toLowerCase() === selectedWcMatch.team2.toLowerCase());
-        const logo1 = t1Info?.teamLogo || teamLogos[selectedWcMatch.team1] || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedWcMatch.team1)}&background=800000&color=ffd700`;
-        const logo2 = t2Info?.teamLogo || teamLogos[selectedWcMatch.team2] || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedWcMatch.team2)}&background=800000&color=ffd700`;
+        const latestMatch = matches.find(m => m.id === selectedWcMatch.id) || selectedWcMatch;
+        const team1Name = latestMatch.team1 || 'Bekleniyor';
+        const team2Name = latestMatch.team2 || 'Bekleniyor';
+        const t1Info = teams.find(t => t.teamName.toLowerCase() === team1Name.toLowerCase());
+        const t2Info = teams.find(t => t.teamName.toLowerCase() === team2Name.toLowerCase());
+        const logo1 = t1Info?.teamLogo || teamLogos[team1Name] || `https://ui-avatars.com/api/?name=${encodeURIComponent(team1Name)}&background=800000&color=ffd700`;
+        const logo2 = t2Info?.teamLogo || teamLogos[team2Name] || `https://ui-avatars.com/api/?name=${encodeURIComponent(team2Name)}&background=800000&color=ffd700`;
         const player1 = t1Info?.playerName || 'Yıldız Oyuncu';
         const player2 = t2Info?.playerName || 'Yıldız Oyuncu';
         const photo1 = t1Info?.playerPhoto || 'https://via.placeholder.com/80?text=Logo';
@@ -1516,23 +1661,22 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
               </h3>
               
               <h4 className="text-center font-black text-[10px] uppercase text-brand-dark bg-yellow-400/20 text-[#800000] py-1 px-3 w-max mx-auto rounded-full mb-6">
-                {selectedWcMatch.group ? `GRUP ${selectedWcMatch.group} MÜCADELESİ` : `${selectedWcMatch.round || 'Kupa'} Karşılaşması`}
+                {latestMatch.group ? `GRUP ${latestMatch.group} MÜCADELESİ` : `${latestMatch.round || 'Kupa'} Karşılaşması`}
               </h4>
-
               {/* Scoreboard Arena */}
               <div className="flex items-center justify-between gap-2 border-b border-[#ebdcb9] pb-6 mb-6">
                 {/* Team 1 Area */}
                 <div className="flex-1 flex flex-col items-center text-center">
                   <img src={logo1} className="w-16 h-16 rounded-full border bg-white object-cover shadow-sm mb-2" alt="logo1" />
-                  <span className="font-black text-xs md:text-sm uppercase text-brand-dark tracking-tight leading-tight mb-1">{selectedWcMatch.team1}</span>
+                  <span className="font-black text-xs md:text-sm uppercase text-brand-dark tracking-tight leading-tight mb-1">{team1Name}</span>
                   <div className="text-[10px] font-bold text-gray-400 uppercase leading-none">{player1}</div>
                 </div>
 
                 {/* VS / SCORE BADGE */}
                 <div className="flex flex-col items-center justify-center shrink-0 min-w-[80px]">
-                  {selectedWcMatch.played ? (
+                  {latestMatch.played ? (
                     <div className="bg-brand-dark text-brand-gold font-sans font-black text-lg md:text-2xl py-2 px-4 rounded-2xl border-2 border-brand-gold shadow-md">
-                      {selectedWcMatch.score1} - {selectedWcMatch.score2}
+                      {latestMatch.score1} - {latestMatch.score2}
                     </div>
                   ) : (
                     <div className="bg-brand-dark text-brand-gold font-black text-xs py-1.5 px-3.5 rounded-xl border border-brand-gold uppercase tracking-wide">
@@ -1540,14 +1684,14 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
                     </div>
                   )}
                   <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest mt-2 block">
-                    {selectedWcMatch.played ? 'OYNANDI' : 'BEKLENİYOR'}
+                    {latestMatch.played ? 'OYNANDI' : 'BEKLENİYOR'}
                   </span>
                 </div>
 
                 {/* Team 2 Area */}
                 <div className="flex-1 flex flex-col items-center text-center">
                   <img src={logo2} className="w-16 h-16 rounded-full border bg-white object-cover shadow-sm mb-2" alt="logo2" />
-                  <span className="font-black text-xs md:text-sm uppercase text-brand-dark tracking-tight leading-tight mb-1">{selectedWcMatch.team2}</span>
+                  <span className="font-black text-xs md:text-sm uppercase text-brand-dark tracking-tight leading-tight mb-1">{team2Name}</span>
                   <div className="text-[10px] font-bold text-gray-400 uppercase leading-none">{player2}</div>
                 </div>
               </div>
@@ -1582,7 +1726,7 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
                   
                   <div className="grid grid-cols-2 gap-4 text-xs font-bold">
                     <div className="flex flex-col gap-1">
-                      <label className="text-[9px] font-black text-gray-500 uppercase">{selectedWcMatch.team1} Skoru</label>
+                      <label className="text-[9px] font-black text-gray-500 uppercase">{team1Name} Skoru</label>
                       <input 
                         type="number" 
                         value={matchScore1} 
@@ -1593,7 +1737,7 @@ export default function WorldCup({ currentUser, onNavigate, teamLogos }: WorldCu
                     </div>
                     
                     <div className="flex flex-col gap-1">
-                      <label className="text-[9px] font-black text-gray-500 uppercase">{selectedWcMatch.team2} Skoru</label>
+                      <label className="text-[9px] font-black text-gray-500 uppercase">{team2Name} Skoru</label>
                       <input 
                         type="number" 
                         value={matchScore2} 
