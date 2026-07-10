@@ -53,7 +53,10 @@ const TRANSLATIONS = {
     lider: 'Lideri',
     bio: '📝 Oyuncu Biyografisi',
     insta: 'Instagram',
-    wait: 'Bekleniyor...'
+    wait: 'Bekleniyor...',
+    ligm: 'LİG MAÇI',
+    cupm: 'TURNUVA',
+    mvp: 'MAÇIN OYUNCUSU (MVP)'
   },
   en: {
     back: 'Back',
@@ -86,7 +89,10 @@ const TRANSLATIONS = {
     lider: 'Leaders',
     bio: '📝 Player Biography',
     insta: 'Instagram',
-    wait: 'Pending...'
+    wait: 'Pending...',
+    ligm: 'LEAGUE MATCH',
+    cupm: 'TOURNAMENT',
+    mvp: 'MAN OF THE MATCH (MVP)'
   },
   pt: {
     back: 'Voltar',
@@ -119,7 +125,10 @@ const TRANSLATIONS = {
     lider: 'Desenvolvimento',
     bio: '📝 Biografia do Jogador',
     insta: 'Instagram',
-    wait: 'Aguardando...'
+    wait: 'Aguardando...',
+    ligm: 'JOGO DA LIGA',
+    cupm: 'TORNEIO',
+    mvp: 'MELHOR DO JOGO (MVP)'
   }
 };
 
@@ -158,16 +167,28 @@ export default function App() {
 
   // 1. Sync Authentication state
   useEffect(() => {
+    let unsubSnapshot: (() => void) | null = null;
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
+      if (unsubSnapshot) {
+        unsubSnapshot();
+        unsubSnapshot = null;
+      }
+
       if (firebaseUser) {
         // Find or init user profile in Firestore
         const userRef = doc(db, 'users', firebaseUser.uid);
-        onSnapshot(userRef, (docSnap) => {
+        
+        // Listen for real-time changes safely without destructive lazy overwriting
+        unsubSnapshot = onSnapshot(userRef, (docSnap) => {
           if (docSnap.exists()) {
             setUserProfile({ uid: firebaseUser.uid, ...docSnap.data() } as UserProfile);
-          } else {
-            // Lazy register default profile on first load
+          }
+        });
+
+        // Safe lazy-initialization: only write default document if it doesn't exist on the server/cache
+        getDoc(userRef).then((docSnap) => {
+          if (!docSnap.exists()) {
             const initials = displayNameInitials(firebaseUser.displayName || 'Kullanici');
             setDoc(userRef, {
               displayName: firebaseUser.displayName || 'Kullanıcı',
@@ -177,13 +198,18 @@ export default function App() {
               favTeam: ''
             });
           }
+        }).catch((err) => {
+          console.error("Error checking user profile existence:", err);
         });
       } else {
         setUserProfile(null);
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      if (unsubSnapshot) unsubSnapshot();
+    };
   }, []);
 
   function displayNameInitials(name: string) {

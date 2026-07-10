@@ -45,6 +45,7 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
 
   const [matchDateText, setMatchDateText] = useState('');
   const [matchDatejavText, setMatchDatejavText] = useState('');
+  const [matchCategory, setMatchCategory] = useState('');
 
   const [selectedMvp, setSelectedMvp] = useState('');
   const [mvpRating, setMvpRating] = useState('');
@@ -167,6 +168,7 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
         setDocId(fId);
         setMatchDateText((found as Match).date || '');
         setMatchDatejavText(String((found as Match).datejav || ''));
+        setMatchCategory((found as any).category || '');
         setSelectedMvp((found as Match).mvp || '');
         setMvpRating((found as Match).rating || '');
       }
@@ -299,7 +301,8 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
     try {
       await updateDoc(doc(db, 'matches', docId), {
         date: matchDateText.trim(),
-        datejav: javVal
+        datejav: javVal,
+        category: matchCategory.trim()
       });
       alert('Tarih güncellendi! Yeni URL atanıyor...');
       // Update screen representation
@@ -647,7 +650,22 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                   <label className="text-[10px] font-black text-gray-500">🧭 Datejav (Benzersiz Tarih id Number)</label>
                   <input type="number" value={matchDatejavText} onChange={(e) => setMatchDatejavText(e.target.value)} className="w-full bg-white border border-gray-300 rounded p-2 text-xs font-bold" />
                 </div>
-                <button onClick={handleUpdateDate} className="w-full py-2.5 bg-green-700 text-white font-black rounded-lg text-xs">TARİH GÜNCELLE</button>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-black text-gray-500">🏆 Kategori / Turnuva Türü</label>
+                  <select 
+                    value={matchCategory} 
+                    onChange={(e) => setMatchCategory(e.target.value)} 
+                    className="w-full bg-white border border-gray-300 rounded p-2 text-xs font-bold"
+                  >
+                    <option value="">Varsayılan (Lig / Kupa)</option>
+                    <option value="LİG MAÇI">LİG MAÇI</option>
+                    <option value="TURNUVA">TURNUVA</option>
+                    <option value="UCL">UCL (Champions League)</option>
+                    <option value="UEL">UEL (Europa League)</option>
+                    <option value="UECL">UECL (Conference League)</option>
+                  </select>
+                </div>
+                <button onClick={handleUpdateDate} className="w-full py-2.5 bg-green-700 text-white font-black rounded-lg text-xs">TARİH VE KATEGORİ GÜNCELLE</button>
               </div>
             )}
 

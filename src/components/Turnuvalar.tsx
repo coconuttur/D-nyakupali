@@ -72,10 +72,16 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
       })
       .sort((a, b) => b.gp - a.gp || b.gav - a.gav);
 
+    const groupName = currentLang === 'tr'
+      ? `${groupLetter} GRUBU`
+      : currentLang === 'en'
+        ? `GROUP ${groupLetter}`
+        : `GRUPO ${groupLetter}`;
+
     return (
       <div className="bg-[#1a1a1a] rounded-3xl overflow-hidden border border-gray-800 shadow-md">
         <div className="bg-brand-maroon text-brand-gold py-3 px-4 text-center font-black text-sm select-none">
-          {groupLetter === 'A' ? t.ga : t.gb}
+          {groupName}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-white border-collapse">

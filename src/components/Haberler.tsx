@@ -413,8 +413,8 @@ export default function Haberler({ currentUser, currentLang, translations, onNav
           src="https://discord.com/widget?id=1106663307122851850&theme=dark" 
           width="100%" 
           height="500" 
-          allowTransparency={true} 
-          frameBorder="0"
+          allowtransparency="true" 
+          style={{ border: 0 }}
           className="rounded-2xl shadow-md border-b-8 border-brand-maroon"
         ></iframe>
       </div>
