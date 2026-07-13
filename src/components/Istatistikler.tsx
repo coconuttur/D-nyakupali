@@ -15,6 +15,7 @@ type StatType = 'goals' | 'asistsay' | 'gol_mac' | 'gen' | 'ratingoy';
 export default function Istatistikler({ currentLang, translations, onNavigate, teamLogos }: IstatistiklerProps) {
   const [activeStat, setActiveStat] = useState<StatType>('goals');
   const [players, setPlayers] = useState<Player[]>([]);
+  const [mvpCounts, setMvpCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -28,6 +29,21 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
     });
 
     return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribeMatches = onSnapshot(collection(db, 'matches'), (snap) => {
+      const counts: Record<string, number> = {};
+      snap.forEach((doc) => {
+        const data = doc.data();
+        if (data.played && data.mvp) {
+          const mvpName = data.mvp.trim().toUpperCase();
+          counts[mvpName] = (counts[mvpName] || 0) + 1;
+        }
+      });
+      setMvpCounts(counts);
+    });
+    return () => unsubscribeMatches();
   }, []);
 
   const t = translations[currentLang];
@@ -133,7 +149,14 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
                 </div>
 
                 <div className="text-right">
-                  <span className="font-black text-2xl md:text-3xl text-brand-maroon leading-none block">{displayVal}</span>
+                  <div className="flex items-center justify-end gap-1.5">
+                    <span className="font-black text-2xl md:text-3xl text-brand-maroon leading-none">{displayVal}</span>
+                    {activeStat === 'ratingoy' && (
+                      <span className="text-[10px] font-black text-brand-gold bg-brand-dark px-1.5 py-0.5 rounded shadow-sm shrink-0 select-none">
+                        🏆 {mvpCounts[p.pname.trim().toUpperCase()] || 0} MVP
+                      </span>
+                    )}
+                  </div>
                   <span className="text-[9px] md:text-[10px] font-black uppercase text-gray-400 tracking-wider block">{labels[activeStat]}</span>
                 </div>
               </div>

@@ -74,6 +74,7 @@ export interface Match {
   mvp?: string;
   rating?: string;
   timeline?: MatchTimelineEvent[];
+  iyScore?: string;
 }
 
 export interface Bet {

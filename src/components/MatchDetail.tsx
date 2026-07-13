@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { doc, getDoc, updateDoc, collection, onSnapshot, query, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Match, MatchTimelineEvent, Player, Team, UserProfile } from '../types';
+import { recalculateStandings, recalculatePlayerRatings } from '../lib/standings';
 
 interface MatchDetailProps {
   matchId: string; // "team1-vs-team2-datejav" representation
@@ -12,7 +13,7 @@ interface MatchDetailProps {
   onNavigate: (view: any) => void;
 }
 
-type TabType = 'goal' | 'period' | 'card' | 'date' | 'mvp';
+type TabType = 'goal' | 'period' | 'card' | 'date' | 'mvp' | 'quick';
 
 export default function MatchDetail({ matchId, currentUser, currentLang, translations, onBack, onNavigate }: MatchDetailProps) {
   const [match, setMatch] = useState<Match | null>(null);
@@ -49,6 +50,106 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
 
   const [selectedMvp, setSelectedMvp] = useState('');
   const [mvpRating, setMvpRating] = useState('');
+
+  // Football field / Lineup state
+  const [activeLineupTeam, setActiveLineupTeam] = useState<'team1' | 'team2'>('team1');
+  const [selectedLineupPlayer, setSelectedLineupPlayer] = useState<string>('');
+  const [lineupPosition, setLineupPosition] = useState<'DEF' | 'MD' | 'FW'>('DEF');
+  const [lineupRating, setLineupRating] = useState<string>('6.0');
+  const [lineupPlayed, setLineupPlayed] = useState<boolean>(true);
+
+  useEffect(() => {
+    if (selectedLineupPlayer && match) {
+      const lineup = match.lineup || {};
+      const pInfo = lineup[selectedLineupPlayer];
+      if (pInfo) {
+        setLineupPosition(pInfo.position || 'DEF');
+        setLineupRating(pInfo.rating ? String(pInfo.rating) : '6.0');
+        setLineupPlayed(pInfo.played !== false);
+      } else {
+        setLineupPosition('DEF');
+        setLineupRating('6.0');
+        setLineupPlayed(true);
+      }
+    }
+  }, [selectedLineupPlayer, match]);
+
+  const handleSaveLineupPlayer = async () => {
+    if (!docId || !selectedLineupPlayer) return;
+    try {
+      const updatedLineup = {
+        ...(match?.lineup || {}),
+        [selectedLineupPlayer]: {
+          position: lineupPosition,
+          rating: Number(lineupRating) || 0,
+          played: lineupPlayed
+        }
+      };
+      await updateDoc(doc(db, 'matches', docId), {
+        lineup: updatedLineup
+      });
+      await recalculatePlayerRatings();
+      alert('Oyuncu kadro ve rating bilgisi başarıyla kaydedildi!');
+    } catch (err) {
+      console.error(err);
+      alert('Kadro kaydedilirken hata oluştu.');
+    }
+  };
+
+  const handleRemoveLineupPlayer = async (pname: string) => {
+    if (!docId) return;
+    if (!confirm(`${pname} isimli oyuncuyu kadrodan çıkarmak istediğinize emin misiniz?`)) return;
+    try {
+      const updatedLineup = { ...(match?.lineup || {}) };
+      delete updatedLineup[pname];
+      await updateDoc(doc(db, 'matches', docId), {
+        lineup: updatedLineup
+      });
+      await recalculatePlayerRatings();
+      alert('Oyuncu kadrodan çıkarıldı!');
+      if (selectedLineupPlayer === pname) {
+        setSelectedLineupPlayer('');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Oyuncu çıkarılırken hata oluştu.');
+    }
+  };
+
+  // Quick inputs
+  const [quickInputString, setQuickInputString] = useState('');
+  const [quickIyInputString, setQuickIyInputString] = useState('');
+
+  const handleQuickSubmit = async () => {
+    if (!docId) return;
+    const parts = quickInputString.split('-');
+    if (parts.length !== 2) {
+      alert('Lütfen skoru "5-2" formatında giriniz!');
+      return;
+    }
+    const s1 = parts[0].trim();
+    const s2 = parts[1].trim();
+    if (isNaN(Number(s1)) || isNaN(Number(s2))) {
+      alert('Lütfen geçerli sayılar giriniz!');
+      return;
+    }
+
+    try {
+      await updateDoc(doc(db, 'matches', docId), {
+        score1: s1,
+        score2: s2,
+        iyScore: quickIyInputString.trim() || null,
+        played: true
+      });
+      await recalculateStandings();
+      alert('Maç skoru başarıyla güncellendi ve puan durumları güncellendi!');
+      setQuickInputString('');
+      setQuickIyInputString('');
+    } catch (e) {
+      console.error(e);
+      alert('Skor güncellenirken hata oluştu.');
+    }
+  };
 
   // Extract team names and datejav from state representation
   const parseMatchId = () => {
@@ -214,6 +315,7 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
         score2: String(calScore2),
         played: events.some(evt => evt.type === 'goal' || evt.type === 'period')
       });
+      await recalculateStandings();
     } catch (e) {
       console.error(e);
       alert('Kaydedilemedi.');
@@ -406,12 +508,40 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                 </span>
                 
                 {isAdmin && (
-                  <button 
-                    onClick={() => setAdminModalOpen(true)}
-                    className="mt-6 bg-brand-maroon text-brand-gold py-2 px-4 rounded-xl hover:bg-[#600000] cursor-pointer font-black text-[10px] uppercase shadow tracking-wider border-b-2 border-black"
-                  >
-                    ⚙️ Düzenle / Olay Ekle
-                  </button>
+                  <div className="flex flex-col items-center gap-2">
+                    <button 
+                      onClick={() => setAdminModalOpen(true)}
+                      className="mt-6 bg-brand-maroon text-brand-gold py-2 px-4 rounded-xl hover:bg-[#600000] cursor-pointer font-black text-[10px] uppercase shadow tracking-wider border-b-2 border-black"
+                    >
+                      ⚙️ Düzenle / Olay Ekle
+                    </button>
+                    
+                    <div className="mt-4 p-4 bg-[#f5efdf] rounded-2xl border border-brand-maroon/20 w-60 shadow-sm text-center">
+                      <span className="text-[10px] font-black text-brand-maroon uppercase tracking-widest block mb-2">⚡ Hızlı Maç Sonucu Girişi</span>
+                      <div className="flex gap-2 mb-2">
+                        <input 
+                          type="text" 
+                          placeholder="Skor (örn: 5-2)" 
+                          value={quickInputString}
+                          onChange={(e) => setQuickInputString(e.target.value)}
+                          className="bg-white border border-gray-300 rounded-xl px-2.5 py-1.5 text-xs font-black text-center w-full focus:outline-none focus:border-brand-maroon"
+                        />
+                        <button 
+                          onClick={handleQuickSubmit}
+                          className="bg-brand-maroon text-brand-gold hover:bg-[#600000] px-4 py-1.5 rounded-xl font-black text-xs shrink-0 cursor-pointer shadow-sm"
+                        >
+                          Kaydet
+                        </button>
+                      </div>
+                      <input 
+                        type="text" 
+                        placeholder="İlk Yarı Sonucu (örn: 2-1) [Opsiyonel]" 
+                        value={quickIyInputString}
+                        onChange={(e) => setQuickIyInputString(e.target.value)}
+                        className="bg-white border border-gray-300 rounded-xl px-2 py-1 text-[9px] font-bold text-center w-full focus:outline-none focus:border-brand-maroon"
+                      />
+                    </div>
+                  </div>
                 )}
               </div>
 
@@ -520,6 +650,319 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                 </div>
               </div>
             </div>
+
+            {/* Tactical Football Field and Squad Lineups */}
+            <div className="border-t-3 border-dashed border-[#eadcb9] pt-8 mt-12">
+              <h3 className="text-center font-black text-lg text-brand-maroon uppercase tracking-widest mb-6">📋 MAÇ KADROLARI & REYTİNGLER</h3>
+            </div>
+
+            {(() => {
+              const lineup = match?.lineup || {};
+              const activeList = Object.entries(lineup)
+                .map(([pname, info]: any) => ({ pname, ...info }))
+                .filter((p: any) => p.played && p.position);
+
+              const t1Active = activeList.filter((p: any) => team1Players.some((dbP) => dbP.pname === p.pname));
+              const t2Active = activeList.filter((p: any) => team2Players.some((dbP) => dbP.pname === p.pname));
+
+              const t1DEF = t1Active.filter((p: any) => p.position === 'DEF');
+              const t1MD  = t1Active.filter((p: any) => p.position === 'MD');
+              const t1FW  = t1Active.filter((p: any) => p.position === 'FW');
+
+              const t2FW  = t2Active.filter((p: any) => p.position === 'FW');
+              const t2MD  = t2Active.filter((p: any) => p.position === 'MD');
+              const t2DEF = t2Active.filter((p: any) => p.position === 'DEF');
+
+              const renderPitchPlayer = (player: any, left: string, top: string) => {
+                const playerDb = [...team1Players, ...team2Players].find(dbP => dbP.pname === player.pname);
+                const fotoUrl = playerDb?.foto || '';
+                const rating = Number(player.rating) || 0;
+                
+                let ratingBg = 'bg-amber-500 border-amber-400 text-black';
+                if (rating > 7.0) {
+                  ratingBg = 'bg-green-600 border-green-400 text-white';
+                } else if (rating < 5.0) {
+                  ratingBg = 'bg-red-600 border-red-400 text-white';
+                }
+
+                return (
+                  <div 
+                    key={player.pname} 
+                    style={{ left, top, transform: 'translate(-50%, -50%)' }}
+                    className="absolute flex flex-col items-center z-20 cursor-pointer group"
+                    onClick={() => {
+                      if (isAdmin) {
+                        setSelectedLineupPlayer(player.pname);
+                      }
+                    }}
+                  >
+                    <div className="relative w-11 h-11 md:w-13 md:h-13 transition-transform group-hover:scale-110">
+                      <div className="w-full h-full rounded-full border-2 border-white shadow-md flex items-center justify-center overflow-hidden bg-brand-dark active:scale-95 animate-fade-in">
+                        {fotoUrl ? (
+                          <img src={fotoUrl} referrerPolicy="no-referrer" className="w-full h-full object-cover" alt={player.pname} />
+                        ) : (
+                          <span className="text-white text-[10px] md:text-xs font-black uppercase tracking-wider">{player.pname.substring(0, 2)}</span>
+                        )}
+                      </div>
+                      <span className={`absolute -top-1 -right-1 text-[8px] md:text-[9px] font-black px-1.5 py-0.5 rounded-full border shadow-md z-30 ${ratingBg}`}>
+                        {rating.toFixed(1)}
+                      </span>
+                    </div>
+                    <span className="bg-black/75 text-white text-[8px] md:text-[9px] font-black px-1.5 py-0.5 rounded mt-1 shadow truncate max-w-16 md:max-w-20 tracking-wide block uppercase text-center select-none pointer-events-none">
+                      {player.pname.split(' ')[0]}
+                    </span>
+                  </div>
+                );
+              };
+
+              return (
+                <div className="space-y-6 select-text">
+                  {/* Tactical Pitch Container */}
+                  <div className="relative w-full aspect-[16/10] bg-emerald-800 rounded-3xl border-4 border-white/40 overflow-hidden shadow-inner select-none p-4">
+                    <div className="absolute inset-0 bg-emerald-800 flex pointer-events-none">
+                      {Array.from({ length: 10 }).map((_, i) => (
+                        <div key={i} className={`flex-1 h-full ${i % 2 === 0 ? 'bg-emerald-700/25' : 'bg-transparent'}`} />
+                      ))}
+                    </div>
+
+                    <div className="absolute inset-4 border-2 border-white/25 rounded-lg pointer-events-none"></div>
+                    <div className="absolute left-1/2 top-4 bottom-4 w-0.5 bg-white/25 pointer-events-none"></div>
+                    <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 md:w-28 md:h-28 rounded-full border-2 border-white/25 pointer-events-none"></div>
+                    <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 bg-white/40 rounded-full pointer-events-none"></div>
+
+                    <div className="absolute left-4 top-1/4 bottom-1/4 w-12 md:w-16 border-2 border-l-0 border-white/25 pointer-events-none"></div>
+                    <div className="absolute right-4 top-1/4 bottom-1/4 w-12 md:w-16 border-2 border-r-0 border-white/25 pointer-events-none"></div>
+
+                    <div className="absolute left-4 top-1/3 bottom-1/3 w-5 border-2 border-l-0 border-white/25 pointer-events-none"></div>
+                    <div className="absolute right-4 top-1/3 bottom-1/3 w-5 border-2 border-r-0 border-white/25 pointer-events-none"></div>
+
+                    {/* Left team on left side */}
+                    {t1DEF.map((p, idx) => {
+                      const top = `${((idx + 1) * 100) / (t1DEF.length + 1)}%`;
+                      return renderPitchPlayer(p, '18%', top);
+                    })}
+                    {t1MD.map((p, idx) => {
+                      const top = `${((idx + 1) * 100) / (t1MD.length + 1)}%`;
+                      return renderPitchPlayer(p, '33%', top);
+                    })}
+                    {t1FW.map((p, idx) => {
+                      const top = `${((idx + 1) * 100) / (t1FW.length + 1)}%`;
+                      return renderPitchPlayer(p, '45%', top);
+                    })}
+
+                    {/* Right team on right side */}
+                    {t2FW.map((p, idx) => {
+                      const top = `${((idx + 1) * 100) / (t2FW.length + 1)}%`;
+                      return renderPitchPlayer(p, '55%', top);
+                    })}
+                    {t2MD.map((p, idx) => {
+                      const top = `${((idx + 1) * 100) / (t2MD.length + 1)}%`;
+                      return renderPitchPlayer(p, '67%', top);
+                    })}
+                    {t2DEF.map((p, idx) => {
+                      const top = `${((idx + 1) * 100) / (t2DEF.length + 1)}%`;
+                      return renderPitchPlayer(p, '82%', top);
+                    })}
+                  </div>
+
+                  {/* SQUAD BUTTONS & DETAILS */}
+                  <div className="bg-[#f5efdf] p-5 rounded-2xl border border-brand-maroon/20 shadow-sm space-y-4">
+                    <div className="flex gap-2 justify-center border-b border-brand-maroon/10 pb-3">
+                      <button
+                        onClick={() => setActiveLineupTeam('team1')}
+                        className={`py-2 px-4 rounded-xl font-black text-xs uppercase tracking-wider shadow-sm transition-all active:scale-95 cursor-pointer ${
+                          activeLineupTeam === 'team1' 
+                            ? 'bg-brand-maroon text-brand-gold border-b-2 border-black' 
+                            : 'bg-white border border-gray-300 text-gray-500 hover:bg-gray-50'
+                        }`}
+                      >
+                        🏠 {match.team1} Kadrosu
+                      </button>
+                      <button
+                        onClick={() => setActiveLineupTeam('team2')}
+                        className={`py-2 px-4 rounded-xl font-black text-xs uppercase tracking-wider shadow-sm transition-all active:scale-95 cursor-pointer ${
+                          activeLineupTeam === 'team2' 
+                            ? 'bg-brand-maroon text-brand-gold border-b-2 border-black' 
+                            : 'bg-white border border-gray-300 text-gray-500 hover:bg-gray-50'
+                        }`}
+                      >
+                        🚀 {match.team2} Kadrosu
+                      </button>
+                    </div>
+
+                    {/* Grid of Players */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-60 overflow-y-auto pr-1 select-text">
+                      {(activeLineupTeam === 'team1' ? team1Players : team2Players).map((player) => {
+                        const playerLineup = lineup[player.pname];
+                        const hasLineup = !!playerLineup;
+                        const played = hasLineup && playerLineup.played;
+                        const position = hasLineup ? playerLineup.position : '';
+                        const rating = hasLineup ? Number(playerLineup.rating) : 0;
+
+                        let ratingColor = 'bg-gray-200 text-gray-500';
+                        if (hasLineup && played) {
+                          if (rating > 7.0) {
+                            ratingColor = 'bg-green-100 text-green-700 border border-green-300';
+                          } else if (rating < 5.0) {
+                            ratingColor = 'bg-red-100 text-red-700 border border-red-300';
+                          } else {
+                            ratingColor = 'bg-yellow-100 text-yellow-700 border border-yellow-300';
+                          }
+                        }
+
+                        return (
+                          <div 
+                            key={player.pname}
+                            onClick={() => {
+                              if (isAdmin) {
+                                setSelectedLineupPlayer(player.pname);
+                              }
+                            }}
+                            className={`flex items-center justify-between p-2.5 rounded-xl border transition-all ${
+                              isAdmin ? 'cursor-pointer hover:border-brand-maroon/50 hover:bg-white' : 'bg-white'
+                            } ${
+                              selectedLineupPlayer === player.pname ? 'bg-white border-brand-maroon ring-1 ring-brand-maroon shadow-sm' : 'border-gray-200 bg-white/60'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <img 
+                                src={player.foto || 'https://via.placeholder.com/100'} 
+                                referrerPolicy="no-referrer" 
+                                className="w-8 h-8 rounded-full object-cover border border-gray-200" 
+                                alt={player.pname} 
+                              />
+                              <div>
+                                <span className="text-xs font-black text-brand-dark uppercase block leading-none">{player.pname}</span>
+                                <span className="text-[9px] text-gray-400 font-bold uppercase mt-1 block">
+                                  {hasLineup ? (
+                                    <span className="flex items-center gap-1.5">
+                                      <span className="text-brand-maroon font-black">[{position}]</span>
+                                      <span>•</span>
+                                      <span>{played ? 'Oynadı' : 'Oynamadı'}</span>
+                                    </span>
+                                  ) : 'Kadroda Değil'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {hasLineup && played && (
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${ratingColor}`}>
+                                {rating.toFixed(1)}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Admin Lineup Form */}
+                    {isAdmin && (
+                      <div className="border-t border-brand-maroon/10 pt-4 mt-2">
+                        <span className="text-[10px] font-black text-brand-maroon uppercase tracking-widest block mb-3">🛠️ KADRO & REYTİNG DÜZENLEME (ADMİN)</span>
+                        
+                        <div className="bg-white p-4 rounded-xl border border-brand-maroon/10 space-y-4">
+                          <div className="flex flex-col gap-1">
+                            <label className="text-[9px] font-black text-gray-400 uppercase">Oyuncu Seçin</label>
+                            <select
+                              value={selectedLineupPlayer}
+                              onChange={(e) => setSelectedLineupPlayer(e.target.value)}
+                              className="w-full bg-brand-cream border border-gray-200 rounded-lg p-2 font-bold text-xs"
+                            >
+                              <option value="">-- Oyuncu Seçin --</option>
+                              <optgroup label={`${match.team1} (🏠)`}>
+                                {team1Players.map((p) => (
+                                  <option key={p.pname} value={p.pname}>{p.pname}</option>
+                                ))}
+                              </optgroup>
+                              <optgroup label={`${match.team2} (🚀)`}>
+                                {team2Players.map((p) => (
+                                  <option key={p.pname} value={p.pname}>{p.pname}</option>
+                                ))}
+                              </optgroup>
+                            </select>
+                          </div>
+
+                          {selectedLineupPlayer && (
+                            <div className="space-y-4">
+                              <div className="flex flex-col gap-1.5">
+                                <label className="text-[9px] font-black text-gray-400 uppercase">Pozisyon</label>
+                                <div className="grid grid-cols-3 gap-2">
+                                  {(['DEF', 'MD', 'FW'] as const).map((pos) => (
+                                    <button
+                                      type="button"
+                                      key={pos}
+                                      onClick={() => setLineupPosition(pos)}
+                                      className={`py-2 rounded-lg font-black text-xs uppercase tracking-wider transition-colors cursor-pointer border ${
+                                        lineupPosition === pos 
+                                          ? 'bg-brand-maroon text-brand-gold border-black' 
+                                          : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                                      }`}
+                                    >
+                                      {pos === 'DEF' ? '🛡️ DEF' : pos === 'MD' ? '⚙️ MD' : '⚡ FW'}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div className="flex flex-col gap-1">
+                                <label className="text-[9px] font-black text-gray-400 uppercase">Maç Reytingi ({lineupRating})</label>
+                                <div className="flex gap-2">
+                                  <input
+                                    type="number"
+                                    step="0.1"
+                                    min="1.0"
+                                    max="10.0"
+                                    value={lineupRating}
+                                    onChange={(e) => setLineupRating(e.target.value)}
+                                    className="bg-brand-cream border border-gray-200 rounded-lg px-3 py-2 text-xs font-black w-24 focus:outline-none focus:border-brand-maroon text-center"
+                                  />
+                                  <input
+                                    type="range"
+                                    min="1.0"
+                                    max="10.0"
+                                    step="0.1"
+                                    value={lineupRating}
+                                    onChange={(e) => setLineupRating(e.target.value)}
+                                    className="flex-1 accent-brand-maroon"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between bg-brand-cream p-2.5 rounded-lg border border-gray-100 select-none">
+                                <span className="text-xs font-black text-gray-700">Maçta Süre Aldı mı (Oynadı)?</span>
+                                <input
+                                  type="checkbox"
+                                  checked={lineupPlayed}
+                                  onChange={(e) => setLineupPlayed(e.target.checked)}
+                                  className="w-5 h-5 accent-brand-maroon cursor-pointer"
+                                />
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2 pt-2">
+                                <button
+                                  type="button"
+                                  onClick={handleSaveLineupPlayer}
+                                  className="bg-green-700 hover:bg-green-800 text-white font-black py-2.5 rounded-lg text-[10px] uppercase tracking-wider shadow active:translate-y-0.5 cursor-pointer"
+                                >
+                                  💾 Kadroyu Güncelle
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveLineupPlayer(selectedLineupPlayer)}
+                                  className="bg-red-700 hover:bg-red-800 text-white font-black py-2.5 rounded-lg text-[10px] uppercase tracking-wider shadow active:translate-y-0.5 cursor-pointer"
+                                >
+                                  ❌ Kadrodan Çıkar
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

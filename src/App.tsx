@@ -488,6 +488,7 @@ export default function App() {
             translations={TRANSLATIONS}
             onNavigate={handleNavigate} 
             teamLogos={teamLogos} 
+            currentUser={userProfile}
           />
         )}
 
