@@ -23,6 +23,8 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
   const [team1Players, setTeam1Players] = useState<Player[]>([]);
   const [team2Players, setTeam2Players] = useState<Player[]>([]);
   const [logos, setLogos] = useState<Record<string, string>>({});
+  const [teamDocIdToNameMap, setTeamDocIdToNameMap] = useState<Record<string, string>>({});
+  const [teamNameToDocIdMap, setTeamNameToDocIdMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
   // Admin controls
@@ -179,59 +181,98 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
 
   // Load team logos & forms
   useEffect(() => {
-    // 1. Fetch logos
+    // 1. Fetch logos and map IDs/names
     getDocs(collection(db, "teams")).then((snap) => {
       const dict: Record<string, string> = {};
+      const docToName: Record<string, string> = {};
+      const nameToDoc: Record<string, string> = {};
+      
       snap.forEach((d) => {
-        dict[d.data().name] = d.data().logo || '';
+        const docId = d.id;
+        const name = d.data().name || '';
+        dict[name] = d.data().logo || '';
+        docToName[docId.toLowerCase().trim()] = name;
+        nameToDoc[name.toLowerCase().trim()] = docId;
       });
       setLogos(dict);
-    });
+      setTeamDocIdToNameMap(docToName);
+      setTeamNameToDocIdMap(nameToDoc);
 
-    // 2. Load formats
-    const findForm = (team: string, setter: React.Dispatch<React.SetStateAction<string[]>>) => {
-      getDocs(collection(db, "matches")).then((snap) => {
-        const hist: any[] = [];
-        snap.forEach((docSnap) => {
-          const m = docSnap.data() as Match;
-          if (m.played && (m.team1 === team || m.team2 === team)) {
-            hist.push(m);
-          }
+      const t1Lower = team1Name.toLowerCase().trim();
+      const t2Lower = team2Name.toLowerCase().trim();
+      
+      const t1DocId = nameToDoc[t1Lower] || t1Lower;
+      const t2DocId = nameToDoc[t2Lower] || t2Lower;
+      const t1DisplayName = docToName[t1Lower] || team1Name;
+      const t2DisplayName = docToName[t2Lower] || team2Name;
+
+      // 2. Load formats
+      const findForm = (team: string, resolvedDocId: string, resolvedName: string, setter: React.Dispatch<React.SetStateAction<string[]>>) => {
+        getDocs(collection(db, "matches")).then((mSnap) => {
+          const hist: any[] = [];
+          mSnap.forEach((docSnap) => {
+            const m = docSnap.data() as Match;
+            const mt1 = (m.team1 || '').toLowerCase().trim();
+            const mt2 = (m.team2 || '').toLowerCase().trim();
+            const isTeam = mt1 === team.toLowerCase().trim() || 
+                           mt1 === resolvedDocId.toLowerCase().trim() || 
+                           mt1 === resolvedName.toLowerCase().trim() ||
+                           mt2 === team.toLowerCase().trim() || 
+                           mt2 === resolvedDocId.toLowerCase().trim() || 
+                           mt2 === resolvedName.toLowerCase().trim();
+
+            if (m.played && isTeam) {
+              hist.push(m);
+            }
+          });
+          hist.sort((a, b) => b.datejav - a.datejav);
+          const last5 = hist.slice(0, 5).reverse();
+          const sqs: string[] = last5.map((match) => {
+            const mt1 = (match.team1 || '').toLowerCase().trim();
+            const isT1 = mt1 === team.toLowerCase().trim() || 
+                         mt1 === resolvedDocId.toLowerCase().trim() || 
+                         mt1 === resolvedName.toLowerCase().trim();
+            const own = Number(isT1 ? match.score1 : match.score2);
+            const opp = Number(isT1 ? match.score2 : match.score1);
+            if (own > opp) return 'W';
+            if (own < opp) return 'L';
+            return 'D';
+          });
+          // pad to 5 records minimum
+          while (sqs.length < 5) sqs.unshift('-');
+          setter(sqs);
         });
-        hist.sort((a, b) => b.datejav - a.datejav);
-        const last5 = hist.slice(0, 5).reverse();
-        const sqs: string[] = last5.map((match) => {
-          const isT1 = match.team1 === team;
-          const own = Number(isT1 ? match.score1 : match.score2);
-          const opp = Number(isT1 ? match.score2 : match.score1);
-          if (own > opp) return 'W';
-          if (own < opp) return 'L';
-          return 'D';
+      };
+
+      findForm(team1Name, t1DocId, t1DisplayName, setTeam1Form);
+      findForm(team2Name, t2DocId, t2DisplayName, setTeam2Form);
+
+      // 3. Load active players
+      getDocs(collection(db, "players")).then((pSnap) => {
+        const t1p: Player[] = [];
+        const t2p: Player[] = [];
+        pSnap.forEach((docSnap) => {
+          const p = docSnap.data() as Player;
+          const pTeamLower = (p.pteam || '').toLowerCase().trim();
+          
+          const isT1 = pTeamLower === t1Lower || 
+                       pTeamLower === t1DocId.toLowerCase() || 
+                       pTeamLower === t1DisplayName.toLowerCase().trim();
+                       
+          const isT2 = pTeamLower === t2Lower || 
+                       pTeamLower === t2DocId.toLowerCase() || 
+                       pTeamLower === t2DisplayName.toLowerCase().trim();
+
+          if (isT1) t1p.push(p);
+          else if (isT2) t2p.push(p);
         });
-        // pad to 5 records minimum
-        while (sqs.length < 5) sqs.unshift('-');
-        setter(sqs);
+        setTeam1Players(t1p.sort((a,b) => a.pname.localeCompare(b.pname)));
+        setTeam2Players(t2p.sort((a,b) => a.pname.localeCompare(b.pname)));
+
+        // Set defaults for selects
+        if (t1p.length > 0) setSelectedScorer(t1p[0].pname);
+        if (t1p.length > 0) setSelectedCardPlayer(t1p[0].pname);
       });
-    };
-
-    findForm(team1Name, setTeam1Form);
-    findForm(team2Name, setTeam2Form);
-
-    // 3. Load active players
-    getDocs(collection(db, "players")).then((pSnap) => {
-      const t1p: Player[] = [];
-      const t2p: Player[] = [];
-      pSnap.forEach((docSnap) => {
-        const p = docSnap.data() as Player;
-        if (p.pteam === team1Name) t1p.push(p);
-        if (p.pteam === team2Name) t2p.push(p);
-      });
-      setTeam1Players(t1p.sort((a,b) => a.pname.localeCompare(b.pname)));
-      setTeam2Players(t2p.sort((a,b) => a.pname.localeCompare(b.pname)));
-
-      // Set defaults for selects
-      if (t1p.length > 0) setSelectedScorer(t1p[0].pname);
-      if (t1p.length > 0) setSelectedCardPlayer(t1p[0].pname);
     });
   }, [team1Name, team2Name]);
 
@@ -333,7 +374,16 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
 
     const scoringTeamName = selectedGoalTeam === 'team1' ? team1Name : team2Name;
     const playerInDb = [...team1Players, ...team2Players].find(p => p.pname === selectedScorer);
-    const isKK = playerInDb ? playerInDb.pteam !== scoringTeamName : false;
+    let isKK = false;
+    if (playerInDb) {
+      const pTeamLower = (playerInDb.pteam || '').toLowerCase().trim();
+      const sTeamLower = scoringTeamName.toLowerCase().trim();
+      
+      const pDocId = teamNameToDocIdMap[pTeamLower] || pTeamLower;
+      const sDocId = teamNameToDocIdMap[sTeamLower] || sTeamLower;
+      
+      isKK = pDocId !== sDocId;
+    }
 
     const newEvt: MatchTimelineEvent = {
       id: 'evt_' + Date.now(),
@@ -406,7 +456,8 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
         datejav: javVal,
         category: matchCategory.trim()
       });
-      alert('Tarih güncellendi! Yeni URL atanıyor...');
+      await recalculateStandings();
+      alert('Tarih ve kategori güncellendi! Standings yeniden hesaplandı.');
       // Update screen representation
       onBack();
     } catch (e) {
@@ -422,7 +473,8 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
         rating: mvpRating.trim() || '0.0',
         played: true
       });
-      alert('MVP güncellendi!');
+      await recalculateStandings();
+      alert('MVP güncellendi ve puan durumları yeniden hesaplandı!');
     } catch (e) {
       console.error(e);
     }

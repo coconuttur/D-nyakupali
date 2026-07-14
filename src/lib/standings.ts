@@ -22,9 +22,20 @@ export async function recalculateStandings() {
       kgpuan: number;
     }> = {};
 
+    // Build mapping from lowercase display name or doc ID to the actual doc ID
+    const teamDocIdMap = new Map<string, string>();
     teamsSnap.forEach((tdoc) => {
-      const name = tdoc.id;
-      teamData[name] = {
+      const docId = tdoc.id;
+      const data = tdoc.data();
+      const nameField = (data.name || '').trim();
+      
+      if (nameField) {
+        teamDocIdMap.set(nameField.toLowerCase(), docId);
+      }
+      teamDocIdMap.set(docId.toLowerCase(), docId);
+
+      // Initialize teamData using real doc IDs
+      teamData[docId] = {
         played: 0,
         wins: 0,
         draws: 0,
@@ -47,8 +58,12 @@ export async function recalculateStandings() {
 
       const score1 = Number(m.score1) || 0;
       const score2 = Number(m.score2) || 0;
-      const t1 = m.team1;
-      const t2 = m.team2;
+      const t1Display = (m.team1 || '').trim();
+      const t2Display = (m.team2 || '').trim();
+
+      // Resolve display name to exact document ID in teams collection
+      const t1 = teamDocIdMap.get(t1Display.toLowerCase()) || t1Display;
+      const t2 = teamDocIdMap.get(t2Display.toLowerCase()) || t2Display;
 
       // Ensure team data exists in our dictionary
       if (!teamData[t1]) {
@@ -62,8 +77,18 @@ export async function recalculateStandings() {
       // m.category options: "LİG MAÇI", "TURNUVA", "UCL", "UEL", "UECL" etc.
       // If category is "TURNUVA", it is World Peace Cup (WPC).
       // Otherwise, if ligm is true, or category is "LİG MAÇI", or if there is no category, it counts as league match.
-      const isLeague = m.category === "LİG MAÇI" || m.ligm === true || (!m.category && m.ligm !== false);
-      const isWpc = m.category === "TURNUVA" || m.ligm === false;
+      const cat = (m.category || '').trim().toUpperCase();
+      const cleanCat = cat
+        .replace(/İ/g, 'I')
+        .replace(/ı/g, 'i')
+        .replace(/Ğ/g, 'G')
+        .replace(/Ş/g, 'S')
+        .replace(/Ü/g, 'U')
+        .replace(/Ö/g, 'O')
+        .replace(/Ç/g, 'C');
+
+      const isWpc = cleanCat === 'TURNUVA';
+      const isLeague = !isWpc && cleanCat !== 'UCL' && cleanCat !== 'UEL' && cleanCat !== 'UECL';
 
       if (isLeague) {
         teamData[t1].played += 1;
@@ -110,8 +135,17 @@ export async function recalculateStandings() {
       }
     });
 
+    const existingTeams = new Set<string>();
+    teamsSnap.forEach((tdoc) => {
+      existingTeams.add(tdoc.id);
+    });
+
     const batch = writeBatch(db);
     Object.keys(teamData).forEach((teamName) => {
+      if (!existingTeams.has(teamName)) {
+        console.warn(`Team "${teamName}" does not exist in teams collection. Skipping standing update to prevent Firestore crash.`);
+        return;
+      }
       const ref = doc(db, 'teams', teamName);
       const stats = teamData[teamName];
       batch.update(ref, {

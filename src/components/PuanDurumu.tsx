@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Team } from '../types';
+import { recalculateStandings } from '../lib/standings';
 
 interface PuanDurumuProps {
   currentLang: 'tr' | 'en' | 'pt';
@@ -12,6 +13,11 @@ interface PuanDurumuProps {
 export default function PuanDurumu({ currentLang, translations, onNavigate }: PuanDurumuProps) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Automatically trigger recalculation of standings to ensure Firestore has correct values
+    recalculateStandings().catch(console.error);
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'teams'), (snap) => {

@@ -31,85 +31,114 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
   const [loadingVoters, setLoadingVoters] = useState(false);
 
   useEffect(() => {
-    // 1. Fetch team metadata in real time
-    const q = query(collection(db, "teams"), where("name", "==", teamName));
-    const unsubscribe = onSnapshot(q, (snap) => {
-      if (!snap.empty) {
-        const dObj = snap.docs[0];
-        setDocId(dObj.id);
-        const data = dObj.data() as Team;
-        setTeam(data);
+    let unsubSquad: (() => void) | null = null;
+    let unsubMatches: (() => void) | null = null;
+
+    // 1. Fetch team metadata in real time by subscribing to ALL teams
+    const unsubscribe = onSnapshot(collection(db, "teams"), (snap) => {
+      const foundDoc = snap.docs.find(d => {
+        const dId = d.id.toLowerCase().trim();
+        const dName = (d.data().name || '').toLowerCase().trim();
+        const tName = teamName.toLowerCase().trim();
+        return dId === tName || dName === tName;
+      });
+
+      if (foundDoc) {
+        const resolvedDocId = foundDoc.id;
+        const resolvedTeam = foundDoc.data() as Team;
+        
+        setDocId(resolvedDocId);
+        setTeam(resolvedTeam);
 
         // Fetch country flag
-        if (data.ülke) {
-          const qC = query(collection(db, "ülkeler"), where("ülkead", "==", data.ülke));
+        if (resolvedTeam.ülke) {
+          const qC = query(collection(db, "ülkeler"), where("ülkead", "==", resolvedTeam.ülke));
           getDocs(qC).then(uSnap => {
             if (!uSnap.empty) setCountryFlag(uSnap.docs[0].data().ülkefoto || '');
           });
         }
 
         // Fetch mascot photo
-        if (data.hayvan) {
-          const qH = query(collection(db, "hayvanlar"), where("hayvanad", "==", data.hayvan));
+        if (resolvedTeam.hayvan) {
+          const qH = query(collection(db, "hayvanlar"), where("hayvanad", "==", resolvedTeam.hayvan));
           getDocs(qH).then(hSnap => {
             if (!hSnap.empty) setMascotPhoto(hSnap.docs[0].data().hayvanfoto || '');
+          });
+        }
+
+        // 2. Fetch Squad in real time using the resolved team identifiers
+        if (!unsubSquad) {
+          unsubSquad = onSnapshot(collection(db, "players"), (pSnap) => {
+            const list: Player[] = [];
+            pSnap.forEach((d) => {
+              const p = d.data() as Player;
+              const pTeamLower = (p.pteam || '').toLowerCase().trim();
+              
+              // Match player if their team field matches either the resolved name or doc ID
+              const isMatch = pTeamLower === resolvedDocId.toLowerCase().trim() || 
+                              pTeamLower === (resolvedTeam.name || '').toLowerCase().trim();
+              
+              if (isMatch) {
+                list.push(p);
+              }
+            });
+            list.sort((a,b) => b.goals - a.goals);
+            setSquad(list);
+          });
+        }
+
+        // 3. Fetch Matches in real time using the resolved team identifiers
+        if (!unsubMatches) {
+          unsubMatches = onSnapshot(collection(db, "matches"), (mSnap) => {
+            const played: Match[] = [];
+            const upcoming: Match[] = [];
+
+            mSnap.forEach((d) => {
+              const m = d.data() as Match;
+              const mt1 = (m.team1 || '').toLowerCase().trim();
+              const mt2 = (m.team2 || '').toLowerCase().trim();
+              
+              const isT1 = mt1 === resolvedDocId.toLowerCase().trim() || mt1 === (resolvedTeam.name || '').toLowerCase().trim();
+              const isT2 = mt2 === resolvedDocId.toLowerCase().trim() || mt2 === (resolvedTeam.name || '').toLowerCase().trim();
+
+              if (isT1 || isT2) {
+                if (m.played) played.push(m);
+                else upcoming.push(m);
+              }
+            });
+
+            // Sort lists
+            played.sort((a,b) => b.datejav - a.datejav); // last played first
+            upcoming.sort((a,b) => a.datejav - b.datejav); // soonest play first
+
+            setPlayedMatches(played);
+            setUpcomingMatches(upcoming);
+
+            // Compute last 5 form indicators using resolved name
+            const last5 = played.slice(0, 5);
+            const reversed = [...last5].reverse();
+            const sqs: string[] = reversed.map((match) => {
+              const mt1 = (match.team1 || '').toLowerCase().trim();
+              const isT1 = mt1 === resolvedDocId.toLowerCase().trim() || mt1 === (resolvedTeam.name || '').toLowerCase().trim();
+              const own = Number(isT1 ? match.score1 : match.score2);
+              const opp = Number(isT1 ? match.score2 : match.score1);
+              if (own > opp) return 'W';
+              if (own < opp) return 'L';
+              return 'D';
+            });
+
+            while (sqs.length < 5) sqs.unshift('-');
+            setTeamForm(sqs);
+            setLoading(false);
           });
         }
       }
     });
 
-    // 2. Fetch Squad
-    const qS = query(collection(db, "players"), where("pteam", "==", teamName));
-    const unsubSquad = onSnapshot(qS, (snap) => {
-      const list: Player[] = [];
-      snap.forEach((d) => {
-        list.push(d.data() as Player);
-      });
-      list.sort((a,b) => b.goals - a.goals);
-      setSquad(list);
-    });
-
-    // 3. Fetch Matches
-    const unsubMatches = onSnapshot(collection(db, "matches"), (snap) => {
-      const played: Match[] = [];
-      const upcoming: Match[] = [];
-
-      snap.forEach((d) => {
-        const m = d.data() as Match;
-        if (m.team1 === teamName || m.team2 === teamName) {
-          if (m.played) played.push(m);
-          else upcoming.push(m);
-        }
-      });
-
-      // Sort lists
-      played.sort((a,b) => b.datejav - a.datejav); // last played first
-      upcoming.sort((a,b) => a.datejav - b.datejav); // soonest play first
-
-      setPlayedMatches(played);
-      setUpcomingMatches(upcoming);
-
-      // Compute last 5 form indicators
-      const last5 = played.slice(0, 5);
-      const reversed = [...last5].reverse();
-      const sqs: string[] = reversed.map((match) => {
-        const isT1 = match.team1 === teamName;
-        const own = Number(isT1 ? match.score1 : match.score2);
-        const opp = Number(isT1 ? match.score2 : match.score1);
-        if (own > opp) return 'W';
-        if (own < opp) return 'L';
-        return 'D';
-      });
-
-      while (sqs.length < 5) sqs.unshift('-');
-      setTeamForm(sqs);
-      setLoading(false);
-    });
-
     return () => {
       unsubscribe();
-      unsubSquad();
-      unsubMatches();
+      if (unsubSquad) unsubSquad();
+      if (unsubMatches) unsubMatches();
     };
   }, [teamName]);
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Match, UserProfile, Team } from '../types';
+import { recalculateStandings } from '../lib/standings';
 
 interface HaftalarProps {
   currentLang: 'tr' | 'en' | 'pt';
@@ -236,7 +237,7 @@ export default function Haftalar({ currentLang, translations, onNavigate, teamLo
                     className="relative cursor-pointer transition-transform hover:scale-[1.01] animate-fade-in select-text pb-2"
                   >
                     <div className="absolute -top-3.5 left-4 bg-brand-gold text-brand-dark px-3 py-1 rounded-full text-[9px] font-black uppercase border border-brand-dark z-20 shadow-sm">
-                      {(m as any).category || (m.ligm ? t.ligm : t.cupm)}
+                      {(m as any).category || t.ligm}
                     </div>
 
                     <div className="bg-white rounded-3xl border-b-6 border-brand-maroon shadow-md relative overflow-hidden z-10 flex flex-col">
@@ -328,7 +329,7 @@ export default function Haftalar({ currentLang, translations, onNavigate, teamLo
                 hafta: String(weekNum),
                 date: formattedDate,
                 datejav: datejavVal,
-                ligm: matchCategory === 'LİG MAÇI',
+                ligm: matchCategory === 'LİG MAÇI' || !matchCategory || matchCategory === '',
                 timeline: []
               };
               if (matchCategory) {
@@ -339,6 +340,7 @@ export default function Haftalar({ currentLang, translations, onNavigate, teamLo
               
               try {
                 await setDoc(doc(db, 'matches', docId), newMatch);
+                await recalculateStandings().catch(console.error);
                 alert('Yeni maç başarıyla eklendi!');
                 setSelectedWeek(weekNum);
                 setAddModalOpen(false);
