@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, where, doc, getDoc, getDocs, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Team, Player, Match, UserProfile } from '../types';
+import { TrophiesShowcase, TrophyAdminModal } from './TrophiesShowcase';
 
 interface TeamDetailProps {
   teamName: string;
@@ -23,6 +24,7 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
   const [playedMatches, setPlayedMatches] = useState<Match[]>([]);
   const [upcomingMatches, setUpcomingMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
+  const [trophyModalOpen, setTrophyModalOpen] = useState(false);
 
   // Voting states
   const [votersModalOpen, setVotersModalOpen] = useState(false);
@@ -237,7 +239,7 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
             <div>
               <img src={teamLogos[teamName]} className="w-28 h-28 rounded-full border-4 border-brand-dark object-cover mx-auto bg-white mb-4 shadow" alt="team" />
               <h1 className="text-3xl font-black text-brand-dark tracking-wider uppercase leading-none">{teamName}</h1>
-              
+
               {/* T-GEN & T-GOL Badges */}
               <div className="flex gap-2 justify-center md:justify-start mt-3 flex-wrap">
                 <span className="bg-brand-dark text-brand-gold text-[11px] font-black px-3 py-1 rounded-full border border-brand-gold shadow-sm">
@@ -278,6 +280,14 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
               </div>
             </div>
           </div>
+
+          {/* Large Trophies Showcase between Profile/Header and Season/Popularity */}
+          <TrophiesShowcase 
+            kupalar={team?.kupalar} 
+            isAdmin={!!currentUser?.admin} 
+            onManageClick={() => setTrophyModalOpen(true)} 
+            size="large"
+          />
 
           {/* Social Popularity Voting Widget */}
           <div className="bg-white p-6 rounded-3xl flex justify-between items-center max-w-md mx-auto shadow-sm">
@@ -486,6 +496,17 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
           </div>
         </div>
       )}
+      {/* TROPHY ADMIN MODAL */}
+      <TrophyAdminModal
+        isOpen={trophyModalOpen}
+        onClose={() => setTrophyModalOpen(false)}
+        kupalar={team?.kupalar}
+        targetName={teamName}
+        onSave={async (updated) => {
+          if (!docId) return;
+          await updateDoc(doc(db, 'teams', docId), { kupalar: updated });
+        }}
+      />
     </div>
   );
 }

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, where, doc, getDoc, getDocs, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Player, UserProfile } from '../types';
+import { TrophiesShowcase, TrophyAdminModal } from './TrophiesShowcase';
 
 interface PlayerProfileProps {
   playerName: string;
@@ -18,6 +19,7 @@ export default function PlayerProfile({ playerName, currentUser, currentLang, tr
   const [teamLogo, setTeamLogo] = useState<string>('');
   const [countryLogo, setCountryLogo] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [trophyModalOpen, setTrophyModalOpen] = useState(false);
 
   // Voting states
   const [votersModalOpen, setVotersModalOpen] = useState(false);
@@ -194,6 +196,14 @@ export default function PlayerProfile({ playerName, currentUser, currentLang, tr
             </div>
           </div>
 
+          {/* Large Trophies Showcase between Profile and Süperlig Sezon */}
+          <TrophiesShowcase 
+            kupalar={player.kupalar} 
+            isAdmin={!!currentUser?.admin} 
+            onManageClick={() => setTrophyModalOpen(true)} 
+            size="large"
+          />
+
           <div className="text-center my-6">
             <span className="bg-brand-maroon text-white py-1.5 px-6 rounded-full font-black text-xs uppercase tracking-widest">{t.season}</span>
           </div>
@@ -304,6 +314,17 @@ export default function PlayerProfile({ playerName, currentUser, currentLang, tr
           </div>
         </div>
       )}
+      {/* TROPHY ADMIN MODAL */}
+      <TrophyAdminModal
+        isOpen={trophyModalOpen}
+        onClose={() => setTrophyModalOpen(false)}
+        kupalar={player?.kupalar}
+        targetName={player?.pname || ''}
+        onSave={async (updated) => {
+          if (!docId) return;
+          await updateDoc(doc(db, 'players', docId), { kupalar: updated });
+        }}
+      />
     </div>
   );
 }

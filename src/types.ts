@@ -27,6 +27,7 @@ export interface Team {
   insta?: string;
   likes?: string[];
   dislikes?: string[];
+  kupalar?: Record<string, number>;
 }
 
 export interface Player {
@@ -44,6 +45,7 @@ export interface Player {
   baskan?: boolean;
   likes?: string[];
   dislikes?: string[];
+  kupalar?: Record<string, number>;
 }
 
 export interface MatchTimelineEvent {
