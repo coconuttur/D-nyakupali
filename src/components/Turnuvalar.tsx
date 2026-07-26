@@ -1,18 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Team } from '../types';
+import { Team, UserProfile } from '../types';
+import WorldCup from './WorldCup';
 
 interface TurnuvalarProps {
   currentLang: 'tr' | 'en' | 'pt';
   translations: any;
   onNavigate: (view: any) => void;
   teamLogos: Record<string, string>;
+  currentUser?: UserProfile | null;
 }
 
-type CupType = 'wpc' | 'bcl' | 'bel' | 'becl';
+type CupType = 'wpc' | 'bcl' | 'bel' | 'becl' | 'wc';
 
-export default function Turnuvalar({ currentLang, translations, onNavigate, teamLogos }: TurnuvalarProps) {
+export default function Turnuvalar({ currentLang, translations, onNavigate, teamLogos, currentUser }: TurnuvalarProps) {
   const [activeCup, setActiveCup] = useState<CupType>('wpc');
   const [bclSeason, setBclSeason] = useState<4 | 5>(5);
   const [belSeason, setBelSeason] = useState<4 | 5>(5);
@@ -202,7 +204,7 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
     <div className="space-y-6">
       {/* Tab Selectors */}
       <div className="flex justify-center gap-2 flex-wrap">
-        {(['wpc', 'bcl', 'bel', 'becl'] as CupType[]).map((cup) => (
+        {(['wpc', 'bcl', 'bel', 'becl', 'wc'] as CupType[]).map((cup) => (
           <button
             key={cup}
             onClick={() => setActiveCup(cup)}
@@ -212,7 +214,7 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
                 : 'bg-brand-card border-brand-maroon text-brand-maroon/70'
             }`}
           >
-            {cup === 'wpc' ? 'WORLD PEACE CUP' : cup.toUpperCase()}
+            {cup === 'wpc' ? 'WORLD PEACE CUP' : cup === 'wc' ? '🌟 DÜNYA KUPASI 2026' : cup.toUpperCase()}
           </button>
         ))}
       </div>
@@ -221,6 +223,16 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
         <h3 className="text-center text-gray-500 font-bold">{t.loading}</h3>
       ) : (
         <div className="animate-fade-in">
+          {activeCup === 'wc' && (
+            <div className="mt-2">
+              <WorldCup 
+                currentUser={currentUser || null}
+                onNavigate={onNavigate}
+                teamLogos={teamLogos}
+              />
+            </div>
+          )}
+
           {activeCup === 'wpc' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-4">
               {renderWpcGroup('A')}

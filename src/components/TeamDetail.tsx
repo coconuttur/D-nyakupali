@@ -214,6 +214,11 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
   const dislikePct = totalVotes > 0 ? 100 - likePct : 0;
   const chartGradient = totalVotes === 0 ? 'conic-gradient(#ccc 100%, #ccc 0)' : `conic-gradient(#2ecc71 ${likePct}%, #e74c3c 0)`;
 
+  const squadCount = squad.length;
+  const squadTotalGen = squad.reduce((sum, p) => sum + (Number(p.gen) || 0), 0);
+  const squadAvgGen = squadCount > 0 ? (squadTotalGen / squadCount).toFixed(2) : '0';
+  const squadTotalGoals = squad.reduce((sum, p) => sum + (Number(p.goals) || 0), 0);
+
   return (
     <div className="space-y-8">
       {/* Dynamic Sub nav bar */}
@@ -233,6 +238,16 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
               <img src={teamLogos[teamName]} className="w-28 h-28 rounded-full border-4 border-brand-dark object-cover mx-auto bg-white mb-4 shadow" alt="team" />
               <h1 className="text-3xl font-black text-brand-dark tracking-wider uppercase leading-none">{teamName}</h1>
               
+              {/* T-GEN & T-GOL Badges */}
+              <div className="flex gap-2 justify-center md:justify-start mt-3 flex-wrap">
+                <span className="bg-brand-dark text-brand-gold text-[11px] font-black px-3 py-1 rounded-full border border-brand-gold shadow-sm">
+                  ⚡ T-GEN Ort.: {squadAvgGen}
+                </span>
+                <span className="bg-brand-maroon text-white text-[11px] font-black px-3 py-1 rounded-full border border-brand-dark shadow-sm">
+                  ⚽ T-GOL Toplam: {squadTotalGoals}
+                </span>
+              </div>
+
               {/* Form squares indicators */}
               <div className="flex gap-1.5 justify-center md:justify-start mt-4">
                 {teamForm.map((result, idx) => {
@@ -319,13 +334,15 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
               <span className="w-6 h-1 bg-brand-maroon rounded-full shrink-0" />
               {t.stats}
             </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 md:gap-4 select-text">
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3 md:gap-4 select-text">
               {[
                 { val: team?.wins || 0, desc: t.w, cls: '' },
                 { val: team?.draws || 0, desc: t.d, cls: '' },
                 { val: team?.losses || 0, desc: t.l, cls: '' },
                 { val: team?.['atilan gol'] || 0, desc: t.gf, cls: 'border-b-6 border-green-500' },
-                { val: team?.['yenilen gol'] || 0, desc: t.ga, cls: 'border-b-6 border-red-500' }
+                { val: team?.['yenilen gol'] || 0, desc: t.ga, cls: 'border-b-6 border-red-500' },
+                { val: squadAvgGen, desc: 'T-GEN ORT.', cls: 'border-b-6 border-brand-gold bg-brand-dark/5' },
+                { val: squadTotalGoals, desc: 'T-GOL TOPLAM', cls: 'border-b-6 border-brand-maroon bg-brand-maroon/5' }
               ].map((perf, idx) => (
                 <div key={idx} className={`bg-brand-card rounded-2xl p-4 text-center hover:bg-white transition-colors shadow-sm select-text ${perf.cls}`}>
                   <span className="text-xl md:text-2xl font-black text-brand-maroon block leading-none">{perf.val}</span>

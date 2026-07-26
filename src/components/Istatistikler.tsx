@@ -10,7 +10,7 @@ interface IstatistiklerProps {
   teamLogos: Record<string, string>;
 }
 
-type StatType = 'goals' | 'asistsay' | 'gol_mac' | 'gen' | 'ratingoy';
+type StatType = 'goals' | 'asistsay' | 'gol_mac' | 'gen' | 'ratingoy' | 't_gen' | 't_gol';
 
 export default function Istatistikler({ currentLang, translations, onNavigate, teamLogos }: IstatistiklerProps) {
   const [activeStat, setActiveStat] = useState<StatType>('goals');
@@ -48,12 +48,14 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
 
   const t = translations[currentLang];
 
-  const labels = {
+  const labels: Record<string, string> = {
     goals: t.gol,
     asistsay: t.asist,
     gol_mac: t.gomac,
     gen: t.gen,
     ratingoy: t.rat,
+    t_gen: 'Takım GEN Ort.',
+    t_gol: 'Takım Toplam Gol',
   };
 
   const getSortedPlayers = () => {
@@ -72,19 +74,53 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
         };
       })
       .sort((a, b) => {
-        const valA = a[activeStat] || 0;
-        const valB = b[activeStat] || 0;
+        const valA = (a as any)[activeStat] || 0;
+        const valB = (b as any)[activeStat] || 0;
         return valB - valA;
       });
   };
 
-  const sortedList = getSortedPlayers();
+  const getTeamStats = () => {
+    const teamsMap: Record<string, { totalGen: number; totalGoals: number; count: number }> = {};
+    
+    players.forEach((p) => {
+      const teamName = (p.pteam || '').trim();
+      if (!teamName) return;
+      if (!teamsMap[teamName]) {
+        teamsMap[teamName] = { totalGen: 0, totalGoals: 0, count: 0 };
+      }
+      teamsMap[teamName].totalGen += Number(p.gen) || 0;
+      teamsMap[teamName].totalGoals += Number(p.goals) || 0;
+      teamsMap[teamName].count += 1;
+    });
+
+    const teamList = Object.keys(teamsMap).map((teamName) => {
+      const data = teamsMap[teamName];
+      const avgGen = data.count > 0 ? Number((data.totalGen / data.count).toFixed(2)) : 0;
+      return {
+        teamName,
+        avgGen,
+        totalGoals: data.totalGoals,
+        playerCount: data.count,
+        logo: teamLogos[teamName] || 'https://via.placeholder.com/32?text=?'
+      };
+    });
+
+    if (activeStat === 't_gen') {
+      return teamList.sort((a, b) => b.avgGen - a.avgGen || b.playerCount - a.playerCount);
+    } else {
+      return teamList.sort((a, b) => b.totalGoals - a.totalGoals || b.avgGen - a.avgGen);
+    }
+  };
+
+  const sortedList = (activeStat === 't_gen' || activeStat === 't_gol') ? [] : getSortedPlayers();
+  const teamList = (activeStat === 't_gen' || activeStat === 't_gol') ? getTeamStats() : [];
 
   return (
     <div className="space-y-6">
       {/* Sub tabs list */}
       <div className="flex gap-2 justify-center flex-wrap">
-        {(['goals', 'asistsay', 'gol_mac', 'gen', 'ratingoy'] as StatType[]).map((tab) => (
+        {(['goals', 'asistsay', 'gol_mac', 'gen', 'ratingoy', 't_gen', 't_gol'] as StatType[]).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveStat(tab)}
@@ -99,18 +135,65 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
             {tab === 'gol_mac' && t.gomac + " " + t.kral}
             {tab === 'gen' && t.gen + " " + t.lider}
             {tab === 'ratingoy' && t.rat + " " + t.lider}
+            {tab === 't_gen' && '⚡ T-GEN'}
+            {tab === 't_gol' && '⚽ T-GOL'}
           </button>
         ))}
       </div>
 
       {loading ? (
         <h3 className="text-center text-gray-500 font-bold">{t.loading}</h3>
+      ) : (activeStat === 't_gen' || activeStat === 't_gol') ? (
+        teamList.length === 0 ? (
+          <h3 className="text-center text-gray-500 font-bold">Takım verisi bulunamadı.</h3>
+        ) : (
+          <div className="max-w-2xl mx-auto space-y-4 animate-fade-in select-text">
+            {teamList.map((tItem, idx) => (
+              <div 
+                key={tItem.teamName}
+                onClick={() => onNavigate({ type: 'team-detail', teamName: tItem.teamName })}
+                className="bg-brand-card p-4 rounded-2xl flex items-center border-l-12 border-brand-maroon hover:border-l-16 hover:translate-x-1.5 transition-all shadow-sm cursor-pointer"
+              >
+                <div className="w-12 text-center text-xl font-black text-brand-maroon shrink-0">
+                  {idx + 1}.
+                </div>
+
+                <img 
+                  src={tItem.logo} 
+                  className="w-10 h-10 rounded-full border-2 border-brand-maroon bg-white object-cover shrink-0 cursor-pointer mr-3 shadow-inner" 
+                  alt="team" 
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = 'https://via.placeholder.com/32?text=?';
+                  }}
+                />
+
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-extrabold text-sm md:text-base text-brand-dark uppercase truncate">{tItem.teamName}</h4>
+                  <span className="text-[10px] md:text-xs font-bold text-gray-500 truncate block uppercase">
+                    👥 {tItem.playerCount} Oyuncu
+                  </span>
+                </div>
+
+                <div className="text-right">
+                  <div className="flex items-center justify-end gap-1.5">
+                    <span className="font-black text-2xl md:text-3xl text-brand-maroon leading-none">
+                      {activeStat === 't_gen' ? tItem.avgGen : tItem.totalGoals}
+                    </span>
+                  </div>
+                  <span className="text-[9px] md:text-[10px] font-black uppercase text-gray-400 tracking-wider block">
+                    {labels[activeStat]}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
       ) : sortedList.length === 0 ? (
         <h3 className="text-center text-gray-500 font-bold">Yüklenecek istatistik bulunamadı.</h3>
       ) : (
         <div className="max-w-2xl mx-auto space-y-4 animate-fade-in select-text">
           {sortedList.slice(0, 50).map((p, idx) => {
-            const rawVal = p[activeStat];
+            const rawVal = (p as any)[activeStat];
             const displayVal = activeStat === 'ratingoy' ? Number(rawVal).toFixed(2) : rawVal;
             const logo = teamLogos[p.pteam] || 'https://via.placeholder.com/32?text=?';
 

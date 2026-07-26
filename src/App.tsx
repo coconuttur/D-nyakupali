@@ -409,7 +409,7 @@ export default function App() {
             })}
           </div>
 
-          {/* Row 2: İDDAA, FORUM, 🌟 DÜNYA KUPASI 2026 */}
+          {/* Row 2: İDDAA, FORUM */}
           <div className="flex flex-wrap items-center justify-center gap-3">
             {[
               { id: 'iddia', label: currentLang === 'tr' ? 'İDDİA' : currentLang === 'en' ? 'BETTING' : 'APOSTA' },
@@ -430,25 +430,6 @@ export default function App() {
                 </button>
               );
             })}
-
-            {/* Special Gold/Orange World Cup Button */}
-            {(() => {
-              const item = { id: 'wc', label: currentLang === 'tr' ? '🌟 DÜNYA KUPASI 2026' : currentLang === 'en' ? '🌟 WORLD CUP 2026' : '🌟 COPA DO MUNDO 2026' };
-              const isActive = currentView.type === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => handleNavigate({ type: item.id as any })}
-                  className={`py-3 px-6 rounded-2xl font-black text-xs md:text-sm uppercase tracking-wider shrink-0 transition-all duration-150 cursor-pointer border-2 border-brand-maroon ${
-                    isActive
-                      ? 'bg-amber-500 text-brand-maroon border-[#5c0101] shadow-[0_4px_0_0_#5c0101] translate-y-0.5'
-                      : 'bg-[#ffab00] hover:bg-[#e69a00] text-brand-maroon shadow-[0_4px_0_0_#800000] active:translate-y-0.5'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              );
-            })()}
           </div>
 
         </div>
@@ -467,10 +448,12 @@ export default function App() {
         )}
 
         {currentView.type === 'wc' && (
-          <WorldCup 
-            currentUser={userProfile} 
+          <Turnuvalar 
+            currentLang={currentLang} 
+            translations={TRANSLATIONS}
             onNavigate={handleNavigate} 
             teamLogos={teamLogos} 
+            currentUser={userProfile}
           />
         )}
 
@@ -498,6 +481,7 @@ export default function App() {
             translations={TRANSLATIONS}
             onNavigate={handleNavigate} 
             teamLogos={teamLogos} 
+            currentUser={userProfile}
           />
         )}
 
