@@ -188,6 +188,18 @@ export default function PlayerProfile({ playerName, currentUser, currentLang, tr
                   <span className="text-xs font-black text-brand-dark uppercase tracking-wider">{player.pteam}</span>
                 </div>
 
+                {(player.kiralik || player.kiralikTakim) && (
+                  <div 
+                    onClick={() => player.kiralikTakim && onNavigate({ type: 'team-detail', teamName: player.kiralikTakim })}
+                    className="flex items-center gap-2 bg-amber-100 py-1.5 px-4 rounded-full border border-amber-300 shadow-sm shrink-0 cursor-pointer hover:scale-103 transition-transform"
+                  >
+                    <span className="text-xs">🔄</span>
+                    <span className="text-xs font-black text-amber-900 uppercase tracking-wider">
+                      Kiralık: {player.kiralikTakim || player.pteam}
+                    </span>
+                  </div>
+                )}
+
                 <div className="flex items-center gap-3 bg-white py-1.5 px-4 rounded-full border border-gray-150 shadow-sm shrink-0">
                   {countryLogo && <img src={countryLogo} className="w-8 h-5 object-cover rounded border" alt="flag" />}
                   <span className="text-xs font-black text-brand-dark uppercase tracking-wider">{player.pülke || '-'}</span>

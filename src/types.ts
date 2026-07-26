@@ -46,6 +46,8 @@ export interface Player {
   likes?: string[];
   dislikes?: string[];
   kupalar?: Record<string, number>;
+  kiralik?: boolean;
+  kiralikTakim?: string;
 }
 
 export interface MatchTimelineEvent {

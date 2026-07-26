@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, query, where, doc, getDoc, getDocs, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, doc, getDoc, getDocs, updateDoc, setDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Team, Player, Match, UserProfile } from '../types';
 import { TrophiesShowcase, TrophyAdminModal } from './TrophiesShowcase';
@@ -25,6 +25,12 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
   const [upcomingMatches, setUpcomingMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [trophyModalOpen, setTrophyModalOpen] = useState(false);
+
+  // Loan management modal states
+  const [loanModalOpen, setLoanModalOpen] = useState(false);
+  const [allPlayersList, setAllPlayersList] = useState<{ id: string; player: Player }[]>([]);
+  const [selectedLoanPlayerId, setSelectedLoanPlayerId] = useState<string>('');
+  const [customLoanPlayerName, setCustomLoanPlayerName] = useState<string>('');
 
   // Voting states
   const [votersModalOpen, setVotersModalOpen] = useState(false);
@@ -75,10 +81,12 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
             pSnap.forEach((d) => {
               const p = d.data() as Player;
               const pTeamLower = (p.pteam || '').toLowerCase().trim();
+              const pKiralikLower = (p.kiralikTakim || '').toLowerCase().trim();
               
-              // Match player if their team field matches either the resolved name or doc ID
+              // Match player if their team or kiralikTakim matches resolved name or doc ID
               const isMatch = pTeamLower === resolvedDocId.toLowerCase().trim() || 
-                              pTeamLower === (resolvedTeam.name || '').toLowerCase().trim();
+                              pTeamLower === (resolvedTeam.name || '').toLowerCase().trim() ||
+                              (p.kiralik && (pKiralikLower === resolvedDocId.toLowerCase().trim() || pKiralikLower === (resolvedTeam.name || '').toLowerCase().trim()));
               
               if (isMatch) {
                 list.push(p);
@@ -308,13 +316,35 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
 
           {/* Team Squad cards */}
           <div>
-            <h2 className="text-lg font-black text-brand-dark mb-4 uppercase tracking-wider relative flex items-center gap-2">
-              <span className="w-6 h-1 bg-brand-maroon rounded-full shrink-0" />
-              {t.squad}
-            </h2>
+            <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+              <h2 className="text-lg font-black text-brand-dark uppercase tracking-wider relative flex items-center gap-2">
+                <span className="w-6 h-1 bg-brand-maroon rounded-full shrink-0" />
+                {t.squad}
+              </h2>
+              {currentUser?.admin && (
+                <button
+                  onClick={() => {
+                    getDocs(collection(db, "players")).then(snap => {
+                      const arr: { id: string; player: Player }[] = [];
+                      snap.forEach(d => arr.push({ id: d.id, player: d.data() as Player }));
+                      arr.sort((a,b) => a.player.pname.localeCompare(b.player.pname));
+                      setAllPlayersList(arr);
+                      if (arr.length > 0) setSelectedLoanPlayerId(arr[0].id);
+                      setLoanModalOpen(true);
+                    });
+                  }}
+                  className="bg-brand-gold text-brand-dark hover:bg-amber-400 font-extrabold text-xs uppercase px-3 py-1.5 rounded-xl border border-brand-maroon shadow-sm flex items-center gap-1.5 cursor-pointer transition-transform hover:scale-105"
+                  title="Takıma kiralık oyuncu ekle veya yönet"
+                >
+                  <span>🔄</span>
+                  <span>Kiralık Oyuncu Ekle/Yönet</span>
+                </button>
+              )}
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {squad.map((player) => {
                 const isCaptain = player.baskan === true;
+                const isLoaned = player.kiralik || (player.kiralikTakim && player.kiralikTakim.toLowerCase().trim() === teamName.toLowerCase().trim());
                 return (
                   <div 
                     key={player.pname}
@@ -323,7 +353,14 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
                   >
                     <img src={player.foto} className="w-14 h-14 rounded-xl object-cover shrink-0 border-2 border-brand-maroon bg-white" alt="avatar" />
                     <div className="ml-4 flex-1">
-                      <b className="font-extrabold text-sm md:text-base text-brand-dark uppercase tracking-wide block">{player.pname}</b>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <b className="font-extrabold text-sm md:text-base text-brand-dark uppercase tracking-wide block">{player.pname}</b>
+                        {isLoaned && (
+                          <span className="bg-amber-100 text-amber-800 border border-amber-300 font-extrabold text-[9px] px-2 py-0.5 rounded-md flex items-center gap-0.5">
+                            🔄 KİRALIK
+                          </span>
+                        )}
+                      </div>
                       <span className="text-[10px] md:text-xs font-bold text-brand-maroon mt-1 block">
                         ⚽ {player.goals || 0} {t.goal}
                       </span>
@@ -507,6 +544,171 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
           await updateDoc(doc(db, 'teams', docId), { kupalar: updated });
         }}
       />
+
+      {/* KİRALIK OYUNCU YÖNETİM MODALI */}
+      {loanModalOpen && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 select-text">
+          <div className="bg-[#f2ede1] text-[#3d3d3d] w-full max-w-md rounded-2xl p-6 border-b-6 border-brand-maroon shadow-2xl relative select-text max-h-[90vh] overflow-y-auto">
+            <button 
+              onClick={() => setLoanModalOpen(false)} 
+              className="absolute top-4 right-4 text-xl font-bold text-brand-maroon hover:scale-110 transition-transform cursor-pointer"
+            >
+              ✕
+            </button>
+
+            <h3 className="text-center font-black text-base md:text-lg text-brand-maroon border-b border-gray-300 pb-2 mb-4 uppercase flex items-center justify-center gap-2">
+              <span>🔄</span>
+              <span>Kiralık Oyuncu Ekle/Yönet ({teamName})</span>
+            </h3>
+
+            {/* Existing Loaned Players list */}
+            <div className="mb-6 bg-white/70 p-3.5 rounded-xl border border-amber-300">
+              <h4 className="font-extrabold text-xs text-amber-900 uppercase mb-2 flex items-center gap-1">
+                <span>📋</span> Bu Takımda Kiralık Oynayanlar:
+              </h4>
+              <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
+                {squad.filter(p => p.kiralik || (p.kiralikTakim && p.kiralikTakim.toLowerCase().trim() === teamName.toLowerCase().trim())).length === 0 ? (
+                  <p className="text-xs text-gray-500 font-semibold italic text-center py-1">Şu anda kiralık oyuncu bulunmuyor.</p>
+                ) : (
+                  squad.filter(p => p.kiralik || (p.kiralikTakim && p.kiralikTakim.toLowerCase().trim() === teamName.toLowerCase().trim())).map(p => (
+                    <div key={p.pname} className="flex justify-between items-center bg-white p-2 rounded-lg border border-amber-200 text-xs font-bold shadow-sm">
+                      <div className="flex items-center gap-2">
+                        <img src={p.foto} className="w-7 h-7 rounded-md object-cover border border-amber-400" alt="foto" />
+                        <span>{p.pname} (Asıl: {p.pteam})</span>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const q = query(collection(db, "players"), where("pname", "==", p.pname));
+                            const pSnap = await getDocs(q);
+                            if (!pSnap.empty) {
+                              await updateDoc(doc(db, "players", pSnap.docs[0].id), {
+                                kiralik: false,
+                                kiralikTakim: ''
+                              });
+                              alert(`${p.pname} için kiralık durumu kaldırıldı.`);
+                              setLoanModalOpen(false);
+                            }
+                          } catch (e) {
+                            console.error(e);
+                            alert('Kiralık kaldırma işlemi sırasında hata oluştu.');
+                          }
+                        }}
+                        className="bg-red-600 hover:bg-red-700 text-white font-black text-[10px] uppercase px-2 py-1 rounded cursor-pointer"
+                      >
+                        Kaldır
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Add new Loan player selector */}
+            <div className="space-y-4 bg-white/90 p-4 rounded-xl border border-gray-200 shadow-sm">
+              <h4 className="font-extrabold text-xs text-brand-dark uppercase">➕ Yeni Kiralık Oyuncu Ekle</h4>
+              
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-gray-500 uppercase">Mevcut Oyunculardan Seç</label>
+                <select
+                  value={selectedLoanPlayerId}
+                  onChange={(e) => setSelectedLoanPlayerId(e.target.value)}
+                  className="w-full bg-white border border-gray-300 rounded-lg p-2 font-bold text-xs"
+                >
+                  <option value="">-- Listeden Seçin --</option>
+                  {allPlayersList.map(item => (
+                    <option key={item.id} value={item.id}>
+                      {item.player.pname} ({item.player.pteam || 'Takımsız'}) {item.player.kiralik ? '🔄 [Zaten Kiralık]' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-gray-500 uppercase">Veya Yeni Oyuncu Adı Girin</label>
+                <input
+                  type="text"
+                  placeholder="Örn: Kylian Mbappé"
+                  value={customLoanPlayerName}
+                  onChange={(e) => setCustomLoanPlayerName(e.target.value)}
+                  className="w-full bg-white border border-gray-300 rounded-lg p-2 font-bold text-xs"
+                />
+              </div>
+
+              <button
+                onClick={async () => {
+                  let targetPlayerName = '';
+
+                  if (customLoanPlayerName.trim()) {
+                    targetPlayerName = customLoanPlayerName.trim();
+                  } else if (selectedLoanPlayerId) {
+                    const found = allPlayersList.find(x => x.id === selectedLoanPlayerId);
+                    if (found) targetPlayerName = found.player.pname;
+                  }
+
+                  if (!targetPlayerName) {
+                    alert('Lütfen bir oyuncu seçin veya adını yazın!');
+                    return;
+                  }
+
+                  try {
+                    // Check if player exists by ID or name
+                    let targetDocId = selectedLoanPlayerId && !customLoanPlayerName.trim() ? selectedLoanPlayerId : '';
+
+                    if (!targetDocId) {
+                      const qP = query(collection(db, "players"), where("pname", "==", targetPlayerName));
+                      const pSnap = await getDocs(qP);
+                      if (!pSnap.empty) {
+                        targetDocId = pSnap.docs[0].id;
+                      }
+                    }
+
+                    if (targetDocId) {
+                      await updateDoc(doc(db, "players", targetDocId), {
+                        kiralik: true,
+                        kiralikTakim: teamName
+                      });
+                    } else {
+                      // Create new player doc
+                      const newRef = doc(collection(db, "players"));
+                      await setDoc(newRef, {
+                        pname: targetPlayerName,
+                        pteam: teamName,
+                        foto: 'https://via.placeholder.com/150?text=Kiral%C4%B1k',
+                        goals: 0,
+                        asistsay: 0,
+                        gen: 75,
+                        kiralik: true,
+                        kiralikTakim: teamName
+                      });
+                    }
+
+                    alert(`${targetPlayerName} oyuncusu ${teamName} takımına kiralık olarak eklendi!`);
+                    setCustomLoanPlayerName('');
+                    setSelectedLoanPlayerId('');
+                    setLoanModalOpen(false);
+                  } catch (e) {
+                    console.error(e);
+                    alert('Kiralık oyuncu eklenirken hata oluştu: ' + (e instanceof Error ? e.message : String(e)));
+                  }
+                }}
+                className="w-full py-2.5 bg-brand-maroon hover:bg-red-900 text-white font-black rounded-xl text-xs uppercase tracking-wider shadow-md cursor-pointer"
+              >
+                🔄 Kiralık Olarak Ekle
+              </button>
+            </div>
+
+            <div className="mt-4 text-right">
+              <button
+                onClick={() => setLoanModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 bg-gray-200 hover:bg-gray-300 cursor-pointer uppercase"
+              >
+                Kapat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

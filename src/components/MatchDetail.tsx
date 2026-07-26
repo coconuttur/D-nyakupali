@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, collection, onSnapshot, query, getDocs } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, setDoc, collection, onSnapshot, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Match, MatchTimelineEvent, Player, Team, UserProfile } from '../types';
 import { recalculateStandings, recalculatePlayerRatings } from '../lib/standings';
@@ -13,7 +13,7 @@ interface MatchDetailProps {
   onNavigate: (view: any) => void;
 }
 
-type TabType = 'goal' | 'period' | 'card' | 'date' | 'mvp' | 'quick';
+type TabType = 'goal' | 'period' | 'card' | 'date' | 'mvp' | 'quick' | 'loan';
 
 export default function MatchDetail({ matchId, currentUser, currentLang, translations, onBack, onNavigate }: MatchDetailProps) {
   const [match, setMatch] = useState<Match | null>(null);
@@ -22,6 +22,7 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
   const [team2Form, setTeam2Form] = useState<string[]>([]);
   const [team1Players, setTeam1Players] = useState<Player[]>([]);
   const [team2Players, setTeam2Players] = useState<Player[]>([]);
+  const [allGlobalPlayers, setAllGlobalPlayers] = useState<Player[]>([]);
   const [logos, setLogos] = useState<Record<string, string>>({});
   const [teamDocIdToNameMap, setTeamDocIdToNameMap] = useState<Record<string, string>>({});
   const [teamNameToDocIdMap, setTeamNameToDocIdMap] = useState<Record<string, string>>({});
@@ -31,6 +32,11 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminModalOpen, setAdminModalOpen] = useState(false);
   const [activeAdminTab, setActiveAdminTab] = useState<TabType>('goal');
+
+  // Kiralık Oyuncu Ekleme States
+  const [selectedLoanTeam, setSelectedLoanTeam] = useState<'team1' | 'team2'>('team1');
+  const [selectedLoanPlayerName, setSelectedLoanPlayerName] = useState<string>('');
+  const [customLoanName, setCustomLoanName] = useState<string>('');
 
   // Input states
   const [selectedGoalTeam, setSelectedGoalTeam] = useState<'team1' | 'team2'>('team1');
@@ -249,23 +255,29 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
 
       // 3. Load active players
       getDocs(collection(db, "players")).then((pSnap) => {
+        const allP: Player[] = [];
         const t1p: Player[] = [];
         const t2p: Player[] = [];
         pSnap.forEach((docSnap) => {
           const p = docSnap.data() as Player;
+          allP.push(p);
           const pTeamLower = (p.pteam || '').toLowerCase().trim();
+          const pKiralikLower = (p.kiralikTakim || '').toLowerCase().trim();
           
           const isT1 = pTeamLower === t1Lower || 
                        pTeamLower === t1DocId.toLowerCase() || 
-                       pTeamLower === t1DisplayName.toLowerCase().trim();
+                       pTeamLower === t1DisplayName.toLowerCase().trim() ||
+                       (p.kiralik && (pKiralikLower === t1Lower || pKiralikLower === t1DocId.toLowerCase() || pKiralikLower === t1DisplayName.toLowerCase().trim()));
                        
           const isT2 = pTeamLower === t2Lower || 
                        pTeamLower === t2DocId.toLowerCase() || 
-                       pTeamLower === t2DisplayName.toLowerCase().trim();
+                       pTeamLower === t2DisplayName.toLowerCase().trim() ||
+                       (p.kiralik && (pKiralikLower === t2Lower || pKiralikLower === t2DocId.toLowerCase() || pKiralikLower === t2DisplayName.toLowerCase().trim()));
 
           if (isT1) t1p.push(p);
-          else if (isT2) t2p.push(p);
+          if (isT2 && !isT1) t2p.push(p);
         });
+        setAllGlobalPlayers(allP.sort((a,b) => a.pname.localeCompare(b.pname)));
         setTeam1Players(t1p.sort((a,b) => a.pname.localeCompare(b.pname)));
         setTeam2Players(t2p.sort((a,b) => a.pname.localeCompare(b.pname)));
 
@@ -377,12 +389,18 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
     let isKK = false;
     if (playerInDb) {
       const pTeamLower = (playerInDb.pteam || '').toLowerCase().trim();
+      const pKiralikLower = (playerInDb.kiralikTakim || '').toLowerCase().trim();
       const sTeamLower = scoringTeamName.toLowerCase().trim();
       
       const pDocId = teamNameToDocIdMap[pTeamLower] || pTeamLower;
+      const pKiralikDocId = teamNameToDocIdMap[pKiralikLower] || pKiralikLower;
       const sDocId = teamNameToDocIdMap[sTeamLower] || sTeamLower;
       
-      isKK = pDocId !== sDocId;
+      if (playerInDb.kiralik && pKiralikLower) {
+        isKK = pKiralikDocId !== sDocId;
+      } else {
+        isKK = pDocId !== sDocId;
+      }
     }
 
     const newEvt: MatchTimelineEvent = {
@@ -1028,13 +1046,13 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
 
             {/* Admin sub-tabs */}
             <div className="flex gap-1 border-b border-gray-300 pb-2 mb-4 overflow-x-auto">
-              {(['goal', 'period', 'card', 'date', 'mvp'] as TabType[]).map((tab) => (
+              {(['goal', 'period', 'card', 'date', 'mvp', 'loan'] as TabType[]).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveAdminTab(tab)}
-                  className={`py-1.5 px-3 rounded text-[9px] font-black uppercase tracking-wider ${activeAdminTab === tab ? 'bg-brand-maroon text-brand-gold' : 'bg-white border border-gray-300 text-gray-500'}`}
+                  className={`py-1.5 px-3 rounded text-[9px] font-black uppercase tracking-wider shrink-0 ${activeAdminTab === tab ? 'bg-brand-maroon text-brand-gold' : 'bg-white border border-gray-300 text-gray-500'}`}
                 >
-                  {tab === 'goal' ? '⚽ Gol GİR' : tab === 'period' ? '⏱ Def/Tur' : tab === 'card' ? '🟨 Kart GİR' : tab === 'date' ? '📅 Tarih' : '🏆 MVP'}
+                  {tab === 'goal' ? '⚽ Gol GİR' : tab === 'period' ? '⏱ Def/Tur' : tab === 'card' ? '🟨 Kart GİR' : tab === 'date' ? '📅 Tarih' : tab === 'mvp' ? '🏆 MVP' : '🔄 Kiralık Ekle'}
                 </button>
               ))}
             </div>
@@ -1055,7 +1073,9 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                     className="w-full bg-white border border-gray-300 rounded p-2 font-bold text-xs"
                   >
                     {[...team1Players, ...team2Players].map((p, idx) => (
-                      <option key={idx} value={p.pname} data-team={p.pteam}>{p.pname} ({p.pteam === team1Name ? 'T1' : 'T2'})</option>
+                      <option key={idx} value={p.pname} data-team={p.pteam}>
+                        {p.pname} ({p.pteam === team1Name || p.kiralikTakim === team1Name ? 'T1' : 'T2'}{p.kiralik || p.kiralikTakim ? ' 🔄 Kiralık' : ''})
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -1069,7 +1089,9 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                   >
                     <option value="">Asist Yok (Şut)</option>
                     {[...team1Players, ...team2Players].map((p, idx) => (
-                      <option key={idx} value={p.pname}>{p.pname} ({p.pteam === team1Name ? 'T1' : 'T2'})</option>
+                      <option key={idx} value={p.pname}>
+                        {p.pname} ({p.pteam === team1Name || p.kiralikTakim === team1Name ? 'T1' : 'T2'}{p.kiralik || p.kiralikTakim ? ' 🔄 Kiralık' : ''})
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -1112,7 +1134,9 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                     className="w-full bg-white border border-gray-300 rounded p-2 text-xs font-bold"
                   >
                     {[...team1Players, ...team2Players].map((p, idx) => (
-                      <option key={idx} value={p.pname}>{p.pname} ({p.pteam === team1Name ? 'T1' : 'T2'})</option>
+                      <option key={idx} value={p.pname}>
+                        {p.pname} ({p.pteam === team1Name || p.kiralikTakim === team1Name ? 'T1' : 'T2'}{p.kiralik || p.kiralikTakim ? ' 🔄 Kiralık' : ''})
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -1175,7 +1199,9 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                   >
                     <option value="">Seçilmedi</option>
                     {[...team1Players, ...team2Players].map((p, idx) => (
-                      <option key={idx} value={p.pname}>{p.pname}</option>
+                      <option key={idx} value={p.pname}>
+                        {p.pname} ({p.pteam === team1Name || p.kiralikTakim === team1Name ? 'T1' : 'T2'}{p.kiralik || p.kiralikTakim ? ' 🔄 Kiralık' : ''})
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -1184,6 +1210,128 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                   <input type="text" value={mvpRating} onChange={(e) => setMvpRating(e.target.value)} className="w-full bg-white border border-gray-300 rounded p-2 text-xs font-bold" />
                 </div>
                 <button onClick={handleUpdateMvp} className="w-full py-2.5 bg-green-700 text-white font-black rounded-lg text-xs">MVP GÜNCELLE</button>
+              </div>
+            )}
+
+            {activeAdminTab === 'loan' && (
+              <div className="space-y-4 bg-white/80 p-3.5 rounded-xl border border-gray-300 shadow-sm">
+                <h4 className="font-extrabold text-xs text-brand-maroon uppercase text-center border-b pb-1">🔄 Maça Kiralık Oyuncu Ekle</h4>
+                
+                <div className="grid grid-cols-2 gap-3 bg-white/50 p-2 rounded-xl border border-gray-200">
+                  <button 
+                    type="button"
+                    onClick={() => setSelectedLoanTeam('team1')} 
+                    className={`py-2 rounded-lg font-black text-xs border-2 ${selectedLoanTeam === 'team1' ? 'border-brand-maroon bg-white text-brand-maroon shadow-sm' : 'border-transparent text-gray-500'}`}
+                  >
+                    T1: {team1Name}
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setSelectedLoanTeam('team2')} 
+                    className={`py-2 rounded-lg font-black text-xs border-2 ${selectedLoanTeam === 'team2' ? 'border-brand-maroon bg-white text-brand-maroon shadow-sm' : 'border-transparent text-gray-500'}`}
+                  >
+                    T2: {team2Name}
+                  </button>
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-black text-gray-500 uppercase">Veritabanındaki Tüm Oyunculardan Seç</label>
+                  <select
+                    value={selectedLoanPlayerName}
+                    onChange={(e) => setSelectedLoanPlayerName(e.target.value)}
+                    className="w-full bg-white border border-gray-300 rounded p-2 text-xs font-bold"
+                  >
+                    <option value="">-- Oyuncu Seçin --</option>
+                    {allGlobalPlayers.map((p, idx) => (
+                      <option key={idx} value={p.pname}>
+                        {p.pname} ({p.pteam || 'Takımsız'}) {p.kiralik ? '🔄 [Zaten Kiralık]' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-black text-gray-500 uppercase">Veya Yeni Kiralık Oyuncu İsmi</label>
+                  <input
+                    type="text"
+                    placeholder="Örn: Leo Messi"
+                    value={customLoanName}
+                    onChange={(e) => setCustomLoanName(e.target.value)}
+                    className="w-full bg-white border border-gray-300 rounded p-2 text-xs font-bold"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const targetTeamName = selectedLoanTeam === 'team1' ? team1Name : team2Name;
+                    const pName = (customLoanName.trim() || selectedLoanPlayerName).trim();
+                    
+                    if (!pName) {
+                      alert('Lütfen kiralık eklenecek bir oyuncu seçin veya ismini yazın!');
+                      return;
+                    }
+
+                    try {
+                      const qP = query(collection(db, "players"), where("pname", "==", pName));
+                      const pSnap = await getDocs(qP);
+
+                      if (!pSnap.empty) {
+                        await updateDoc(doc(db, "players", pSnap.docs[0].id), {
+                          kiralik: true,
+                          kiralikTakim: targetTeamName
+                        });
+                      } else {
+                        const newRef = doc(collection(db, "players"));
+                        await setDoc(newRef, {
+                          pname: pName,
+                          pteam: targetTeamName,
+                          foto: 'https://via.placeholder.com/150?text=Kiral%C4%B1k',
+                          goals: 0,
+                          asistsay: 0,
+                          gen: 75,
+                          kiralik: true,
+                          kiralikTakim: targetTeamName
+                        });
+                      }
+
+                      alert(`${pName} oyuncusu ${targetTeamName} kadrosuna kiralık eklendi!`);
+                      
+                      // Refresh players snapshot
+                      const updatedSnap = await getDocs(collection(db, "players"));
+                      const t1p: Player[] = [];
+                      const t2p: Player[] = [];
+                      const allP: Player[] = [];
+                      const t1Lower = team1Name.toLowerCase().trim();
+                      const t2Lower = team2Name.toLowerCase().trim();
+
+                      updatedSnap.forEach(d => {
+                        const pData = d.data() as Player;
+                        allP.push(pData);
+                        const pt = (pData.pteam || '').toLowerCase().trim();
+                        const kt = (pData.kiralikTakim || '').toLowerCase().trim();
+                        if (pt === t1Lower || (pData.kiralik && kt === t1Lower)) t1p.push(pData);
+                        if (pt === t2Lower || (pData.kiralik && kt === t2Lower)) t2p.push(pData);
+                      });
+
+                      setAllGlobalPlayers(allP.sort((a,b) => a.pname.localeCompare(b.pname)));
+                      setTeam1Players(t1p.sort((a,b) => a.pname.localeCompare(b.pname)));
+                      setTeam2Players(t2p.sort((a,b) => a.pname.localeCompare(b.pname)));
+
+                      setSelectedScorer(pName);
+                      setSelectedCardPlayer(pName);
+                      setCustomLoanName('');
+                      setSelectedLoanPlayerName('');
+                      setActiveAdminTab('goal');
+                    } catch (err) {
+                      console.error(err);
+                      alert('Kiralık oyuncu eklenirken bir hata oluştu.');
+                    }
+                  }}
+                  className="w-full py-2.5 bg-brand-maroon text-white font-black rounded-lg text-xs tracking-wider uppercase shadow hover:bg-red-900 transition-colors cursor-pointer"
+                >
+                  🔄 KİRALIK OLARAK KADROYA EKLE
+                </button>
               </div>
             )}
 
