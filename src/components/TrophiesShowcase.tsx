@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { TROPHIES_LIST, TROPHY_MAP } from '../lib/trophies';
+import { TrophyDetailModal } from './TrophyDetailModal';
+import { UserProfile } from '../types';
 
 interface TrophiesShowcaseProps {
   kupalar?: Record<string, number>;
@@ -7,9 +9,22 @@ interface TrophiesShowcaseProps {
   onManageClick?: () => void;
   title?: string;
   size?: 'normal' | 'large';
+  currentUser?: UserProfile | null;
+  onNavigate?: (view: any) => void;
+  onTrophyClick?: (trophyId: string) => void;
 }
 
-export function TrophiesShowcase({ kupalar = {}, isAdmin = false, onManageClick, size = 'large' }: TrophiesShowcaseProps) {
+export function TrophiesShowcase({ 
+  kupalar = {}, 
+  isAdmin = false, 
+  onManageClick, 
+  size = 'large',
+  currentUser = null,
+  onNavigate,
+  onTrophyClick 
+}: TrophiesShowcaseProps) {
+  const [selectedTrophyId, setSelectedTrophyId] = useState<string | null>(null);
+
   // Filter trophies with count > 0
   const activeTrophies = TROPHIES_LIST.filter(t => (kupalar[t.id] || 0) > 0);
 
@@ -19,57 +34,79 @@ export function TrophiesShowcase({ kupalar = {}, isAdmin = false, onManageClick,
 
   const isLarge = size === 'large';
 
+  const handleTrophyClick = (id: string) => {
+    if (onTrophyClick) {
+      onTrophyClick(id);
+    } else if (onNavigate) {
+      onNavigate({ type: 'trophy-detail', trophyId: id });
+    } else {
+      setSelectedTrophyId(id);
+    }
+  };
+
   return (
-    <div className={`w-full flex items-center justify-center flex-wrap gap-4 md:gap-6 my-4 p-4 md:p-6 bg-gradient-to-r from-amber-500/10 via-brand-gold/15 to-amber-500/10 rounded-3xl border-2 border-brand-gold/40 shadow-sm relative overflow-hidden select-text ${isLarge ? 'py-5 md:py-7' : 'py-3'}`}>
-      
-      {activeTrophies.length === 0 && isAdmin && (
-        <div className="text-center py-2">
-          <p className="text-xs font-bold text-gray-500 mb-2">Henüz kupa eklenmemiş.</p>
-        </div>
-      )}
-
-      {activeTrophies.map(t => {
-        const count = kupalar[t.id] || 0;
-        return (
-          <div 
-            key={t.id} 
-            className="relative flex flex-col items-center justify-end group cursor-pointer transition-transform hover:scale-110 duration-200 select-text"
-            title={`${count}x ${t.name}`}
-          >
-            <img 
-              src={t.icon} 
-              alt={t.name}
-              className={`${isLarge ? 'h-20 md:h-28' : 'h-12 md:h-16'} w-auto object-contain filter drop-shadow-md`} 
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = 'https://via.placeholder.com/60?text=🏆';
-              }}
-            />
-            {/* Transfermarkt style blue circle count badge */}
-            <span className={`bg-[#29b6f6] text-white font-black rounded-full flex items-center justify-center border-2 border-white shadow-lg z-10 select-none ${
-              isLarge 
-                ? 'min-w-[28px] h-[28px] text-xs md:text-sm px-1 -mt-3.5' 
-                : 'min-w-[22px] h-[22px] text-[10px] md:text-xs px-1 -mt-2.5'
-            }`}>
-              {count}
-            </span>
-            <span className="opacity-0 group-hover:opacity-100 transition-opacity absolute -bottom-6 bg-brand-dark text-white text-[9px] font-bold py-0.5 px-2 rounded whitespace-nowrap z-20 pointer-events-none">
-              {t.name}
-            </span>
+    <>
+      <div className={`w-full flex items-center justify-center flex-wrap gap-4 md:gap-6 my-4 p-4 md:p-6 bg-gradient-to-r from-amber-500/10 via-brand-gold/15 to-amber-500/10 rounded-3xl border-2 border-brand-gold/40 shadow-sm relative overflow-hidden select-text ${isLarge ? 'py-5 md:py-7' : 'py-3'}`}>
+        
+        {activeTrophies.length === 0 && isAdmin && (
+          <div className="text-center py-2">
+            <p className="text-xs font-bold text-gray-500 mb-2">Henüz kupa eklenmemiş.</p>
           </div>
-        );
-      })}
+        )}
 
-      {isAdmin && onManageClick && (
-        <button
-          onClick={onManageClick}
-          className="bg-brand-gold text-brand-dark hover:bg-amber-400 font-black text-xs md:text-sm uppercase px-4 py-2 rounded-xl border-2 border-brand-maroon shadow-md flex items-center gap-1.5 cursor-pointer transition-transform hover:scale-105 my-auto"
-          title="Kupa sayılarını güncelle"
-        >
-          <span>🏆</span>
-          <span>Kupa Ekle/Düzenle</span>
-        </button>
-      )}
-    </div>
+        {activeTrophies.map(t => {
+          const count = kupalar[t.id] || 0;
+          return (
+            <div 
+              key={t.id} 
+              onClick={() => handleTrophyClick(t.id)}
+              className="relative flex flex-col items-center justify-end group cursor-pointer transition-transform hover:scale-110 duration-200 select-text"
+              title={`${count}x ${t.name} (Tıkla ve detayı gör)`}
+            >
+              <img 
+                src={t.icon} 
+                alt={t.name}
+                className={`${isLarge ? 'h-20 md:h-28' : 'h-12 md:h-16'} w-auto object-contain filter drop-shadow-md`} 
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = 'https://via.placeholder.com/60?text=🏆';
+                }}
+              />
+              {/* Transfermarkt style blue circle count badge */}
+              <span className={`bg-[#29b6f6] text-white font-black rounded-full flex items-center justify-center border-2 border-white shadow-lg z-10 select-none ${
+                isLarge 
+                  ? 'min-w-[28px] h-[28px] text-xs md:text-sm px-1 -mt-3.5' 
+                  : 'min-w-[22px] h-[22px] text-[10px] md:text-xs px-1 -mt-2.5'
+              }`}>
+                {count}
+              </span>
+              <span className="opacity-0 group-hover:opacity-100 transition-opacity absolute -bottom-6 bg-brand-dark text-white text-[9px] font-bold py-0.5 px-2 rounded whitespace-nowrap z-20 pointer-events-none">
+                {t.name} (Detaylar)
+              </span>
+            </div>
+          );
+        })}
+
+        {isAdmin && onManageClick && (
+          <button
+            onClick={onManageClick}
+            className="bg-brand-gold text-brand-dark hover:bg-amber-400 font-black text-xs md:text-sm uppercase px-4 py-2 rounded-xl border-2 border-brand-maroon shadow-md flex items-center gap-1.5 cursor-pointer transition-transform hover:scale-105 my-auto"
+            title="Kupa sayılarını güncelle"
+          >
+            <span>🏆</span>
+            <span>Kupa Ekle/Düzenle</span>
+          </button>
+        )}
+      </div>
+
+      {/* Trophy Detail Modal */}
+      <TrophyDetailModal
+        isOpen={selectedTrophyId !== null}
+        trophyId={selectedTrophyId}
+        onClose={() => setSelectedTrophyId(null)}
+        currentUser={currentUser}
+        onNavigate={onNavigate}
+      />
+    </>
   );
 }
 
@@ -82,14 +119,26 @@ interface TrophyAdminModalProps {
 }
 
 export function TrophyAdminModal({ isOpen, onClose, kupalar = {}, onSave, targetName }: TrophyAdminModalProps) {
-  const [counts, setCounts] = useState<Record<string, number>>(() => ({ ...kupalar }));
+  const [counts, setCounts] = useState<Record<string, number>>(() => ({ ...(kupalar || {}) }));
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      const merged: Record<string, number> = { ...(kupalar || {}) };
+      TROPHIES_LIST.forEach(t => {
+        if (merged[t.id] === undefined) {
+          merged[t.id] = 0;
+        }
+      });
+      setCounts(merged);
+    }
+  }, [isOpen, kupalar]);
 
   if (!isOpen) return null;
 
   const handleCountChange = (id: string, delta: number) => {
     setCounts(prev => {
-      const current = prev[id] || 0;
+      const current = prev[id] !== undefined ? prev[id] : (kupalar[id] || 0);
       const next = Math.max(0, current + delta);
       return { ...prev, [id]: next };
     });
@@ -106,7 +155,8 @@ export function TrophyAdminModal({ isOpen, onClose, kupalar = {}, onSave, target
   const handleSubmit = async () => {
     setSaving(true);
     try {
-      await onSave(counts);
+      const finalCounts: Record<string, number> = { ...(kupalar || {}), ...counts };
+      await onSave(finalCounts);
       onClose();
     } catch (err) {
       console.error(err);

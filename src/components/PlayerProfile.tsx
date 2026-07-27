@@ -214,6 +214,8 @@ export default function PlayerProfile({ playerName, currentUser, currentLang, tr
             isAdmin={!!currentUser?.admin} 
             onManageClick={() => setTrophyModalOpen(true)} 
             size="large"
+            currentUser={currentUser}
+            onNavigate={onNavigate}
           />
 
           <div className="text-center my-6">

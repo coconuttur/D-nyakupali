@@ -1,5 +1,5 @@
 export interface TrophyInfo {
-  id: 'lig' | 'ziraat' | 'ucl' | 'uel' | 'uecl' | 'wc';
+  id: string;
   name: string;
   icon: string;
 }
@@ -31,9 +31,34 @@ export const TROPHIES_LIST: TrophyInfo[] = [
     icon: 'https://tmssl.akamaized.net//images/erfolge/medium/856.png?lm=1639997104'
   },
   {
+    id: 'super_cup',
+    name: 'UEFA Süper Kupa',
+    icon: 'https://tmssl.akamaized.net//images/erfolge/medium/354.png?lm=1780326884'
+  },
+  {
     id: 'wc',
     name: 'Dünya Kupası',
     icon: 'https://tmssl.akamaized.net//images/erfolge/header/101.png?lm=1774860361'
+  },
+  {
+    id: 'ballondor',
+    name: 'Ballon d\'Or',
+    icon: 'https://tmssl.akamaized.net//images/titel/medium/676.png?lm=1575286775'
+  },
+  {
+    id: 'golden_boy',
+    name: 'Golden Boy Ödülü',
+    icon: 'https://i.ibb.co/zh24DjrG/golden-boy-listesinde-3-turk-futbolcu200t-Ygn0-depositphotos-bgremover.png'
+  },
+  {
+    id: 'fairplay',
+    name: 'Fair Play Ödülü',
+    icon: 'https://tmssl.akamaized.net//images/erfolge/medium/157.png?lm=1472215916'
+  },
+  {
+    id: 'puskas',
+    name: 'Puskás Ödülü',
+    icon: 'https://i.pinimg.com/736x/a4/a6/1a/a4a61adc8155c829bf31f5ab5c95b9b6.jpg'
   }
 ];
 

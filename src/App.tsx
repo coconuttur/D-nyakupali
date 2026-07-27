@@ -19,6 +19,8 @@ import MatchDetail from './components/MatchDetail';
 import PlayerProfile from './components/PlayerProfile';
 import TeamDetail from './components/TeamDetail';
 import UserProfileView from './components/UserProfile';
+import { TrophyDetailView } from './components/TrophyDetailView';
+import { AllTrophiesView } from './components/AllTrophiesView';
 
 // Simple direct translations dictionary context
 const TRANSLATIONS = {
@@ -141,10 +143,12 @@ type ViewState =
   | { type: 'istatistik' }
   | { type: 'iddia' }
   | { type: 'forum' }
+  | { type: 'all-trophies' }
   | { type: 'match-detail'; matchId: string }
   | { type: 'player-profile'; playerName: string }
   | { type: 'team-detail'; teamName: string }
-  | { type: 'user-profile'; userId: string };
+  | { type: 'user-profile'; userId: string }
+  | { type: 'trophy-detail'; trophyId: string };
 
 export default function App() {
   const [currentLang, setCurrentLang] = useState<'tr' | 'en' | 'pt'>('tr');
@@ -409,11 +413,12 @@ export default function App() {
             })}
           </div>
 
-          {/* Row 2: İDDAA, FORUM */}
+          {/* Row 2: İDDAA, FORUM, KUPALAR */}
           <div className="flex flex-wrap items-center justify-center gap-3">
             {[
               { id: 'iddia', label: currentLang === 'tr' ? 'İDDİA' : currentLang === 'en' ? 'BETTING' : 'APOSTA' },
-              { id: 'forum', label: currentLang === 'tr' ? 'FORUM' : currentLang === 'en' ? 'FORUM' : 'FÓRUM' }
+              { id: 'forum', label: currentLang === 'tr' ? 'FORUM' : currentLang === 'en' ? 'FORUM' : 'FÓRUM' },
+              { id: 'all-trophies', label: currentLang === 'tr' ? 'KUPALAR' : currentLang === 'en' ? 'TROPHIES' : 'TROFÉUS' }
             ].map((item) => {
               const isActive = currentView.type === item.id;
               return (
@@ -491,6 +496,7 @@ export default function App() {
             translations={TRANSLATIONS} 
             onNavigate={handleNavigate} 
             teamLogos={teamLogos} 
+            currentUser={userProfile}
           />
         )}
 
@@ -553,6 +559,23 @@ export default function App() {
             translations={TRANSLATIONS}
             onBack={handleBack}
             onNavigate={handleNavigate}
+          />
+        )}
+
+        {currentView.type === 'all-trophies' && (
+          <AllTrophiesView 
+            onNavigate={handleNavigate}
+            onBack={handleBack}
+          />
+        )}
+
+        {currentView.type === 'trophy-detail' && (
+          <TrophyDetailView 
+            trophyId={(currentView as any).trophyId}
+            currentUser={userProfile}
+            onBack={handleBack}
+            onNavigate={handleNavigate}
+            teamLogos={teamLogos}
           />
         )}
       </main>

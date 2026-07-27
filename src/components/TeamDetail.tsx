@@ -295,6 +295,8 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
             isAdmin={!!currentUser?.admin} 
             onManageClick={() => setTrophyModalOpen(true)} 
             size="large"
+            currentUser={currentUser}
+            onNavigate={onNavigate}
           />
 
           {/* Social Popularity Voting Widget */}
