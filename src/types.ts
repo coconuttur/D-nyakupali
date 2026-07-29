@@ -5,6 +5,7 @@ export interface UserProfile {
   avatar?: string;
   balance?: number;
   admin?: boolean;
+  test?: boolean;
   favTeam?: string;
   favPlayer?: string;
   bio?: string;

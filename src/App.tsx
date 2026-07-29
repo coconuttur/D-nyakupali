@@ -21,6 +21,7 @@ import TeamDetail from './components/TeamDetail';
 import UserProfileView from './components/UserProfile';
 import { TrophyDetailView } from './components/TrophyDetailView';
 import { AllTrophiesView } from './components/AllTrophiesView';
+import { AlbumView } from './components/AlbumView';
 
 // Simple direct translations dictionary context
 const TRANSLATIONS = {
@@ -143,6 +144,7 @@ type ViewState =
   | { type: 'istatistik' }
   | { type: 'iddia' }
   | { type: 'forum' }
+  | { type: 'album' }
   | { type: 'all-trophies' }
   | { type: 'match-detail'; matchId: string }
   | { type: 'player-profile'; playerName: string }
@@ -413,11 +415,12 @@ export default function App() {
             })}
           </div>
 
-          {/* Row 2: İDDAA, FORUM, KUPALAR */}
+          {/* Row 2: İDDAA, FORUM, ALBÜM, KUPALAR */}
           <div className="flex flex-wrap items-center justify-center gap-3">
             {[
               { id: 'iddia', label: currentLang === 'tr' ? 'İDDİA' : currentLang === 'en' ? 'BETTING' : 'APOSTA' },
               { id: 'forum', label: currentLang === 'tr' ? 'FORUM' : currentLang === 'en' ? 'FORUM' : 'FÓRUM' },
+              { id: 'album', label: currentLang === 'tr' ? 'ALBÜM' : currentLang === 'en' ? 'ALBUM' : 'ÁLBUM' },
               { id: 'all-trophies', label: currentLang === 'tr' ? 'KUPALAR' : currentLang === 'en' ? 'TROPHIES' : 'TROFÉUS' }
             ].map((item) => {
               const isActive = currentView.type === item.id;
@@ -566,6 +569,14 @@ export default function App() {
           <AllTrophiesView 
             onNavigate={handleNavigate}
             onBack={handleBack}
+          />
+        )}
+
+        {currentView.type === 'album' && (
+          <AlbumView 
+            onNavigate={handleNavigate}
+            onBack={handleBack}
+            currentUser={userProfile}
           />
         )}
 
