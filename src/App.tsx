@@ -273,9 +273,13 @@ export default function App() {
   };
 
   const handleSignOut = async () => {
-    if (confirm('Oturumu kapatmak istediğinize emin misiniz?')) {
+    try {
       await signOut(auth);
+      setUser(null);
+      setUserProfile(null);
       setCurrentView({ type: 'news' });
+    } catch (e) {
+      console.error("Sign out error:", e);
     }
   };
 

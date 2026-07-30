@@ -33,9 +33,11 @@ interface UserAlbumSlotData {
   slotCode: string;
   hasNormal: boolean;
   hasShiny: boolean;
-  selectedVariant: 'normal' | 'shiny';
+  hasSecret?: boolean;
+  selectedVariant: 'normal' | 'shiny' | 'secret';
   countNormal: number;
   countShiny: number;
+  countSecret?: number;
 }
 
 interface LeaderboardUser {
@@ -44,11 +46,13 @@ interface LeaderboardUser {
   avatar?: string;
   totalUniqueCards: number;
   totalShinyCards: number;
+  totalSecretCards: number;
+  isTest?: boolean;
   favTeam?: string;
 }
 
 // -------------------------------------------------------------
-// PLAYER CARD COMPONENT (Matches user's template: Cream background, large Rating & Logo orange boxes)
+// PLAYER CARD COMPONENT (Supports Normal, Shiny & Secret Variants)
 // -------------------------------------------------------------
 interface PlayerStickerCardProps {
   key?: React.Key;
@@ -57,6 +61,7 @@ interface PlayerStickerCardProps {
   slotCode: string;
   isUnlocked: boolean;
   isShiny?: boolean;
+  isSecret?: boolean;
   onClick?: () => void;
 }
 
@@ -66,6 +71,7 @@ function PlayerStickerCard({
   slotCode, 
   isUnlocked,
   isShiny = false, 
+  isSecret = false,
   onClick 
 }: PlayerStickerCardProps) {
   if (!isUnlocked) {
@@ -98,24 +104,50 @@ function PlayerStickerCard({
   return (
     <div 
       onClick={onClick}
-      className={`w-full aspect-[3/4] relative rounded-xl overflow-hidden shadow-xl border-[3px] ${isShiny ? 'border-amber-400 bg-gradient-to-br from-amber-200 via-yellow-100 to-amber-300 ring-2 ring-amber-400/80' : 'border-[#661616] bg-[#FFFEE8]'} cursor-pointer group transform hover:scale-105 transition-all select-none flex flex-col justify-between p-1.5 sm:p-2`}
+      className={`w-full aspect-[3/4] relative rounded-xl overflow-hidden shadow-xl border-[3px] ${
+        isSecret
+          ? 'border-white bg-black text-white ring-4 ring-white/90 shadow-[0_0_25px_rgba(255,255,255,0.9)] animate-pulse'
+          : isShiny
+          ? 'border-amber-400 bg-gradient-to-br from-amber-200 via-yellow-100 to-amber-300 ring-2 ring-amber-400/80'
+          : 'border-[#661616] bg-[#FFFEE8]'
+      } cursor-pointer group transform hover:scale-105 transition-all select-none flex flex-col justify-between p-1.5 sm:p-2`}
     >
+      {/* White Broken Glass / Fracture Overlay for Secret cards */}
+      {isSecret && (
+        <div className="absolute inset-0 pointer-events-none opacity-40 z-10">
+          <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <path d="M10 0 L50 50 L90 5 M98 45 L50 50 L85 95 M15 90 L50 50 L2 55" stroke="white" strokeWidth="0.8" fill="none" />
+          </svg>
+        </div>
+      )}
+
       {/* Glossy Foil / Holographic Overlay for Shiny cards */}
-      {isShiny && (
+      {isShiny && !isSecret && (
         <>
           <div className="absolute inset-0 bg-gradient-to-tr from-cyan-400/20 via-pink-400/20 to-yellow-200/30 mix-blend-color-dodge opacity-90 group-hover:opacity-100 transition-opacity z-10 pointer-events-none"></div>
           <div className="absolute -inset-full w-[200%] h-[200%] bg-gradient-to-r from-transparent via-white/50 to-transparent transform -rotate-45 group-hover:translate-x-full transition-transform duration-1000 z-10 pointer-events-none"></div>
         </>
       )}
 
-      {/* Shiny Badge if Parıltılı */}
-      {isShiny && (
+      {/* Glossy White Ray Overlay for Secret cards */}
+      {isSecret && (
+        <div className="absolute inset-0 bg-gradient-to-tr from-white/10 via-white/30 to-transparent mix-blend-overlay opacity-90 pointer-events-none"></div>
+      )}
+
+      {/* Badge (Secret vs Shiny) */}
+      {isSecret ? (
+        <div className="absolute top-1 right-1 z-20">
+          <span className="text-[8px] font-black bg-white text-black px-1.5 py-0.5 rounded-full border border-gray-300 shadow-md flex items-center gap-0.5 animate-bounce">
+            🕶️ SECRET
+          </span>
+        </div>
+      ) : isShiny ? (
         <div className="absolute top-1 right-1 z-20">
           <span className="text-[8px] font-black bg-amber-500 text-black px-1.5 py-0.5 rounded-full border border-amber-200 shadow-xs flex items-center gap-0.5">
             ✨ PARILTILI
           </span>
         </div>
-      )}
+      ) : null}
 
       {/* Center: Player Photo */}
       <div className="flex-1 flex items-center justify-center relative my-1 overflow-hidden z-10">
@@ -129,19 +161,19 @@ function PlayerStickerCard({
         />
       </div>
 
-      {/* Bottom Container: Two Large Orange Boxes & Player Name Pill */}
+      {/* Bottom Container: Two Large Orange/Black Boxes & Player Name Pill */}
       <div className="relative z-10 pt-1">
         <div className="grid grid-cols-2 gap-2 sm:gap-3 items-stretch h-10 sm:h-12">
           
-          {/* Left Orange Box: Large Rating */}
-          <div className="bg-[#D96836] border border-[#B34E1E] rounded-xl flex items-center justify-center p-1 shadow-inner">
+          {/* Left Box: Large Rating */}
+          <div className={`${isSecret ? 'bg-stone-900 border-white/60' : 'bg-[#D96836] border-[#B34E1E]'} border rounded-xl flex items-center justify-center p-1 shadow-inner`}>
             <span className="text-base sm:text-xl font-black text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.6)] font-mono tracking-tighter">
               {player.gen || 85}
             </span>
           </div>
 
-          {/* Right Orange Box: Large Team Logo */}
-          <div className="bg-[#D96836] border border-[#B34E1E] rounded-xl flex items-center justify-center p-1 shadow-inner overflow-hidden">
+          {/* Right Box: Large Team Logo */}
+          <div className={`${isSecret ? 'bg-stone-900 border-white/60' : 'bg-[#D96836] border-[#B34E1E]'} border rounded-xl flex items-center justify-center p-1 shadow-inner overflow-hidden`}>
             {teamLogo ? (
               <img 
                 src={teamLogo} 
@@ -157,7 +189,7 @@ function PlayerStickerCard({
 
         {/* Player Name Banner */}
         <div className="mt-1 flex justify-center">
-          <div className="bg-[#661616] text-amber-300 border border-amber-400/80 rounded-full py-0.5 px-2.5 text-center shadow-md w-full max-w-[95%] truncate">
+          <div className={`${isSecret ? 'bg-black text-white border-white' : 'bg-[#661616] text-amber-300 border-amber-400/80'} border rounded-full py-0.5 px-2.5 text-center shadow-md w-full max-w-[95%] truncate`}>
             <span className="font-black text-[9px] sm:text-[11px] uppercase tracking-wide block truncate">
               {player.pname}
             </span>
@@ -179,6 +211,7 @@ interface ShinySpecialStickerCardProps {
   slotCode: string;
   type?: 'team' | 'trophy';
   isUnlocked: boolean;
+  isSecret?: boolean;
   onClick?: () => void;
 }
 
@@ -188,6 +221,7 @@ function ShinySpecialStickerCard({
   slotCode, 
   type = 'team', 
   isUnlocked, 
+  isSecret = false,
   onClick 
 }: ShinySpecialStickerCardProps) {
   if (!isUnlocked) {
@@ -216,28 +250,45 @@ function ShinySpecialStickerCard({
     );
   }
 
-  // UNLOCKED SHINY HOLOGRAPHIC STICKER
+  // UNLOCKED SHINY / SECRET STICKER
   return (
     <div 
       onClick={onClick}
-      className="w-full aspect-[3/4] relative rounded-2xl overflow-hidden shadow-2xl border-4 border-amber-300 cursor-pointer group transform hover:scale-105 transition-all bg-gradient-to-br from-amber-400 via-yellow-200 to-amber-600 p-2 flex flex-col justify-between select-none"
+      className={`w-full aspect-[3/4] relative rounded-2xl overflow-hidden shadow-2xl cursor-pointer group transform hover:scale-105 transition-all p-2 flex flex-col justify-between select-none ${
+        isSecret
+          ? 'bg-black border-4 border-white text-white shadow-[0_0_25px_rgba(255,255,255,0.9)] animate-pulse'
+          : 'border-4 border-amber-300 bg-gradient-to-br from-amber-400 via-yellow-200 to-amber-600'
+      }`}
     >
+      {/* Broken glass cracks for secret card */}
+      {isSecret && (
+        <div className="absolute inset-0 pointer-events-none opacity-40 z-10">
+          <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <path d="M10 0 L50 50 L90 5 M98 45 L50 50 L85 95 M15 90 L50 50 L2 55" stroke="white" strokeWidth="0.8" fill="none" />
+          </svg>
+        </div>
+      )}
+
       {/* Holographic Glitter & Sparkles Background */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-yellow-100/70 via-amber-400/40 to-amber-800/90 z-0"></div>
-      
-      {/* Metallic Rainbow Foil Reflection Overlay */}
-      <div className="absolute inset-0 bg-gradient-to-tr from-cyan-400/30 via-pink-400/30 to-yellow-200/40 mix-blend-color-dodge opacity-85 group-hover:opacity-100 transition-opacity z-10 pointer-events-none"></div>
-      
-      {/* Animated Light Beam Sweep */}
-      <div className="absolute -inset-full w-[200%] h-[200%] bg-gradient-to-r from-transparent via-white/60 to-transparent transform -rotate-45 group-hover:translate-x-full transition-transform duration-1000 z-10 pointer-events-none"></div>
+      {!isSecret && (
+        <>
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-yellow-100/70 via-amber-400/40 to-amber-800/90 z-0"></div>
+          <div className="absolute inset-0 bg-gradient-to-tr from-cyan-400/30 via-pink-400/30 to-yellow-200/40 mix-blend-color-dodge opacity-85 group-hover:opacity-100 transition-opacity z-10 pointer-events-none"></div>
+          <div className="absolute -inset-full w-[200%] h-[200%] bg-gradient-to-r from-transparent via-white/60 to-transparent transform -rotate-45 group-hover:translate-x-full transition-transform duration-1000 z-10 pointer-events-none"></div>
+        </>
+      )}
 
       {/* Top Foil Badge */}
       <div className="relative z-20 flex items-center justify-between">
-        <span className="text-[9px] font-black bg-[#800000] text-amber-300 px-2 py-0.5 rounded-full border border-amber-400 shadow-xs uppercase tracking-widest flex items-center gap-1">
-          <span>✨</span>
-          <span>PARILTILI</span>
+        <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border shadow-xs uppercase tracking-widest flex items-center gap-1 ${
+          isSecret
+            ? 'bg-white text-black border-white'
+            : 'bg-[#800000] text-amber-300 border-amber-400'
+        }`}>
+          <span>{isSecret ? '🕶️' : '✨'}</span>
+          <span>{isSecret ? 'SECRET' : 'PARILTILI'}</span>
         </span>
-        <span className="text-xs">⭐</span>
+        <span className="text-xs">{isSecret ? '🕶️' : '⭐'}</span>
       </div>
 
       {/* Center: Direct Team Logo or Trophy Image */}
@@ -245,7 +296,9 @@ function ShinySpecialStickerCard({
         <img 
           src={image || (type === 'team' ? 'https://via.placeholder.com/100?text=🛡️' : 'https://via.placeholder.com/100?text=🏆')} 
           alt={title}
-          className="max-h-full max-w-full object-contain filter drop-shadow-[0_8px_16px_rgba(0,0,0,0.6)] group-hover:scale-110 transition-transform duration-300"
+          className={`max-h-full max-w-full object-contain filter drop-shadow-[0_8px_16px_rgba(0,0,0,0.6)] group-hover:scale-110 transition-transform duration-300 ${
+            isSecret ? 'brightness-125 contrast-125' : ''
+          }`}
           onError={(e) => {
             (e.target as HTMLImageElement).src = type === 'team' ? 'https://via.placeholder.com/100?text=🛡️' : 'https://via.placeholder.com/100?text=🏆';
           }}
@@ -253,7 +306,11 @@ function ShinySpecialStickerCard({
       </div>
 
       {/* Bottom Name Plate: Cleanly truncated & scaled so long titles like GOLDEN BOY ÖDÜLÜ fit inside */}
-      <div className="relative z-20 bg-[#800000] text-amber-300 border border-amber-300/80 rounded-lg py-0.5 px-1 text-center shadow-lg w-full max-w-full overflow-hidden flex items-center justify-center min-h-[22px]">
+      <div className={`relative z-20 border rounded-lg py-0.5 px-1 text-center shadow-lg w-full max-w-full overflow-hidden flex items-center justify-center min-h-[22px] ${
+        isSecret
+          ? 'bg-white text-black border-white'
+          : 'bg-[#800000] text-amber-300 border-amber-300/80'
+      }`}>
         <span className="font-black text-[8px] sm:text-[10px] uppercase tracking-tighter block truncate max-w-full leading-tight">
           {title}
         </span>
@@ -273,9 +330,12 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
   // User Album Map in Firestore: slotCode -> UserAlbumSlotData
   const [userAlbum, setUserAlbum] = useState<Record<string, UserAlbumSlotData>>({});
   const [lastPackOpenedAt, setLastPackOpenedAt] = useState<number>(0);
-  const [userStats, setUserStats] = useState<{ totalUniqueCards: number; totalShinyCards: number }>({
+  const [hasClaimedStarterPack, setHasClaimedStarterPack] = useState<boolean>(false);
+  const [secretPityCount, setSecretPityCount] = useState<number>(0);
+  const [userStats, setUserStats] = useState<{ totalUniqueCards: number; totalShinyCards: number; totalSecretCards: number }>({
     totalUniqueCards: 0,
-    totalShinyCards: 0
+    totalShinyCards: 0,
+    totalSecretCards: 0
   });
 
   // Modal States
@@ -287,16 +347,34 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
   // Leaderboard Data State
   const [leaderboardUsers, setLeaderboardUsers] = useState<LeaderboardUser[]>([]);
 
+  // Discovered Secrets Registry State
+  const [discoveredSecrets, setDiscoveredSecrets] = useState<Record<string, { discoveredBy: string; discoveredAt: number }>>({});
+
   // Pack Opening System State
   const [isOpeningPackModal, setIsOpeningPackModal] = useState<boolean>(false);
   const [drawnCards, setDrawnCards] = useState<any[]>([]);
   const [packStage, setPackStage] = useState<'box' | 'card' | 'finished'>('box');
   const [activePackCardIndex, setActivePackCardIndex] = useState<number>(-1);
   const [shinyStarStage, setShinyStarStage] = useState<'none' | 'star' | 'yellow'>('none');
+  const [cardAnimStep, setCardAnimStep] = useState<number>(0);
 
-  // 12-Hour Cooldown Timer State (43200000 ms)
-  const COOLDOWN_MS = 12 * 60 * 60 * 1000;
+  // Secret Card 5-Click Glass Shatter Overlay State
+  const [secretCrackClicks, setSecretCrackClicks] = useState<number>(0);
+  const [secretFlash, setSecretFlash] = useState<boolean>(false);
+
+  // 6-Hour Cooldown Timer State (21600000 ms)
+  const COOLDOWN_MS = 6 * 60 * 60 * 1000;
   const [timeLeftMs, setTimeLeftMs] = useState<number>(0);
+
+  // Listen Discovered Secrets from Firestore
+  useEffect(() => {
+    const unsubSecrets = onSnapshot(doc(db, 'settings', 'discoveredSecrets'), (docSnap) => {
+      if (docSnap.exists()) {
+        setDiscoveredSecrets(docSnap.data() as any);
+      }
+    });
+    return () => unsubSecrets();
+  }, []);
 
   // 1. Listen User Test/Admin Status & User Album Data from Firestore
   useEffect(() => {
@@ -321,9 +399,14 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
           if (uData.lastPackOpenedAt) {
             setLastPackOpenedAt(Number(uData.lastPackOpenedAt));
           }
+          if (uData.secretPityCount !== undefined) {
+            setSecretPityCount(Number(uData.secretPityCount));
+          }
+          setHasClaimedStarterPack(Boolean(uData.hasClaimedStarterPack));
           setUserStats({
             totalUniqueCards: uData.totalUniqueCards || 0,
-            totalShinyCards: uData.totalShinyCards || 0
+            totalShinyCards: uData.totalShinyCards || 0,
+            totalSecretCards: uData.totalSecretCards || 0
           });
         }
       });
@@ -333,26 +416,31 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
         const albumMap: Record<string, UserAlbumSlotData> = {};
         let uniqueCount = 0;
         let shinyCount = 0;
+        let secretCount = 0;
 
         snap.forEach((d) => {
           const data = d.data() as UserAlbumSlotData;
           albumMap[d.id] = data;
 
-          if (data.hasNormal || data.hasShiny) {
+          if (data.hasNormal || data.hasShiny || data.hasSecret) {
             uniqueCount++;
           }
-          if (data.hasShiny) {
+          if (data.hasShiny || data.hasSecret) {
             shinyCount++;
+          }
+          if (data.hasSecret) {
+            secretCount++;
           }
         });
 
         setUserAlbum(albumMap);
-        setUserStats({ totalUniqueCards: uniqueCount, totalShinyCards: shinyCount });
+        setUserStats({ totalUniqueCards: uniqueCount, totalShinyCards: shinyCount, totalSecretCards: secretCount });
 
         // Sync stats to user's Firestore document so leaderboard stays up to date
         setDoc(doc(db, 'users', currentUser.uid), {
           totalUniqueCards: uniqueCount,
-          totalShinyCards: shinyCount
+          totalShinyCards: shinyCount,
+          totalSecretCards: secretCount
         }, { merge: true }).catch((err) => console.error('Error syncing user stats to Firestore:', err));
       });
 
@@ -363,6 +451,7 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
     } else {
       setUserAlbum({});
       setLastPackOpenedAt(0);
+      setHasClaimedStarterPack(false);
     }
   }, [currentUser]);
 
@@ -471,25 +560,30 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
 
         let uniqueCount = u.totalUniqueCards || 0;
         let shinyCount = u.totalShinyCards || 0;
+        let secretCount = u.totalSecretCards || 0;
 
-        // Fallback: If totalUniqueCards is 0 or undefined, calculate directly from user's album subcollection
-        if (!u.totalUniqueCards) {
+        // Fallback: If stats are empty, calculate directly from user's album subcollection
+        if (uniqueCount === 0 && shinyCount === 0 && secretCount === 0) {
           try {
             const albumSnap = await getDocs(collection(db, 'users', d.id, 'album'));
             let uCount = 0;
             let sCount = 0;
+            let secCount = 0;
             albumSnap.forEach((ad) => {
               const data = ad.data();
-              if (data.hasNormal || data.hasShiny) uCount++;
-              if (data.hasShiny) sCount++;
+              if (data.hasNormal || data.hasShiny || data.hasSecret) uCount++;
+              if (data.hasShiny || data.hasSecret) sCount++;
+              if (data.hasSecret) secCount++;
             });
             uniqueCount = uCount;
             shinyCount = sCount;
+            secretCount = secCount;
 
             // Save back to user document so future reads are fast
             await setDoc(doc(db, 'users', d.id), {
               totalUniqueCards: uCount,
-              totalShinyCards: sCount
+              totalShinyCards: sCount,
+              totalSecretCards: secCount
             }, { merge: true });
           } catch (e) {
             console.error('Error fetching sub-album stats for user:', d.id, e);
@@ -498,10 +592,12 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
 
         list.push({
           uid: d.id,
-          displayName: u.displayName || 'Anonim Kullanıcı',
+          displayName: u.displayName ? `${u.displayName}${u.test ? ' (Test)' : ''}` : (u.test ? 'Test Kullanıcısı' : 'Anonim Kullanıcı'),
           avatar: u.avatar,
           totalUniqueCards: uniqueCount,
           totalShinyCards: shinyCount,
+          totalSecretCards: secretCount,
+          isTest: Boolean(u.test),
           favTeam: u.favTeam
         });
       }
@@ -512,19 +608,13 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
     }
   };
 
-  // 5. PACK GENERATOR ENGINE
-  // Draws 5 unique cards. Shiny cards are sorted AT THE END.
-  const handleOpenPackClick = () => {
-    if (!currentUser) {
-      setShowLoginPromptModal(true);
-      return;
-    }
+  // Trigger Leaderboard fetch on mount
+  useEffect(() => {
+    fetchLeaderboard();
+  }, []);
 
-    if (!isTestUser && timeLeftMs > 0) {
-      return; // Cooldown active
-    }
-
-    // Build Card Pool
+  // Helper to generate N cards for pack openings with Secret Pity System (10 packs = 1 Guaranteed Secret)
+  const generatePackCards = (packCount = 1, startPity = 0) => {
     const pool: any[] = [];
 
     // Trophies (Always Shiny Special Cards)
@@ -564,9 +654,102 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
       });
     });
 
-    if (pool.length < 5) return;
+    if (pool.length < 5) return { drawn: [], nextPity: startPity };
 
-    // Pick 5 unique random items (No duplicate slotCode within single pack)
+    const drawn: any[] = [];
+    let currentPity = startPity;
+
+    for (let p = 0; p < packCount; p++) {
+      currentPity += 1;
+      const isPityGuaranteed = currentPity >= 10;
+
+      const selected: any[] = [];
+      const usedCodes = new Set<string>();
+
+      while (selected.length < 5 && usedCodes.size < pool.length) {
+        const randIdx = Math.floor(Math.random() * pool.length);
+        const item = pool[randIdx];
+        if (!usedCodes.has(item.slotCode)) {
+          usedCodes.add(item.slotCode);
+          selected.push(item);
+        }
+      }
+
+      let drawnShinyPlayerCount = 0;
+      let packHasSecret = false;
+      let forcedSecretIndex = -1;
+
+      // If 10th pack pity reached, force 1 player card to be Secret
+      if (isPityGuaranteed) {
+        const nonShinyIdx = selected.findIndex(item => !item.isAlwaysShiny && item.type === 'player');
+        forcedSecretIndex = nonShinyIdx !== -1 ? nonShinyIdx : 0;
+      }
+
+      const packDrawn = selected.map((item, idx) => {
+        let isShiny = false;
+        let isSecret = false;
+
+        if (idx === forcedSecretIndex) {
+          isSecret = true;
+          isShiny = true;
+          packHasSecret = true;
+        } else if (item.isAlwaysShiny || item.type === 'team' || item.type === 'trophy') {
+          isShiny = true;
+        } else {
+          // Secret card check: 0.6% chance
+          if (Math.random() < 0.006) {
+            isSecret = true;
+            isShiny = true;
+            packHasSecret = true;
+          } else {
+            // Shiny player card check: 5% for first, 2% for subsequent
+            const shinyProbability = drawnShinyPlayerCount === 0 ? 0.05 : 0.02;
+            if (Math.random() < shinyProbability) {
+              isShiny = true;
+              drawnShinyPlayerCount++;
+            }
+          }
+        }
+
+        return {
+          ...item,
+          isShiny,
+          isSecret
+        };
+      });
+
+      // Sort within pack: Normal first, Shiny/Secret at the end
+      packDrawn.sort((a, b) => (a.isShiny === b.isShiny ? 0 : a.isShiny ? 1 : -1));
+      drawn.push(...packDrawn);
+
+      // Reset pity to 0 if a Secret card was drawn (naturally or pity guaranteed)
+      if (packHasSecret) {
+        currentPity = 0;
+      }
+    }
+
+    return { drawn, nextPity: currentPity };
+  };
+
+  // Special Test User Generator: 5 Guaranteed Secret Cards
+  const generateSecretTestPackCards = () => {
+    const pool: any[] = [];
+    teamsData.forEach((team) => {
+      team.players.forEach((player, pIdx) => {
+        pool.push({
+          slotCode: `${team.code}-${String(pIdx + 2).padStart(2, '0')}`,
+          title: player.pname,
+          image: player.foto,
+          type: 'player',
+          playerData: player,
+          teamLogo: team.logo,
+          isAlwaysShiny: false
+        });
+      });
+    });
+
+    if (pool.length < 5) return [];
+
     const selected: any[] = [];
     const usedCodes = new Set<string>();
 
@@ -575,39 +758,121 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
       const item = pool[randIdx];
       if (!usedCodes.has(item.slotCode)) {
         usedCodes.add(item.slotCode);
-        selected.push(item);
+        selected.push({
+          ...item,
+          isShiny: true,
+          isSecret: true
+        });
       }
     }
 
-    // Determine shiny variant for each card
-    // Rules: Badges & Trophies are ALWAYS shiny.
-    // Player cards: 5% chance for 1st shiny player card, 2% chance for additional shiny player cards in the same pack.
-    let drawnShinyPlayerCount = 0;
-    const drawn = selected.map((item) => {
-      let isShiny = false;
-      if (item.isAlwaysShiny || item.type === 'team' || item.type === 'trophy') {
-        isShiny = true;
-      } else {
-        const shinyProbability = drawnShinyPlayerCount === 0 ? 0.05 : 0.02;
-        if (Math.random() < shinyProbability) {
-          isShiny = true;
-          drawnShinyPlayerCount++;
-        }
-      }
-      return {
-        ...item,
-        isShiny
-      };
-    });
+    return selected;
+  };
 
-    // CRITICAL REQUIREMENT: Sort cards so non-shiny come first, and ALL PARILTILI (SHINY) CARDS ARE AT THE END!
-    drawn.sort((a, b) => (a.isShiny === b.isShiny ? 0 : a.isShiny ? 1 : -1));
+  // 5. PACK GENERATOR ENGINE (Standard 1 Pack = 5 Cards)
+  const handleOpenPackClick = async () => {
+    if (!currentUser) {
+      setShowLoginPromptModal(true);
+      return;
+    }
+
+    if (!isTestUser && timeLeftMs > 0) {
+      return; // Cooldown active
+    }
+
+    const { drawn, nextPity } = generatePackCards(1, secretPityCount);
+    if (drawn.length === 0) return;
+
+    setDrawnCards(drawn);
+    setSecretPityCount(nextPity);
+    setPackStage('box');
+    setActivePackCardIndex(-1);
+    setShinyStarStage('none');
+    setCardAnimStep(0);
+    setSecretCrackClicks(0);
+    setSecretFlash(false);
+    setIsOpeningPackModal(true);
+
+    if (currentUser?.uid) {
+      setDoc(doc(db, 'users', currentUser.uid), {
+        secretPityCount: nextPity
+      }, { merge: true }).catch(err => console.error('Error saving pity count:', err));
+    }
+  };
+
+  // 6. STARTER PACK ENGINE (One-Time 5 Packs = 25 Cards, Counts +5 for Secret Pity!)
+  const handleOpenStarterPackClick = async () => {
+    if (!currentUser) {
+      setShowLoginPromptModal(true);
+      return;
+    }
+
+    if (hasClaimedStarterPack && !isTestUser) {
+      alert('⚠️ Başlangıç Paketini zaten 1 defa kullandınız!');
+      return;
+    }
+
+    const { drawn, nextPity } = generatePackCards(5, secretPityCount);
+    if (drawn.length === 0) return;
+
+    setDrawnCards(drawn);
+    setSecretPityCount(nextPity);
+    setPackStage('box');
+    setActivePackCardIndex(-1);
+    setShinyStarStage('none');
+    setCardAnimStep(0);
+    setSecretCrackClicks(0);
+    setSecretFlash(false);
+    setIsOpeningPackModal(true);
+
+    // Mark starter pack as claimed & save updated pity in Firestore
+    try {
+      if (currentUser?.uid) {
+        await setDoc(doc(db, 'users', currentUser.uid), {
+          hasClaimedStarterPack: true,
+          secretPityCount: nextPity
+        }, { merge: true });
+        setHasClaimedStarterPack(true);
+      }
+    } catch (err) {
+      console.error('Error claiming starter pack:', err);
+    }
+  };
+
+  // 7. TEST USER SECRET PACK ENGINE (5 Secret Cards For Testing)
+  const handleOpenSecretTestPackClick = () => {
+    if (!currentUser) {
+      setShowLoginPromptModal(true);
+      return;
+    }
+
+    const drawn = generateSecretTestPackCards();
+    if (drawn.length === 0) return;
 
     setDrawnCards(drawn);
     setPackStage('box');
     setActivePackCardIndex(-1);
     setShinyStarStage('none');
+    setCardAnimStep(0);
+    setSecretCrackClicks(0);
+    setSecretFlash(false);
     setIsOpeningPackModal(true);
+  };
+
+  // Secret Full-Screen 5-Click Glass Shatter Handler
+  const handleSecretScreenClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (secretFlash) return;
+
+    if (secretCrackClicks < 4) {
+      setSecretCrackClicks((prev) => prev + 1);
+    } else if (secretCrackClicks === 4) {
+      setSecretFlash(true);
+      setTimeout(() => {
+        setSecretCrackClicks(5);
+        setSecretFlash(false);
+      }, 400);
+    }
   };
 
   // Step-by-Step Card Reveal Engine (Auto-Sticks Card to Album)
@@ -618,13 +883,28 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
     setPackStage('card');
     setActivePackCardIndex(targetIndex);
 
-    // Save drawn card to Firestore automatically (No prompt needed!)
+    // Reset secret crack click animation state
+    setSecretCrackClicks(0);
+    setSecretFlash(false);
+
+    // Reset card animation step directly to step 1 (manual clicks only)
+    setCardAnimStep(1);
+
+    // Save drawn card to Firestore automatically
     if (currentUser?.uid) {
       await saveCardToFirestore(card);
     }
 
-    // If card is shiny, trigger Star Growing -> Yellow Glow animation!
-    if (card.isShiny) {
+    // If card is shiny or secret, trigger Star Growing -> Yellow Glow animation!
+    if (card.isSecret) {
+      setShinyStarStage('star');
+      setTimeout(() => {
+        setShinyStarStage('yellow');
+        setTimeout(() => {
+          setShinyStarStage('none');
+        }, 800);
+      }, 700);
+    } else if (card.isShiny) {
       setShinyStarStage('star');
       setTimeout(() => {
         setShinyStarStage('yellow');
@@ -647,11 +927,29 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
 
       let newHasNormal = existing?.hasNormal || false;
       let newHasShiny = existing?.hasShiny || false;
+      let newHasSecret = existing?.hasSecret || false;
       let newCountNormal = existing?.countNormal || 0;
       let newCountShiny = existing?.countShiny || 0;
-      let selectedVar: 'normal' | 'shiny' = existing?.selectedVariant || (card.isShiny ? 'shiny' : 'normal');
+      let newCountSecret = existing?.countSecret || 0;
 
-      if (card.isShiny) {
+      let selectedVar: 'normal' | 'shiny' | 'secret' = existing?.selectedVariant || 
+        (card.isSecret ? 'secret' : card.isShiny ? 'shiny' : 'normal');
+
+      if (card.isSecret) {
+        if (!newHasSecret) {
+          newHasSecret = true;
+          selectedVar = 'secret'; // Auto select secret if newly acquired
+        }
+        newCountSecret++;
+
+        // Record global discovery
+        setDoc(doc(db, 'settings', 'discoveredSecrets'), {
+          [card.slotCode]: {
+            discoveredBy: currentUser.displayName || 'Anonim Kullanıcı',
+            discoveredAt: Date.now()
+          }
+        }, { merge: true }).catch((err) => console.error(err));
+      } else if (card.isShiny) {
         if (!newHasShiny) {
           newHasShiny = true;
           selectedVar = 'shiny'; // Auto select shiny if newly acquired
@@ -668,9 +966,11 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
         slotCode: card.slotCode,
         hasNormal: newHasNormal,
         hasShiny: newHasShiny,
+        hasSecret: newHasSecret,
         selectedVariant: selectedVar,
         countNormal: newCountNormal,
         countShiny: newCountShiny,
+        countSecret: newCountSecret,
         updatedAt: Date.now()
       }, { merge: true });
 
@@ -684,8 +984,8 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
     }
   };
 
-  // Toggle user's preferred card display variant (Normal vs Shiny)
-  const handleToggleCardVariant = async (slotCode: string, newVariant: 'normal' | 'shiny') => {
+  // Toggle user's preferred card display variant (Normal vs Shiny vs Secret)
+  const handleToggleCardVariant = async (slotCode: string, newVariant: 'normal' | 'shiny' | 'secret') => {
     if (!currentUser?.uid) return;
 
     // Optimistically update userAlbum state immediately
@@ -706,7 +1006,8 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
       if (!prev) return null;
       return {
         ...prev,
-        isShiny: newVariant === 'shiny',
+        isShiny: newVariant === 'shiny' || newVariant === 'secret',
+        isSecret: newVariant === 'secret',
         userAlbumEntry: prev.userAlbumEntry ? {
           ...prev.userAlbumEntry,
           selectedVariant: newVariant
@@ -792,14 +1093,16 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
   const checkIsUnlocked = (slotCode: string) => {
     if (isTestUser) return true;
     const entry = userAlbum[slotCode];
-    return Boolean(entry && (entry.hasNormal || entry.hasShiny));
+    return Boolean(entry && (entry.hasNormal || entry.hasShiny || entry.hasSecret));
   };
 
   // Get active variant for an unlocked card
-  const getCardVariant = (slotCode: string): 'normal' | 'shiny' => {
+  const getCardVariant = (slotCode: string): 'normal' | 'shiny' | 'secret' => {
     const entry = userAlbum[slotCode];
     if (!entry) return 'normal';
+    if (entry.selectedVariant === 'secret' && entry.hasSecret) return 'secret';
     if (entry.selectedVariant === 'shiny' && entry.hasShiny) return 'shiny';
+    if (!entry.hasNormal && !entry.hasShiny && entry.hasSecret) return 'secret';
     if (!entry.hasNormal && entry.hasShiny) return 'shiny';
     return 'normal';
   };
@@ -826,35 +1129,44 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
         </div>
 
         {/* Top Header Controls: Statistics, Test Mode & Album Actions */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-3">
           
+          {/* GIANT EYE-CATCHING 1 DEFALIK BAŞLANGIÇ PAKETİ BUTTON */}
+          {(!hasClaimedStarterPack || isTestUser) && (
+            <button
+              onClick={handleOpenStarterPackClick}
+              className="relative group bg-gradient-to-r from-emerald-500 via-yellow-400 to-emerald-600 hover:from-emerald-400 hover:to-amber-300 text-black font-black text-xs sm:text-sm px-5 py-2.5 rounded-2xl border-4 border-amber-300 shadow-[0_0_35px_rgba(251,191,36,0.95)] transition-all transform hover:scale-110 active:scale-95 cursor-pointer uppercase flex items-center gap-2 animate-pulse overflow-hidden select-none"
+              title="Tek seferlik 5 paket (25 kart) hediye başlangıç paketi!"
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+              <span className="text-xl sm:text-2xl animate-bounce">🎁</span>
+              <div className="flex flex-col items-start text-left leading-tight">
+                <span className="text-[9px] font-extrabold text-emerald-950 uppercase tracking-wider bg-amber-200/90 px-1.5 py-0.2 rounded">
+                  HEDİYE 25 KART!
+                </span>
+                <span className="text-xs sm:text-sm font-black text-brand-maroon tracking-tight">
+                  BAŞLANGIÇ PAKETİ (5 KUTU)
+                </span>
+              </div>
+              <span className="text-base sm:text-lg">✨</span>
+            </button>
+          )}
+
           {/* STATISTICS LEADERBOARD BUTTON */}
           <button
             onClick={() => {
               fetchLeaderboard();
               setShowStatsModal(true);
             }}
-            className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-brand-maroon font-black text-xs px-3.5 py-1.5 rounded-2xl border-2 border-amber-300 shadow-md transition-transform hover:scale-105 cursor-pointer uppercase flex items-center gap-1.5"
+            className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-brand-maroon font-black text-xs px-3.5 py-2 rounded-2xl border-2 border-amber-300 shadow-md transition-transform hover:scale-105 cursor-pointer uppercase flex items-center gap-1.5"
           >
             <span>📊</span>
             <span>İSTATİSTİKLER</span>
           </button>
 
-          {/* TEST MODE / ADMIN CLEAR ALBUM BUTTON */}
-          {(isTestUser || currentUser?.test || currentUser?.admin) && (
-            <button
-              onClick={handleClearAlbum}
-              className="bg-red-800 hover:bg-red-900 text-amber-200 font-black text-xs px-3 py-1.5 rounded-2xl border border-red-500 shadow-sm transition-all cursor-pointer uppercase flex items-center gap-1"
-              title="Test ve Admin kullanıcıları için albüm kartlarını tamamen boşaltır"
-            >
-              <span>🗑️</span>
-              <span>ALBÜMÜ BOŞALT</span>
-            </button>
-          )}
-
           {/* User Status / Test Mode Badge */}
           {isTestUser && (
-            <span className="text-[11px] font-black uppercase bg-gradient-to-r from-emerald-600 to-green-700 text-white px-3 py-1 rounded-full border border-emerald-400 shadow-md flex items-center gap-1.5">
+            <span className="text-[11px] font-black uppercase bg-gradient-to-r from-emerald-600 to-green-700 text-white px-3 py-1.5 rounded-full border border-emerald-400 shadow-md flex items-center gap-1.5">
               <span>✨</span>
               <span>TEST MODU (SINIRSIZ KUTU)</span>
             </span>
@@ -914,6 +1226,29 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                 Tüm kupaların, alfabe sırasına göre takımların ve tüm oyuncuların sticker yuvalarının yer aldığı özel koleksiyon albümü.
               </p>
             </div>
+
+            {/* GIANT PROMINENT STARTER PACK GIFT BANNER */}
+            {(!hasClaimedStarterPack || isTestUser) && (
+              <div className="bg-gradient-to-r from-emerald-900 via-green-800 to-emerald-950 border-4 border-amber-300 rounded-3xl p-4 sm:p-5 shadow-[0_0_40px_rgba(52,211,153,0.6)] text-center space-y-3 animate-pulse my-4">
+                <div className="inline-block bg-amber-300 text-brand-maroon px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider shadow">
+                  🎉 ÜCRETSİZ HEDİYE PAKETİ
+                </div>
+                <h3 className="text-xl sm:text-2xl font-black text-white uppercase tracking-tight">
+                  5 ADET BAŞLANGIÇ KUTUSU (25 KART HEDİYE)
+                </h3>
+                <p className="text-xs text-emerald-200 font-bold max-w-sm mx-auto">
+                  Koleksiyonunuza hızlı başlamak için tek seferlik 25 adet kart hediyenizi tek tıkla hemen açın!
+                </p>
+                <button
+                  onClick={handleOpenStarterPackClick}
+                  className="px-6 py-3 bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 hover:from-yellow-300 hover:to-amber-400 text-[#800000] font-black text-sm sm:text-base uppercase rounded-2xl border-2 border-white shadow-2xl transition-transform hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center gap-2 mx-auto"
+                >
+                  <span>🎁</span>
+                  <span>HEMEN 25 KART HEDİYENİ AÇ</span>
+                  <span>✨</span>
+                </button>
+              </div>
+            )}
 
             {/* User Collection Stats Banner */}
             <div className="bg-black/40 border border-amber-400/40 rounded-2xl p-3 max-w-md mx-auto flex items-center justify-around">
@@ -1022,6 +1357,9 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                         {TROPHIES_LIST.slice(0, 6).map((trophy, index) => {
                           const slotCode = `TR-${String(index + 1).padStart(2, '0')}`;
                           const isUnlocked = checkIsUnlocked(slotCode);
+                          const variant = getCardVariant(slotCode);
+                          const isShiny = variant === 'shiny';
+                          const isSecret = variant === 'secret';
                           return (
                             <ShinySpecialStickerCard
                               key={trophy.id}
@@ -1030,12 +1368,15 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                               slotCode={slotCode}
                               type="trophy"
                               isUnlocked={isUnlocked}
+                              isSecret={isSecret}
                               onClick={() => setSelectedCardModal({ 
                                 title: trophy.name, 
                                 image: trophy.icon, 
                                 type: 'trophy', 
                                 slotCode,
                                 isUnlocked,
+                                isShiny,
+                                isSecret,
                                 userAlbumEntry: userAlbum[slotCode]
                               })}
                             />
@@ -1066,6 +1407,9 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                         {TROPHIES_LIST.slice(6).map((trophy, index) => {
                           const slotCode = `TR-${String(index + 7).padStart(2, '0')}`;
                           const isUnlocked = checkIsUnlocked(slotCode);
+                          const variant = getCardVariant(slotCode);
+                          const isShiny = variant === 'shiny';
+                          const isSecret = variant === 'secret';
                           return (
                             <ShinySpecialStickerCard
                               key={trophy.id}
@@ -1074,12 +1418,15 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                               slotCode={slotCode}
                               type="trophy"
                               isUnlocked={isUnlocked}
+                              isSecret={isSecret}
                               onClick={() => setSelectedCardModal({ 
                                 title: trophy.name, 
                                 image: trophy.icon, 
                                 type: 'trophy', 
                                 slotCode,
                                 isUnlocked,
+                                isShiny,
+                                isSecret,
                                 userAlbumEntry: userAlbum[slotCode]
                               })}
                             />
@@ -1109,6 +1456,9 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
 
                   const teamLogoSlotCode = `${team.code}-01`;
                   const isTeamLogoUnlocked = checkIsUnlocked(teamLogoSlotCode);
+                  const teamLogoVariant = getCardVariant(teamLogoSlotCode);
+                  const isTeamLogoShiny = teamLogoVariant === 'shiny';
+                  const isTeamLogoSecret = teamLogoVariant === 'secret';
 
                   return (
                     <>
@@ -1139,12 +1489,15 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                                 slotCode={teamLogoSlotCode}
                                 type="team"
                                 isUnlocked={isTeamLogoUnlocked}
+                                isSecret={isTeamLogoSecret}
                                 onClick={() => setSelectedCardModal({ 
                                   title: team.name, 
                                   image: team.logo, 
                                   type: 'team', 
                                   slotCode: teamLogoSlotCode,
                                   isUnlocked: isTeamLogoUnlocked,
+                                  isShiny: isTeamLogoShiny,
+                                  isSecret: isTeamLogoSecret,
                                   userAlbumEntry: userAlbum[teamLogoSlotCode]
                                 })}
                               />
@@ -1177,6 +1530,7 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                                   const isUnlocked = checkIsUnlocked(slotCode);
                                   const variant = getCardVariant(slotCode);
                                   const isShiny = variant === 'shiny';
+                                  const isSecret = variant === 'secret';
 
                                   return (
                                     <PlayerStickerCard
@@ -1186,12 +1540,14 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                                       slotCode={slotCode}
                                       isUnlocked={isUnlocked}
                                       isShiny={isShiny}
+                                      isSecret={isSecret}
                                       onClick={() => setSelectedCardModal({ 
                                         ...player, 
                                         teamLogo: team.logo, 
                                         slotCode,
                                         isUnlocked,
                                         isShiny,
+                                        isSecret,
                                         userAlbumEntry: userAlbum[slotCode]
                                       })}
                                     />
@@ -1245,6 +1601,7 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                                   const isUnlocked = checkIsUnlocked(slotCode);
                                   const variant = getCardVariant(slotCode);
                                   const isShiny = variant === 'shiny';
+                                  const isSecret = variant === 'secret';
 
                                   return (
                                     <PlayerStickerCard
@@ -1254,12 +1611,14 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                                       slotCode={slotCode}
                                       isUnlocked={isUnlocked}
                                       isShiny={isShiny}
+                                      isSecret={isSecret}
                                       onClick={() => setSelectedCardModal({ 
                                         ...player, 
                                         teamLogo: team.logo, 
                                         slotCode,
                                         isUnlocked,
                                         isShiny,
+                                        isSecret,
                                         userAlbumEntry: userAlbum[slotCode]
                                       })}
                                     />
@@ -1311,45 +1670,89 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
       )}
 
       {/* ======================================================= */}
-      {/* FLOATING PACK TRIGGER BUTTON & INFO BUTTON (BOTTOM RIGHT) */}
-      {/* ======================================================= */}
-      <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2 animate-bounce-subtle">
-        
-        {/* Info 'i' Button */}
-        <button
-          onClick={() => setShowInfoModal(true)}
-          className="w-9 h-9 bg-amber-400 hover:bg-amber-300 text-brand-maroon rounded-full border-2 border-white shadow-lg flex items-center justify-center font-black text-sm transition-transform hover:scale-110 cursor-pointer"
-          title="Kutu Oranları ve Detaylı Bilgiler"
-        >
-          i
-        </button>
+      {/* FLOATING PACK TRIGGER BUTTON, SECRET PITY COUNTER & INFO BUTTON (BOTTOM RIGHT) */}
+      {/* ============================================================================== */}
+      {currentUser && (
+        <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-40 flex flex-col items-end gap-2.5 max-w-[280px] sm:max-w-xs select-none">
+          
+          {/* Top Control Bar: Info Button + Test User Secret Pack Button */}
+          <div className="flex items-center gap-2">
+            {isTestUser && (
+              <button
+                onClick={handleOpenSecretTestPackClick}
+                className="px-3 py-1.5 bg-gradient-to-r from-purple-800 via-stone-900 to-black hover:from-purple-700 hover:to-stone-800 text-amber-300 font-black text-[10px] uppercase rounded-xl border-2 border-amber-400 shadow-xl transition-transform hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1.5"
+                title="Test moduna özel 5 adet Secret Kartlı Kutu Aç"
+              >
+                <span>🕶️</span>
+                <span>TEST: 5 SECRET KUTU</span>
+              </button>
+            )}
 
-        {/* Floating Pack Trigger Button */}
-        <button
-          onClick={handleOpenPackClick}
-          disabled={!isTestUser && timeLeftMs > 0}
-          className={`px-5 py-3 rounded-2xl border-4 border-white shadow-2xl flex items-center gap-3 transition-all cursor-pointer transform hover:scale-105 active:scale-95 ${
-            isTestUser || timeLeftMs === 0
-              ? 'bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-brand-maroon animate-pulse ring-4 ring-amber-400/50'
-              : 'bg-stone-700 text-stone-300 cursor-not-allowed opacity-90'
-          }`}
-        >
-          <span className="text-2xl">📦</span>
-          <div className="text-left">
-            <span className="font-black text-xs uppercase tracking-tight block">
-              {isTestUser || timeLeftMs === 0 ? 'KUTU AÇ (5 KART)' : 'KUTU KİLİTLİ'}
-            </span>
-            <span className="text-[10px] font-bold block opacity-90 font-mono">
-              {isTestUser
-                ? '✨ SINIRSIZ AÇILIŞ'
-                : timeLeftMs > 0
-                ? `⏱️ ${formatTimer(timeLeftMs)}`
-                : '🎁 ÜCRETSİZ KUTUN HAZIR!'}
-            </span>
+            <button
+              onClick={() => setShowInfoModal(true)}
+              className="w-9 h-9 bg-amber-400 hover:bg-amber-300 text-brand-maroon rounded-full border-2 border-white shadow-lg flex items-center justify-center font-black text-sm transition-transform hover:scale-110 cursor-pointer flex-shrink-0"
+              title="Kutu Oranları ve Detaylı Bilgiler"
+            >
+              i
+            </button>
           </div>
-        </button>
 
-      </div>
+          {/* Secret Pity Counter Widget */}
+          <div className="w-full bg-stone-900/95 border-2 border-amber-400 text-white rounded-2xl p-2.5 shadow-2xl backdrop-blur-md flex items-center gap-2.5">
+            <div className="relative flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-stone-900 font-black text-xs border border-amber-300 shadow-md flex-shrink-0">
+              <span>🕶️</span>
+            </div>
+            <div className="flex flex-col text-left flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[9px] font-black uppercase text-amber-300 tracking-wider truncate">SECRET PITY SAYACI</span>
+                <span className="text-[9px] font-black text-amber-400">({secretPityCount}/10)</span>
+              </div>
+              <div className="w-full bg-stone-800 h-2 rounded-full overflow-hidden mt-1 border border-stone-700">
+                <div 
+                  className={`h-full transition-all duration-500 ${
+                    secretPityCount >= 9 
+                      ? 'bg-gradient-to-r from-yellow-300 via-amber-400 to-yellow-200 animate-pulse' 
+                      : 'bg-gradient-to-r from-amber-500 to-amber-300'
+                  }`}
+                  style={{ width: `${Math.min(100, (secretPityCount / 10) * 100)}%` }}
+                ></div>
+              </div>
+              <span className="text-[8.5px] font-extrabold text-stone-300 mt-1 truncate block">
+                {secretPityCount >= 9 ? '🔥 SONRAKİ KUTUDA %100 GARANTİ SECRET!' : `${10 - secretPityCount} Kutu Sonra Garanti Secret`}
+              </span>
+            </div>
+          </div>
+
+          {/* Floating Pack Trigger Button */}
+          <button
+            onClick={handleOpenPackClick}
+            disabled={!isTestUser && timeLeftMs > 0}
+            className={`w-full px-4 py-3 rounded-2xl border-4 border-white shadow-2xl flex items-center justify-between gap-2 transition-all cursor-pointer transform hover:scale-[1.02] active:scale-95 ${
+              isTestUser || timeLeftMs === 0
+                ? 'bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-brand-maroon animate-pulse ring-4 ring-amber-400/50'
+                : 'bg-stone-700 text-stone-300 cursor-not-allowed opacity-90'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">📦</span>
+              <div className="text-left">
+                <span className="font-black text-xs uppercase tracking-tight block">
+                  {isTestUser || timeLeftMs === 0 ? 'KUTU AÇ (5 KART)' : 'KUTU KİLİTLİ'}
+                </span>
+                <span className="text-[10px] font-bold block opacity-90 font-mono">
+                  {isTestUser
+                    ? '✨ SINIRSIZ AÇILIŞ'
+                    : timeLeftMs > 0
+                    ? `⏱️ ${formatTimer(timeLeftMs)}`
+                    : '🎁 ÜCRETSİZ KUTUN HAZIR!'}
+                </span>
+              </div>
+            </div>
+            <span className="text-lg font-black">→</span>
+          </button>
+
+        </div>
+      )}
 
       {/* ======================================================= */}
       {/* PACK OPENING REVEAL OVERLAY MODAL */}
@@ -1389,8 +1792,115 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
             </div>
           )}
 
-          {/* MAIN MODAL CONTAINER */}
-          <div className="bg-gradient-to-b from-[#7A1515] via-[#500000] to-[#2A0202] border-4 border-amber-400 rounded-3xl p-4 sm:p-6 max-w-3xl w-full text-center space-y-4 shadow-2xl relative text-white max-h-[95vh] flex flex-col justify-between overflow-y-auto">
+          {/* 3. FULL SCREEN SECRET 5-CLICK GLASS SHATTER EXPERIENCE */}
+          {packStage === 'card' && drawnCards[activePackCardIndex]?.isSecret && secretCrackClicks < 5 && (
+            <div 
+              onClick={handleSecretScreenClick}
+              className={`fixed inset-0 z-[99999] text-white flex flex-col items-center justify-center cursor-pointer select-none overflow-hidden transition-colors duration-200 ${
+                secretFlash ? 'bg-white' : 'bg-black'
+              }`}
+            >
+              {/* WHITE SHATTER FLASH ON 5TH CLICK */}
+              {secretFlash && (
+                <div className="absolute inset-0 bg-white animate-ping z-[100000]" />
+              )}
+
+              {/* ACCUMULATING WHITE GLASS SHATTER SVG PATTERNS */}
+              <svg 
+                className={`absolute inset-0 w-full h-full pointer-events-none transition-transform duration-150 ${
+                  secretCrackClicks >= 4 ? 'scale-105 animate-pulse' : ''
+                }`} 
+                viewBox="0 0 100 100" 
+                preserveAspectRatio="none"
+              >
+                {/* CLICK 1: Major central cross fractures */}
+                {secretCrackClicks >= 1 && (
+                  <g stroke="white" strokeWidth="1.2" fill="none">
+                    <path d="M50 50 L10 5 M50 50 L90 95 M50 50 L95 10 M50 50 L5 85" strokeWidth="1.8" />
+                    <path d="M50 50 L50 0 M50 50 L50 100 M50 50 L0 50 M50 50 L100 50" strokeWidth="1.4" />
+                  </g>
+                )}
+
+                {/* CLICK 2: Secondary branching web cracks */}
+                {secretCrackClicks >= 2 && (
+                  <g stroke="white" strokeWidth="1.1" fill="none" opacity="0.95">
+                    <path d="M30 25 L10 50 L30 75 M70 25 L90 50 L70 75" strokeWidth="1.3" />
+                    <path d="M25 30 L50 10 L75 30 M25 70 L50 90 L75 70" strokeWidth="1.3" />
+                    <path d="M50 50 L30 15 M50 50 L85 25 M50 50 L75 85 M50 50 L15 75" strokeWidth="1.5" />
+                  </g>
+                )}
+
+                {/* CLICK 3: Dense geometric shards and radial fractures */}
+                {secretCrackClicks >= 3 && (
+                  <g stroke="white" strokeWidth="1" fill="none" opacity="0.9">
+                    <polygon points="45,45 55,42 58,55 42,58" stroke="white" strokeWidth="1.2" fill="rgba(255,255,255,0.2)" />
+                    <path d="M45 45 L20 30 M55 42 L80 20 M58 55 L85 80 M42 58 L15 70" strokeWidth="1.4" />
+                    <path d="M10 20 L25 5 L60 2 M90 20 L98 60 L80 95 M10 80 L30 98 L5 40" strokeWidth="1.3" />
+                    <path d="M35 35 L65 35 L65 65 L35 65 Z" strokeDasharray="3,2" strokeWidth="1" />
+                  </g>
+                )}
+
+                {/* CLICK 4: Extreme screen destruction grid */}
+                {secretCrackClicks >= 4 && (
+                  <g stroke="white" strokeWidth="2" fill="none">
+                    <path d="M0 0 L100 100 M100 0 L0 100" strokeWidth="2.5" />
+                    <path d="M50 50 L0 25 M50 50 L100 75 M50 50 L75 0 M50 50 L25 100" strokeWidth="2.2" />
+                    <circle cx="50" cy="50" r="15" stroke="white" strokeWidth="1.8" strokeDasharray="3,3" fill="rgba(255,255,255,0.3)" />
+                    <circle cx="50" cy="50" r="35" stroke="white" strokeWidth="1.4" strokeDasharray="5,5" />
+                    <path d="M5 50 L50 5 M95 50 L50 95" strokeWidth="1.8" />
+                  </g>
+                )}
+              </svg>
+
+              {/* CENTER DISPLAY: SECRET ICON & CLICK INSTRUCTION */}
+              <div className="relative z-20 flex flex-col items-center justify-center space-y-6 px-4 text-center">
+                <div className={`transition-all duration-300 transform ${
+                  secretCrackClicks === 0 ? 'scale-100' :
+                  secretCrackClicks === 1 ? 'scale-110 rotate-3' :
+                  secretCrackClicks === 2 ? 'scale-125 -rotate-3' :
+                  secretCrackClicks === 3 ? 'scale-135 rotate-6 animate-pulse' :
+                  'scale-150 animate-bounce'
+                }`}>
+                  <span className="text-7xl sm:text-9xl filter drop-shadow-[0_0_50px_rgba(255,255,255,1)]">
+                    🕶️
+                  </span>
+                </div>
+
+                <div className="space-y-2 max-w-md">
+                  <h2 className="text-2xl sm:text-4xl font-black uppercase tracking-widest text-white drop-shadow-[0_0_25px_rgba(255,255,255,1)] animate-pulse">
+                    🕶️ GİZLİ SECRET KART!
+                  </h2>
+                  <p className="text-xs sm:text-sm font-black uppercase text-stone-300 tracking-wider">
+                    {secretCrackClicks < 4 
+                      ? 'EKRANA TIKLAYARAK CAMI KIR!' 
+                      : '⚡ SON VURUŞ! TEKRAR TIKLA VEYA CAMI KIR!'}
+                  </p>
+                </div>
+
+                {/* PROGRESS COUNTER BADGES */}
+                <div className="flex flex-col items-center gap-2 pt-2">
+                  <div className="flex gap-2">
+                    {[1, 2, 3, 4, 5].map((step) => (
+                      <div 
+                        key={step} 
+                        className={`w-8 sm:w-12 h-3 rounded-full border-2 border-white transition-all duration-300 ${
+                          step <= secretCrackClicks
+                            ? 'bg-white shadow-[0_0_15px_rgba(255,255,255,1)] scale-110'
+                            : 'bg-stone-900/80 border-stone-600'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <span className="text-xs font-mono font-black uppercase text-stone-300 tracking-widest bg-stone-900 px-3 py-1 rounded-full border border-stone-700 shadow-md">
+                    CAM KIRILMA DURUMU: {secretCrackClicks} / 5
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* MAIN MODAL CONTAINER (Sleek dark container with transparent black shadow overlay) */}
+          <div className="bg-black/80 border-2 border-white/20 rounded-3xl p-4 sm:p-6 max-w-4xl w-full text-center space-y-4 shadow-[0_0_120px_rgba(0,0,0,0.9)] relative text-white max-h-[95vh] flex flex-col justify-between overflow-y-auto">
             
             <button
               onClick={() => setIsOpeningPackModal(false)}
@@ -1401,12 +1911,12 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
 
             {/* HEADER */}
             <div className="space-y-1">
-              <span className="text-[10px] sm:text-xs font-black uppercase text-amber-300 bg-black/50 px-3 py-1 rounded-full border border-amber-400/50 inline-block">
+              <span className="text-[10px] sm:text-xs font-black uppercase text-amber-300 bg-black/60 px-3 py-1 rounded-full border border-amber-400/50 inline-block">
                 OFFICIAL PANINI STYLE STICKER PACK
               </span>
               <h2 className="text-xl sm:text-2xl font-black uppercase text-amber-300 flex items-center justify-center gap-2">
                 <span>📦</span>
-                <span>KUTU AÇILIŞI (5 KART)</span>
+                <span>KUTU AÇILIŞI ({drawnCards.length} KART)</span>
               </h2>
             </div>
 
@@ -1415,12 +1925,12 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
               <div className="py-6 flex flex-col items-center justify-center space-y-6 animate-fade-in">
                 <div 
                   onClick={() => handleProceedToNextCard(0)}
-                  className="w-56 h-72 sm:w-64 sm:h-84 bg-gradient-to-br from-amber-400 via-amber-600 to-[#7A1515] border-8 border-amber-300 rounded-3xl p-6 flex flex-col items-center justify-between text-center cursor-pointer transform hover:scale-105 transition-all shadow-[0_0_50px_rgba(251,191,36,0.6)] animate-pulse relative overflow-hidden group select-none"
+                  className="w-56 h-72 sm:w-64 sm:h-84 bg-gradient-to-br from-amber-400 via-amber-600 to-[#7A1515] border-8 border-amber-300 rounded-3xl p-6 flex flex-col items-center justify-between text-center cursor-pointer transform hover:scale-105 transition-all shadow-[0_0_60px_rgba(251,191,36,0.6)] animate-pulse relative overflow-hidden group select-none"
                 >
                   <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/30 to-transparent transform -rotate-45 group-hover:translate-x-full transition-transform duration-1000"></div>
 
                   <span className="text-xs font-black uppercase bg-black/60 text-amber-300 px-3 py-1 rounded-full border border-amber-300/60">
-                    2026 PANINI ALBÜM KUTUSU
+                    2026 ALBÜM KUTUSU
                   </span>
 
                   <div className="my-auto space-y-2">
@@ -1428,7 +1938,7 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                       📦
                     </span>
                     <span className="text-xs sm:text-sm font-black text-white bg-red-900/90 px-3 py-1 rounded-full border border-amber-300 block">
-                      5 ADET KART İÇERİR
+                      {drawnCards.length} ADET KART İÇERİR
                     </span>
                   </div>
 
@@ -1443,28 +1953,29 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
               </div>
             )}
 
-            {/* STAGE 2: CARDS REVEAL (LEFT COLUMN PREVIOUS SMALL, CENTER ACTIVE BIG) */}
+            {/* STAGE 2: CARDS REVEAL (LEFT COLUMN PREVIOUS SMALL QUEUE, CENTER ACTIVE CARD WITH LOGO/RATING ANIMATIONS) */}
             {packStage === 'card' && activePackCardIndex >= 0 && (
-              <div className="py-2 flex-1 flex flex-col sm:flex-row items-center justify-around gap-4 min-h-[360px]">
+              <div className="py-2 flex-1 flex flex-col sm:flex-row items-center justify-around gap-6 min-h-[400px]">
                 
                 {/* LEFT SIDE: PREVIOUS REVEALED CARDS SMALL QUEUE */}
-                <div className="w-full sm:w-48 bg-black/40 border border-amber-400/30 rounded-2xl p-3 flex flex-row sm:flex-col items-center gap-2 overflow-x-auto sm:overflow-y-auto max-h-48 sm:max-h-80">
+                <div className="w-full sm:w-52 bg-black/60 border border-amber-400/30 rounded-2xl p-3 flex flex-row sm:flex-col items-center gap-2 overflow-x-auto sm:overflow-y-auto max-h-48 sm:max-h-96">
                   <span className="text-[10px] font-black uppercase text-amber-300 block w-full text-center border-b border-amber-400/20 pb-1">
-                    ÇIKAN KARTLAR ({activePackCardIndex + 1}/5)
+                    EKLENEN KARTLAR ({activePackCardIndex}/{drawnCards.length})
                   </span>
 
+                  {activePackCardIndex === 0 && (
+                    <span className="text-[9px] text-amber-200/60 font-medium italic py-2 text-center w-full">
+                      Henüz eklenen kart yok
+                    </span>
+                  )}
+
                   {drawnCards.map((c, idx) => {
-                    if (idx > activePackCardIndex) return null; // Not reached yet
-                    const isCurrent = idx === activePackCardIndex;
+                    if (idx >= activePackCardIndex) return null; // Only show cards that have finished reveal animation
 
                     return (
                       <div
                         key={idx}
-                        className={`flex-shrink-0 w-16 sm:w-full p-1.5 rounded-xl border flex sm:flex-row flex-col items-center gap-1.5 text-left transition-all ${
-                          isCurrent
-                            ? 'bg-amber-400 text-brand-maroon border-white shadow-lg font-black scale-105'
-                            : 'bg-black/60 text-amber-200 border-amber-400/40 opacity-80'
-                        }`}
+                        className="flex-shrink-0 w-20 sm:w-full p-1.5 rounded-xl border flex sm:flex-row flex-col items-center gap-1.5 text-left transition-all bg-black/70 text-amber-200 border-amber-400/40 opacity-90 shadow-md"
                       >
                         <span className="text-[9px] font-black bg-black/60 text-amber-300 px-1 py-0.5 rounded">
                           #{idx + 1}
@@ -1472,91 +1983,281 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                         <div className="truncate text-[9px] font-bold flex-1">
                           {c.title}
                         </div>
-                        {c.isShiny && (
+                        {c.isSecret ? (
+                          <span className="text-[8px] bg-black text-white font-black px-1 rounded border border-white">
+                            🕶️ SECRET
+                          </span>
+                        ) : c.isShiny ? (
                           <span className="text-[8px] bg-yellow-400 text-black font-black px-1 rounded">
                             ✨
                           </span>
-                        )}
+                        ) : null}
                       </div>
                     );
                   })}
                 </div>
 
-                {/* CENTER: BIG ACTIVE CARD */}
-                <div className="flex-1 flex flex-col items-center justify-center space-y-3">
-                  
-                  {/* BIG CARD ITEM */}
-                  <div 
-                    onClick={() => {
-                      if (activePackCardIndex < 4) {
-                        handleProceedToNextCard(activePackCardIndex + 1);
-                      } else {
-                        setPackStage('finished');
+                {/* CENTER: ACTIVE CARD WITH FIFA MULTI-STEP REVEAL ANIMATIONS */}
+                {(() => {
+                  const card = drawnCards[activePackCardIndex];
+                  const isPlayerCard = card.type === 'player';
+                  const isTeamCard = card.type === 'team';
+                  const isTrophyCard = card.type === 'trophy';
+                  const isSecretCard = card.isSecret;
+
+                  // Calculate rating: for players use gen, for teams compute team average gen, for trophy 99
+                  const getCardRating = () => {
+                    if (card.playerData?.gen || card.playerData?.rating) {
+                      return card.playerData.gen || card.playerData.rating;
+                    }
+                    if (isTeamCard) {
+                      const teamObj = teamsData.find(
+                        (t) => t.name.toLowerCase() === card.title.toLowerCase() || t.logo === card.image || t.logo === card.teamLogo
+                      );
+                      if (teamObj && teamObj.players.length > 0) {
+                        const sum = teamObj.players.reduce((acc, p) => acc + (p.gen || 80), 0);
+                        return Math.round(sum / teamObj.players.length);
                       }
-                    }}
-                    className={`w-52 h-72 sm:w-64 sm:h-88 rounded-2xl border-4 p-3 flex flex-col justify-between items-center text-center cursor-pointer transform hover:scale-105 transition-all shadow-2xl relative select-none ${
-                      drawnCards[activePackCardIndex].isShiny
-                        ? 'bg-gradient-to-br from-amber-300 via-yellow-100 to-amber-500 border-amber-300 ring-4 ring-amber-300/80 shadow-[0_0_40px_rgba(251,191,36,0.8)]'
-                        : 'bg-[#FFFEE8] border-[#661616] text-black shadow-xl'
-                    }`}
-                  >
-                    {/* Top Variant Badge */}
-                    <div className="w-full flex items-center justify-between">
-                      <span className="text-[9px] font-black bg-brand-maroon text-amber-300 px-2 py-0.5 rounded-full border border-amber-300">
-                        {drawnCards[activePackCardIndex].slotCode}
-                      </span>
-                      {drawnCards[activePackCardIndex].isShiny ? (
-                        <span className="text-[9px] font-black bg-amber-500 text-black px-2 py-0.5 rounded-full uppercase tracking-tighter shadow-md">
-                          ✨ PARILTILI STİCKER
-                        </span>
-                      ) : (
-                        <span className="text-[9px] font-bold text-stone-600 bg-stone-200 px-2 py-0.5 rounded-full">
-                          NORMAL STİCKER
-                        </span>
+                      return 84;
+                    }
+                    if (isTrophyCard) return 99;
+                    return 85;
+                  };
+
+                  const ratingVal = getCardRating();
+                  const positionVal = card.playerData?.mevki || (isTrophyCard ? 'KUPA' : isTeamCard ? 'TAKIM' : 'FOR');
+                  const teamNameVal = card.teamLogo ? card.title.split(' ')[0] : (isTrophyCard ? 'ŞAMPİYON' : 'KULÜP');
+
+                  return (
+                    <div className="flex-1 flex flex-col items-center justify-center space-y-4 relative min-h-[420px] w-full max-w-lg mx-auto">
+                      
+                      {/* SECRET REVEAL HEADER BANNER */}
+                      {isSecretCard && (
+                        <div className="animate-pulse mb-1">
+                          <span className="text-xl sm:text-3xl font-black uppercase text-white bg-black px-6 py-2 rounded-full border-2 border-white shadow-[0_0_30px_rgba(255,255,255,0.9)] tracking-widest">
+                            🕶️ GİZLİ SECRET KART!
+                          </span>
+                        </div>
                       )}
+
+                      {/* FIFA REVEAL ANIMATION STAGE 1: GIANT TEAM LOGO (CLICK TO SEE RATING) */}
+                      {cardAnimStep === 1 && (
+                        <div 
+                          onClick={() => setCardAnimStep(2)}
+                          className="w-56 h-88 sm:w-64 sm:h-96 flex flex-col items-center justify-center p-4 bg-black/90 border-4 border-amber-300 rounded-2xl shadow-[0_0_60px_rgba(251,191,36,0.8)] cursor-pointer transition-all duration-300 transform hover:scale-105 select-none text-center animate-scale-up my-auto relative group overflow-hidden"
+                          title="Reytingi görmek için tıklayın!"
+                        >
+                          <div className="absolute top-3 bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full tracking-wider animate-pulse">
+                            ⚡ TAKIM AMBLEMİ
+                          </div>
+
+                          <div className="w-36 h-36 sm:w-44 sm:h-44 rounded-full bg-amber-400/20 border-4 border-amber-300 p-4 flex items-center justify-center shadow-[0_0_50px_rgba(251,191,36,0.9)] animate-bounce my-auto">
+                            {card.teamLogo || card.image ? (
+                              <img 
+                                src={card.teamLogo || card.image} 
+                                alt="Team Logo" 
+                                className="max-h-full max-w-full object-contain filter drop-shadow-[0_0_20px_rgba(255,255,255,0.9)]"
+                              />
+                            ) : (
+                              <span className="text-6xl">🛡️</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* FIFA REVEAL ANIMATION STAGE 2: GIANT RATING BADGE (CLICK TO SEE PLAYER) */}
+                      {cardAnimStep === 2 && (
+                        <div 
+                          onClick={() => setCardAnimStep(3)}
+                          className="w-56 h-88 sm:w-64 sm:h-96 flex flex-col items-center justify-center p-4 bg-black/95 border-4 border-amber-300 rounded-2xl shadow-[0_0_80px_rgba(251,191,36,0.9)] cursor-pointer transition-all duration-300 transform hover:scale-105 select-none text-center animate-scale-up my-auto relative group overflow-hidden"
+                          title="Kartı görmek için tıklayın!"
+                        >
+                          <div className="absolute top-3 bg-emerald-400/20 text-emerald-300 border border-emerald-400/40 text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full tracking-wider animate-pulse">
+                            ⚡ {isTeamCard ? 'TAKIM REYTİNGİ' : 'OYUNCU REYTİNGİ'}
+                          </div>
+
+                          {/* GIANT RATING BADGE */}
+                          <div className="bg-gradient-to-b from-amber-300 via-amber-400 to-amber-600 text-brand-maroon px-7 py-3 rounded-2xl border-4 border-white shadow-[0_0_40px_rgba(251,191,36,1)] flex items-center gap-3 animate-bounce my-auto">
+                            <span className="text-4xl sm:text-5xl font-black font-mono">
+                              {ratingVal}
+                            </span>
+                            <div className="flex flex-col items-start leading-tight">
+                              <span className="text-[9px] font-black uppercase text-amber-950">GENEL REYTİNG</span>
+                              <span className="text-xs font-black uppercase bg-brand-maroon text-amber-300 px-1.5 py-0.5 rounded border border-amber-300">
+                                {positionVal}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* FIFA REVEAL ANIMATION STAGE 0: INITIAL STAR BURST WITH RADIATING GROWING BACKDROP */}
+                      {cardAnimStep === 0 && (
+                        <div 
+                          onClick={() => setCardAnimStep(1)}
+                          className={`w-56 h-88 sm:w-64 sm:h-96 flex flex-col items-center justify-center p-4 border-4 rounded-2xl cursor-pointer select-none text-center my-auto relative overflow-hidden group ${
+                            isSecretCard
+                              ? 'bg-black border-white shadow-[0_0_100px_rgba(255,255,255,1)] animate-pulse'
+                              : 'bg-black/90 border-amber-400/80 shadow-[0_0_80px_rgba(251,191,36,0.8)]'
+                          }`}
+                        >
+                          {/* EXPANDING RADIANT GLOW BACKGROUND */}
+                          {isSecretCard ? (
+                            <>
+                              <div className="absolute inset-0 bg-black z-0" />
+                              {/* White shatter glass cracks expanding */}
+                              <div className="absolute inset-0 z-10 opacity-80 animate-ping pointer-events-none">
+                                <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                                  <path d="M50 50 L0 0 M50 50 L100 10 M50 50 L95 90 M50 50 L10 95 M50 50 L0 50 M50 50 L50 100 M50 50 L100 50 M50 50 L50 0" stroke="white" strokeWidth="1.5" fill="none" />
+                                </svg>
+                              </div>
+                              <div className="absolute inset-0 z-10 opacity-90 animate-pulse pointer-events-none">
+                                <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                                  <path d="M50 50 L20 15 M50 50 L80 25 M50 50 L85 75 M50 50 L30 85 M20 15 L5 40 M80 25 L95 50 M85 75 L60 95" stroke="#ffffff" strokeWidth="1" strokeDasharray="2,2" fill="none" />
+                                </svg>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="absolute inset-0 bg-[radial-gradient(circle,_rgba(251,191,36,0.5)_0%,_rgba(0,0,0,0)_75%)] animate-pulse" />
+                              <div className="absolute w-48 h-48 rounded-full bg-amber-400/25 filter blur-xl animate-ping opacity-75" />
+                              <div className="absolute w-36 h-36 rounded-full bg-yellow-300/35 filter blur-lg animate-scale-up" />
+                            </>
+                          )}
+
+                          {/* Spinning Star / Secret Icon over background */}
+                          <div className="relative z-20 flex flex-col items-center justify-center space-y-4 my-auto">
+                            <span className={`text-6xl sm:text-7xl filter ${
+                              isSecretCard 
+                                ? 'drop-shadow-[0_0_30px_rgba(255,255,255,1)] animate-bounce' 
+                                : 'drop-shadow-[0_0_30px_rgba(251,191,36,1)] animate-spin'
+                            }`}>
+                              {isSecretCard ? '🕶️' : '🌟'}
+                            </span>
+                            <span className={`text-xs font-black uppercase tracking-widest px-3 py-1.5 rounded-full border shadow-lg ${
+                              isSecretCard
+                                ? 'bg-white text-black border-white animate-pulse'
+                                : 'bg-amber-950/90 text-amber-300 border-amber-400/50'
+                            }`}>
+                              {isSecretCard ? 'GİZLİ SECRET KART AÇILIYOR...' : 'KART HAZIRLANANIYOR...'}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* FIFA REVEAL ANIMATION STAGE 3: FULL FUT CARD */}
+                      {cardAnimStep === 3 && (
+                        <div 
+                          onClick={() => {
+                            if (activePackCardIndex < drawnCards.length - 1) {
+                              handleProceedToNextCard(activePackCardIndex + 1);
+                            } else {
+                              setPackStage('finished');
+                            }
+                          }}
+                          className="relative group cursor-pointer transition-transform duration-300 hover:scale-105 select-none animate-scale-up"
+                          title="Kartı sola eklemek ve sıradakine geçmek için tıklayın!"
+                        >
+                          {/* CARD COMPONENT WRAPPER */}
+                          <div className="w-56 h-88 sm:w-64 sm:h-96 relative">
+                            
+                            {/* MAIN CARD STYLED CONTAINER */}
+                            <div 
+                              className={`w-full h-full rounded-2xl border-4 p-3 flex flex-col justify-between items-center text-center transition-all duration-500 transform shadow-2xl overflow-hidden ${
+                                isSecretCard
+                                  ? 'bg-black border-white text-white shadow-[0_0_50px_rgba(255,255,255,0.8)] animate-pulse'
+                                  : card.isShiny
+                                  ? 'bg-gradient-to-br from-amber-300 via-yellow-100 to-amber-500 border-amber-300 ring-4 ring-amber-300/80 shadow-[0_0_40px_rgba(251,191,36,0.8)]'
+                                  : 'bg-[#FFFEE8] border-[#661616] text-black shadow-xl'
+                              }`}
+                            >
+                              {/* Card Header Slot Code & Badges */}
+                              <div className="w-full flex items-center justify-between z-10">
+                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border ${
+                                  isSecretCard ? 'bg-white text-black border-black' : 'bg-brand-maroon text-amber-300 border-amber-300'
+                                }`}>
+                                  {card.slotCode}
+                                </span>
+                                {isSecretCard ? (
+                                  <span className="text-[9px] font-black bg-white text-black px-2 py-0.5 rounded-full uppercase tracking-tighter shadow-md animate-pulse">
+                                    🕶️ GİZLİ SECRET
+                                  </span>
+                                ) : card.isShiny ? (
+                                  <span className="text-[9px] font-black bg-amber-500 text-black px-2 py-0.5 rounded-full uppercase tracking-tighter shadow-md">
+                                    ✨ PARILTILI STİCKER
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] font-bold text-stone-600 bg-stone-200 px-2 py-0.5 rounded-full">
+                                    NORMAL STİCKER
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Image Container */}
+                              <div className="flex-1 flex items-center justify-center p-2 my-1 overflow-hidden z-10">
+                                <img 
+                                  src={card.image || card.playerData?.foto || 'https://via.placeholder.com/120'} 
+                                  alt={card.title}
+                                  className={`max-h-36 sm:max-h-44 max-w-full object-contain filter drop-shadow-xl ${
+                                    isSecretCard ? 'brightness-125 contrast-125' : ''
+                                  }`}
+                                />
+                              </div>
+
+                              {/* Bottom Info Row: Rating (Left Box) & Team Logo (Right Box) */}
+                              <div className="w-full grid grid-cols-2 gap-2 my-1 z-10">
+                                {/* Left Box: Rating */}
+                                <div className={`border rounded-xl flex flex-col items-center justify-center py-1 px-1 shadow-inner ${
+                                  isSecretCard ? 'bg-stone-900 border-white/60 text-white' : 'bg-[#D96836] border-[#B34E1E] text-white'
+                                }`}>
+                                  <span className="text-[8px] font-black uppercase text-amber-200">RATİNG</span>
+                                  <span className="text-sm sm:text-base font-black font-mono leading-none">
+                                    {ratingVal}
+                                  </span>
+                                </div>
+
+                                {/* Right Box: Team Logo */}
+                                <div className={`border rounded-xl flex items-center justify-center p-1 shadow-inner overflow-hidden ${
+                                  isSecretCard ? 'bg-stone-900 border-white/60' : 'bg-[#D96836] border-[#B34E1E]'
+                                }`}>
+                                  {card.teamLogo || card.image ? (
+                                    <img 
+                                      src={card.teamLogo || card.image} 
+                                      alt="Team" 
+                                      className="max-h-7 max-w-full object-contain filter drop-shadow-md"
+                                    />
+                                  ) : (
+                                    <span className="text-xs">🛡️</span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Title Banner */}
+                              <div className={`w-full py-1.5 px-2 rounded-xl border text-center z-10 ${
+                                isSecretCard 
+                                  ? 'bg-white text-black border-black font-black' 
+                                  : 'bg-[#7A1515] text-amber-300 border-amber-400'
+                              }`}>
+                                <span className="font-black text-xs sm:text-sm uppercase tracking-tight block truncate">
+                                  {card.title}
+                                </span>
+                              </div>
+
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ACTION PROMPT */}
+                      <p className="text-xs font-black text-amber-300 animate-pulse bg-black/60 px-4 py-1 rounded-full border border-amber-400/30">
+                        {cardAnimStep < 3 
+                          ? '👉 Animasyonu geçmek için tıklayın...' 
+                          : `👉 Kartın üstüne tıklayarak sola aktarın (${activePackCardIndex + 1}/${drawnCards.length})`}
+                      </p>
+
                     </div>
-
-                    {/* Image */}
-                    <div className="flex-1 flex items-center justify-center p-2 my-1 overflow-hidden">
-                      <img 
-                        src={drawnCards[activePackCardIndex].image || drawnCards[activePackCardIndex].playerData?.foto || 'https://via.placeholder.com/120'} 
-                        alt={drawnCards[activePackCardIndex].title}
-                        className="max-h-44 sm:max-h-52 max-w-full object-contain filter drop-shadow-xl"
-                      />
-                    </div>
-
-                    {/* Title Banner */}
-                    <div className="w-full bg-[#7A1515] text-amber-300 py-1.5 px-2 rounded-xl border border-amber-400 text-center">
-                      <span className="font-black text-xs sm:text-sm uppercase tracking-tight block truncate">
-                        {drawnCards[activePackCardIndex].title}
-                      </span>
-                    </div>
-
-                    {/* Auto Attached Badge */}
-                    <span className="text-[9px] font-black text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-400 mt-1 block">
-                      ✅ ALBÜME OTOMATİK YAPIŞTIRILDI
-                    </span>
-                  </div>
-
-                  {/* NEXT CARD BUTTON */}
-                  <button
-                    onClick={() => {
-                      if (activePackCardIndex < 4) {
-                        handleProceedToNextCard(activePackCardIndex + 1);
-                      } else {
-                        setPackStage('finished');
-                      }
-                    }}
-                    className="px-6 py-2.5 bg-amber-400 hover:bg-amber-300 text-brand-maroon font-black text-xs sm:text-sm uppercase rounded-xl border border-amber-200 shadow-lg transition-all cursor-pointer flex items-center gap-2 animate-pulse"
-                  >
-                    <span>
-                      {activePackCardIndex < 4
-                        ? `SONRAKİ KARTA GEÇ → (Kart ${activePackCardIndex + 2} / 5)`
-                        : '✅ KUTUYU TAMAMLADIM'}
-                    </span>
-                  </button>
-
-                </div>
+                  );
+                })()}
 
               </div>
             )}
@@ -1569,28 +2270,71 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                  {drawnCards.map((card, idx) => (
-                    <div 
-                      key={idx}
-                      className={`aspect-[3/4] rounded-xl border p-2 flex flex-col justify-between items-center text-center ${
-                        card.isShiny
-                          ? 'bg-gradient-to-br from-amber-300 to-amber-500 border-amber-300 text-black shadow-md'
-                          : 'bg-[#FFFEE8] border-[#661616] text-black shadow-sm'
-                      }`}
-                    >
-                      <span className="text-[8px] font-black bg-brand-maroon text-amber-300 px-1 rounded">
-                        {card.slotCode}
-                      </span>
-                      <img 
-                        src={card.image || card.playerData?.foto} 
-                        alt={card.title} 
-                        className="max-h-14 object-contain"
-                      />
-                      <span className="text-[8px] font-black truncate w-full bg-[#7A1515] text-amber-300 px-1 py-0.5 rounded">
-                        {card.title}
-                      </span>
-                    </div>
-                  ))}
+                  {drawnCards.map((card, idx) => {
+                    const isSecretCard = Boolean(card.isSecret);
+                    const isShinyCard = Boolean(card.isShiny);
+
+                    return (
+                      <div 
+                        key={idx}
+                        className={`aspect-[3/4] rounded-xl border p-2 flex flex-col justify-between items-center text-center relative overflow-hidden select-none ${
+                          isSecretCard
+                            ? 'bg-black border-2 border-white text-white shadow-[0_0_20px_rgba(255,255,255,0.9)] animate-pulse ring-2 ring-stone-900'
+                            : isShinyCard
+                            ? 'bg-gradient-to-br from-amber-300 via-yellow-100 to-amber-500 border-amber-300 text-black shadow-md'
+                            : 'bg-[#FFFEE8] border-[#661616] text-black shadow-sm'
+                        }`}
+                      >
+                        {/* White Broken Glass / Fracture Overlay for Secret cards */}
+                        {isSecretCard && (
+                          <>
+                            <div className="absolute inset-0 pointer-events-none opacity-40 z-0">
+                              <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                                <path d="M10 0 L50 50 L90 5 M98 45 L50 50 L85 95 M15 90 L50 50 L2 55" stroke="white" strokeWidth="0.8" fill="none" />
+                              </svg>
+                            </div>
+                            <div className="absolute inset-0 bg-gradient-to-tr from-white/10 via-white/30 to-transparent mix-blend-overlay opacity-90 pointer-events-none z-0" />
+                          </>
+                        )}
+
+                        {/* Glossy Foil Overlay for Shiny cards */}
+                        {isShinyCard && !isSecretCard && (
+                          <div className="absolute inset-0 bg-gradient-to-tr from-cyan-400/20 via-pink-400/20 to-yellow-200/30 mix-blend-color-dodge opacity-90 pointer-events-none z-0" />
+                        )}
+
+                        <div className="w-full flex items-center justify-between z-10">
+                          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded ${
+                            isSecretCard ? 'bg-white text-black font-black' : 'bg-brand-maroon text-amber-300'
+                          }`}>
+                            {card.slotCode}
+                          </span>
+                          {isSecretCard ? (
+                            <span className="text-[7px] font-black bg-white text-black px-1 py-0.5 rounded-full border border-gray-300 shadow-sm animate-bounce flex items-center gap-0.5">
+                              🕶️ SECRET
+                            </span>
+                          ) : isShinyCard ? (
+                            <span className="text-[7px] font-black bg-amber-500 text-black px-1 py-0.5 rounded-full border border-amber-200 shadow-xs">
+                              ✨ PARILTILI
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div className="flex-1 flex items-center justify-center my-1 z-10 overflow-hidden">
+                          <img 
+                            src={card.image || card.playerData?.foto} 
+                            alt={card.title} 
+                            className={`max-h-16 object-contain filter drop-shadow-md ${isSecretCard ? 'brightness-110 contrast-125' : ''}`}
+                          />
+                        </div>
+
+                        <span className={`text-[8px] font-black truncate w-full px-1 py-0.5 rounded z-10 ${
+                          isSecretCard ? 'bg-white text-black font-black' : 'bg-[#7A1515] text-amber-300'
+                        }`}>
+                          {card.title}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 <button
@@ -1692,59 +2436,103 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
             {/* Leaderboard Lists */}
             <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
               
-              {/* Leaderboard Category 1: Most Shiny Cards */}
-              <div className="bg-white p-4 rounded-2xl border-2 border-amber-300 space-y-3 shadow-xs">
-                <h4 className="font-black text-xs uppercase text-amber-900 flex items-center gap-1.5 border-b pb-2 border-amber-200">
-                  <span>✨</span>
-                  <span>EN ÇOK PARILTILI KART SAHİPLERİ</span>
-                </h4>
-
-                <div className="space-y-2">
-                  {[...leaderboardUsers]
-                    .sort((a, b) => b.totalShinyCards - a.totalShinyCards)
-                    .slice(0, 5)
-                    .map((user, idx) => (
-                      <div key={user.uid} className="flex items-center justify-between bg-amber-50/80 p-2 rounded-xl border border-amber-200 text-xs font-bold">
-                        <div className="flex items-center gap-2">
-                          <span className="w-5 h-5 bg-amber-400 text-brand-maroon rounded-full flex items-center justify-center text-[10px] font-black">
-                            {idx + 1}
-                          </span>
-                          <span className="font-black text-stone-900">{user.displayName}</span>
-                        </div>
-                        <span className="font-black text-amber-800 bg-amber-200 px-2.5 py-0.5 rounded-full border border-amber-400">
-                          ✨ {user.totalShinyCards} Parıltılı
-                        </span>
-                      </div>
-                    ))}
+              {leaderboardUsers.length === 0 ? (
+                <div className="text-center py-8 space-y-3 bg-white p-4 rounded-2xl border-2 border-amber-300">
+                  <span className="text-3xl animate-bounce block">⏳</span>
+                  <p className="text-xs font-black uppercase text-stone-600">
+                    İstatistikler yükleniyor veya henüz veri yok...
+                  </p>
+                  <button
+                    onClick={() => fetchLeaderboard()}
+                    className="px-4 py-2 bg-amber-400 text-brand-maroon font-black text-xs uppercase rounded-xl border border-amber-600 shadow cursor-pointer"
+                  >
+                    🔄 Yeniden Yükle
+                  </button>
                 </div>
-              </div>
+              ) : (
+                <>
+                  {/* Leaderboard Category 1: Most Secret Cards */}
+                  <div className="bg-[#1a1a1a] p-4 rounded-2xl border-2 border-stone-700 space-y-3 shadow-md text-white">
+                    <h4 className="font-black text-xs uppercase text-amber-300 flex items-center gap-1.5 border-b pb-2 border-stone-800">
+                      <span>🕶️</span>
+                      <span>EN ÇOK SECRET KART SAHİPLERİ</span>
+                    </h4>
 
-              {/* Leaderboard Category 2: Most Unique Cards */}
-              <div className="bg-white p-4 rounded-2xl border-2 border-amber-300 space-y-3 shadow-xs">
-                <h4 className="font-black text-xs uppercase text-brand-maroon flex items-center gap-1.5 border-b pb-2 border-amber-200">
-                  <span>🏆</span>
-                  <span>EN ÇOK FARKLII KART SAHİPLERİ (ÇİFTLER SAYILMAZ)</span>
-                </h4>
+                    <div className="space-y-2">
+                      {[...leaderboardUsers]
+                        .sort((a, b) => b.totalSecretCards - a.totalSecretCards)
+                        .slice(0, 5)
+                        .map((user, idx) => (
+                          <div key={user.uid} className="flex items-center justify-between bg-stone-900 p-2 rounded-xl border border-stone-800 text-xs font-bold">
+                            <div className="flex items-center gap-2">
+                              <span className="w-5 h-5 bg-amber-400 text-black rounded-full flex items-center justify-center text-[10px] font-black">
+                                {idx + 1}
+                              </span>
+                              <span className="font-black text-stone-100">{user.displayName}</span>
+                            </div>
+                            <span className="font-black text-amber-300 bg-black px-2.5 py-0.5 rounded-full border border-amber-400/50">
+                              🕶️ {user.totalSecretCards} Secret
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
 
-                <div className="space-y-2">
-                  {[...leaderboardUsers]
-                    .sort((a, b) => b.totalUniqueCards - a.totalUniqueCards)
-                    .slice(0, 5)
-                    .map((user, idx) => (
-                      <div key={user.uid} className="flex items-center justify-between bg-amber-50/80 p-2 rounded-xl border border-amber-200 text-xs font-bold">
-                        <div className="flex items-center gap-2">
-                          <span className="w-5 h-5 bg-brand-maroon text-amber-300 rounded-full flex items-center justify-center text-[10px] font-black">
-                            {idx + 1}
-                          </span>
-                          <span className="font-black text-stone-900">{user.displayName}</span>
-                        </div>
-                        <span className="font-black text-brand-maroon bg-amber-200 px-2.5 py-0.5 rounded-full border border-amber-400">
-                          ⚽ {user.totalUniqueCards} Kart
-                        </span>
-                      </div>
-                    ))}
-                </div>
-              </div>
+                  {/* Leaderboard Category 2: Most Shiny Cards */}
+                  <div className="bg-white p-4 rounded-2xl border-2 border-amber-300 space-y-3 shadow-xs">
+                    <h4 className="font-black text-xs uppercase text-amber-900 flex items-center gap-1.5 border-b pb-2 border-amber-200">
+                      <span>✨</span>
+                      <span>EN ÇOK PARILTILI KART SAHİPLERİ</span>
+                    </h4>
+
+                    <div className="space-y-2">
+                      {[...leaderboardUsers]
+                        .sort((a, b) => b.totalShinyCards - a.totalShinyCards)
+                        .slice(0, 5)
+                        .map((user, idx) => (
+                          <div key={user.uid} className="flex items-center justify-between bg-amber-50/80 p-2 rounded-xl border border-amber-200 text-xs font-bold">
+                            <div className="flex items-center gap-2">
+                              <span className="w-5 h-5 bg-amber-400 text-brand-maroon rounded-full flex items-center justify-center text-[10px] font-black">
+                                {idx + 1}
+                              </span>
+                              <span className="font-black text-stone-900">{user.displayName}</span>
+                            </div>
+                            <span className="font-black text-amber-800 bg-amber-200 px-2.5 py-0.5 rounded-full border border-amber-400">
+                              ✨ {user.totalShinyCards} Parıltılı
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+
+                  {/* Leaderboard Category 3: Most Unique Cards */}
+                  <div className="bg-white p-4 rounded-2xl border-2 border-amber-300 space-y-3 shadow-xs">
+                    <h4 className="font-black text-xs uppercase text-brand-maroon flex items-center gap-1.5 border-b pb-2 border-amber-200">
+                      <span>🏆</span>
+                      <span>EN ÇOK FARKLI KART SAHİPLERİ (ÇİFTLER SAYILMAZ)</span>
+                    </h4>
+
+                    <div className="space-y-2">
+                      {[...leaderboardUsers]
+                        .sort((a, b) => b.totalUniqueCards - a.totalUniqueCards)
+                        .slice(0, 5)
+                        .map((user, idx) => (
+                          <div key={user.uid} className="flex items-center justify-between bg-amber-50/80 p-2 rounded-xl border border-amber-200 text-xs font-bold">
+                            <div className="flex items-center gap-2">
+                              <span className="w-5 h-5 bg-brand-maroon text-amber-300 rounded-full flex items-center justify-center text-[10px] font-black">
+                                {idx + 1}
+                              </span>
+                              <span className="font-black text-stone-900">{user.displayName}</span>
+                            </div>
+                            <span className="font-black text-brand-maroon bg-amber-200 px-2.5 py-0.5 rounded-full border border-amber-400">
+                              ⚽ {user.totalUniqueCards} Kart
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                </>
+              )}
 
             </div>
 
@@ -1813,6 +2601,7 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                   slotCode={selectedCardModal.slotCode}
                   type={selectedCardModal.type}
                   isUnlocked={selectedCardModal.isUnlocked}
+                  isSecret={selectedCardModal.userAlbumEntry?.selectedVariant === 'secret' && selectedCardModal.userAlbumEntry?.hasSecret}
                 />
               ) : (
                 <PlayerStickerCard 
@@ -1821,6 +2610,7 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                   slotCode={selectedCardModal.slotCode}
                   isUnlocked={selectedCardModal.isUnlocked}
                   isShiny={selectedCardModal.isShiny}
+                  isSecret={selectedCardModal.userAlbumEntry?.selectedVariant === 'secret' && selectedCardModal.userAlbumEntry?.hasSecret}
                 />
               )}
             </div>
@@ -1836,18 +2626,18 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
               )}
             </div>
 
-            {/* Card Variant Selector (Normal vs Parıltılı) if user owns both or owns shiny */}
+            {/* Card Variant Selector (Normal, Parıltılı & Secret) */}
             {selectedCardModal.isUnlocked && selectedCardModal.userAlbumEntry && (
               <div className="pt-2 border-t border-amber-400/30 space-y-2">
                 <span className="text-[10px] font-black uppercase text-brand-maroon block">
                   ALBÜMDE GÖRÜNECEK VERSİYONU SEÇİN:
                 </span>
-                <div className="grid grid-cols-2 gap-2">
+                <div className={`grid ${selectedCardModal.userAlbumEntry.hasSecret ? 'grid-cols-3' : 'grid-cols-2'} gap-2`}>
                   <button
                     onClick={() => handleToggleCardVariant(selectedCardModal.slotCode, 'normal')}
                     disabled={!selectedCardModal.userAlbumEntry.hasNormal}
-                    className={`py-2 px-2 rounded-xl font-black text-[10px] uppercase border transition-all cursor-pointer ${
-                      selectedCardModal.userAlbumEntry.selectedVariant === 'normal' || (!selectedCardModal.userAlbumEntry.hasShiny)
+                    className={`py-2 px-1.5 rounded-xl font-black text-[9px] uppercase border transition-all cursor-pointer ${
+                      selectedCardModal.userAlbumEntry.selectedVariant === 'normal' || (!selectedCardModal.userAlbumEntry.hasShiny && !selectedCardModal.userAlbumEntry.hasSecret)
                         ? 'bg-amber-400 text-brand-maroon border-brand-maroon shadow-md'
                         : 'bg-white text-stone-600 border-stone-300 hover:bg-amber-100'
                     } disabled:opacity-40 disabled:cursor-not-allowed`}
@@ -1858,7 +2648,7 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                   <button
                     onClick={() => handleToggleCardVariant(selectedCardModal.slotCode, 'shiny')}
                     disabled={!selectedCardModal.userAlbumEntry.hasShiny}
-                    className={`py-2 px-2 rounded-xl font-black text-[10px] uppercase border transition-all cursor-pointer ${
+                    className={`py-2 px-1.5 rounded-xl font-black text-[9px] uppercase border transition-all cursor-pointer ${
                       selectedCardModal.userAlbumEntry.selectedVariant === 'shiny'
                         ? 'bg-amber-400 text-brand-maroon border-brand-maroon shadow-md'
                         : 'bg-white text-stone-600 border-stone-300 hover:bg-amber-100'
@@ -1866,12 +2656,28 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                   >
                     ✨ PARILTILI
                   </button>
+
+                  {selectedCardModal.userAlbumEntry.hasSecret && (
+                    <button
+                      onClick={() => handleToggleCardVariant(selectedCardModal.slotCode, 'secret')}
+                      disabled={!selectedCardModal.userAlbumEntry.hasSecret}
+                      className={`py-2 px-1.5 rounded-xl font-black text-[9px] uppercase border transition-all cursor-pointer ${
+                        selectedCardModal.userAlbumEntry.selectedVariant === 'secret'
+                          ? 'bg-black text-white border-white ring-2 ring-stone-900 shadow-md'
+                          : 'bg-stone-900 text-stone-300 border-stone-700 hover:bg-black'
+                      } disabled:opacity-40 disabled:cursor-not-allowed`}
+                    >
+                      🕶️ SECRET
+                    </button>
+                  )}
                 </div>
               </div>
             )}
           </div>
         </div>
       )}
+
+
 
     </div>
   );
