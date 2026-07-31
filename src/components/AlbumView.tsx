@@ -1758,25 +1758,25 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
       {/* PACK OPENING REVEAL OVERLAY MODAL */}
       {/* ======================================================= */}
       {isOpeningPackModal && (
-        <div className="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-3 animate-fade-in overflow-hidden">
+        <div className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-3 animate-fade-in overflow-hidden transform-gpu">
           
-          {/* Keyframe animation inline styles for Star Expansion & Yellow Flash */}
+          {/* Hardware-accelerated Keyframe animation inline styles for Star Expansion & Yellow Flash */}
           <style>{`
             @keyframes starExpandScreen {
-              0% { transform: scale(0.1) rotate(0deg); opacity: 0.3; }
-              40% { transform: scale(6) rotate(120deg); opacity: 1; }
-              80% { transform: scale(40) rotate(240deg); opacity: 0.95; }
-              100% { transform: scale(70) rotate(360deg); opacity: 0; }
+              0% { transform: translateZ(0) scale(0.2) rotate(0deg); opacity: 0.2; }
+              50% { transform: translateZ(0) scale(4) rotate(90deg); opacity: 1; }
+              100% { transform: translateZ(0) scale(12) rotate(180deg); opacity: 0; }
             }
             .animate-star-expand {
-              animation: starExpandScreen 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+              will-change: transform, opacity;
+              animation: starExpandScreen 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
             }
           `}</style>
 
           {/* 1. STAGE STAR GROWING ANIMATION OVERLAY */}
           {shinyStarStage === 'star' && (
-            <div className="absolute inset-0 z-50 pointer-events-none flex items-center justify-center overflow-hidden bg-black/70">
-              <span className="text-8xl sm:text-9xl filter drop-shadow-[0_0_40px_rgba(251,191,36,1)] animate-star-expand">
+            <div className="absolute inset-0 z-50 pointer-events-none flex items-center justify-center overflow-hidden bg-black/70 transform-gpu">
+              <span className="text-8xl sm:text-9xl [text-shadow:0_0_30px_#fbbf24] animate-star-expand">
                 ⭐
               </span>
             </div>
@@ -1784,9 +1784,9 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
 
           {/* 2. STAGE YELLOW GLOW ANIMATION OVERLAY */}
           {shinyStarStage === 'yellow' && (
-            <div className="absolute inset-0 z-50 pointer-events-none flex flex-col items-center justify-center bg-gradient-to-r from-amber-400 via-yellow-200 to-amber-500 animate-pulse p-4 text-center">
-              <span className="text-7xl sm:text-9xl block animate-bounce filter drop-shadow-2xl">✨</span>
-              <h2 className="text-3xl sm:text-5xl font-black uppercase text-brand-maroon tracking-wider bg-white/90 px-8 py-3 rounded-full border-4 border-amber-400 shadow-2xl mt-4">
+            <div className="absolute inset-0 z-50 pointer-events-none flex flex-col items-center justify-center bg-gradient-to-r from-amber-400 via-yellow-200 to-amber-500 p-4 text-center transform-gpu">
+              <span className="text-7xl sm:text-9xl block animate-bounce [text-shadow:0_0_20px_#800000]">✨</span>
+              <h2 className="text-3xl sm:text-5xl font-black uppercase text-brand-maroon tracking-wider bg-white/95 px-8 py-3 rounded-full border-4 border-amber-400 shadow-xl mt-4">
                 PARILTILI EFSANEVİ KART!
               </h2>
             </div>
@@ -2044,19 +2044,19 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                       {cardAnimStep === 1 && (
                         <div 
                           onClick={() => setCardAnimStep(2)}
-                          className="w-56 h-88 sm:w-64 sm:h-96 flex flex-col items-center justify-center p-4 bg-black/90 border-4 border-amber-300 rounded-2xl shadow-[0_0_60px_rgba(251,191,36,0.8)] cursor-pointer transition-all duration-300 transform hover:scale-105 select-none text-center animate-scale-up my-auto relative group overflow-hidden"
+                          className="w-56 h-88 sm:w-64 sm:h-96 flex flex-col items-center justify-center p-4 bg-black/90 border-4 border-amber-300 rounded-2xl shadow-2xl ring-4 ring-amber-400/50 cursor-pointer transition-transform duration-200 transform hover:scale-105 select-none text-center animate-scale-up my-auto relative group overflow-hidden transform-gpu"
                           title="Reytingi görmek için tıklayın!"
                         >
-                          <div className="absolute top-3 bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full tracking-wider animate-pulse">
+                          <div className="absolute top-3 bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full tracking-wider">
                             ⚡ TAKIM AMBLEMİ
                           </div>
 
-                          <div className="w-36 h-36 sm:w-44 sm:h-44 rounded-full bg-amber-400/20 border-4 border-amber-300 p-4 flex items-center justify-center shadow-[0_0_50px_rgba(251,191,36,0.9)] animate-bounce my-auto">
+                          <div className="w-36 h-36 sm:w-44 sm:h-44 rounded-full bg-amber-400/20 border-4 border-amber-300 p-4 flex items-center justify-center shadow-lg animate-bounce my-auto">
                             {card.teamLogo || card.image ? (
                               <img 
                                 src={card.teamLogo || card.image} 
                                 alt="Team Logo" 
-                                className="max-h-full max-w-full object-contain filter drop-shadow-[0_0_20px_rgba(255,255,255,0.9)]"
+                                className="max-h-full max-w-full object-contain filter drop-shadow-md"
                               />
                             ) : (
                               <span className="text-6xl">🛡️</span>
@@ -2069,15 +2069,15 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                       {cardAnimStep === 2 && (
                         <div 
                           onClick={() => setCardAnimStep(3)}
-                          className="w-56 h-88 sm:w-64 sm:h-96 flex flex-col items-center justify-center p-4 bg-black/95 border-4 border-amber-300 rounded-2xl shadow-[0_0_80px_rgba(251,191,36,0.9)] cursor-pointer transition-all duration-300 transform hover:scale-105 select-none text-center animate-scale-up my-auto relative group overflow-hidden"
+                          className="w-56 h-88 sm:w-64 sm:h-96 flex flex-col items-center justify-center p-4 bg-black/95 border-4 border-amber-300 rounded-2xl shadow-2xl ring-4 ring-amber-400/50 cursor-pointer transition-transform duration-200 transform hover:scale-105 select-none text-center animate-scale-up my-auto relative group overflow-hidden transform-gpu"
                           title="Kartı görmek için tıklayın!"
                         >
-                          <div className="absolute top-3 bg-emerald-400/20 text-emerald-300 border border-emerald-400/40 text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full tracking-wider animate-pulse">
+                          <div className="absolute top-3 bg-emerald-400/20 text-emerald-300 border border-emerald-400/40 text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full tracking-wider">
                             ⚡ {isTeamCard ? 'TAKIM REYTİNGİ' : 'OYUNCU REYTİNGİ'}
                           </div>
 
                           {/* GIANT RATING BADGE */}
-                          <div className="bg-gradient-to-b from-amber-300 via-amber-400 to-amber-600 text-brand-maroon px-7 py-3 rounded-2xl border-4 border-white shadow-[0_0_40px_rgba(251,191,36,1)] flex items-center gap-3 animate-bounce my-auto">
+                          <div className="bg-gradient-to-b from-amber-300 via-amber-400 to-amber-600 text-brand-maroon px-7 py-3 rounded-2xl border-4 border-white shadow-xl flex items-center gap-3 animate-bounce my-auto">
                             <span className="text-4xl sm:text-5xl font-black font-mono">
                               {ratingVal}
                             </span>
@@ -2095,10 +2095,10 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                       {cardAnimStep === 0 && (
                         <div 
                           onClick={() => setCardAnimStep(1)}
-                          className={`w-56 h-88 sm:w-64 sm:h-96 flex flex-col items-center justify-center p-4 border-4 rounded-2xl cursor-pointer select-none text-center my-auto relative overflow-hidden group ${
+                          className={`w-56 h-88 sm:w-64 sm:h-96 flex flex-col items-center justify-center p-4 border-4 rounded-2xl cursor-pointer select-none text-center my-auto relative overflow-hidden group transform-gpu ${
                             isSecretCard
-                              ? 'bg-black border-white shadow-[0_0_100px_rgba(255,255,255,1)] animate-pulse'
-                              : 'bg-black/90 border-amber-400/80 shadow-[0_0_80px_rgba(251,191,36,0.8)]'
+                              ? 'bg-black border-white shadow-2xl ring-4 ring-white/60'
+                              : 'bg-black/90 border-amber-400/80 shadow-2xl ring-4 ring-amber-400/50'
                           }`}
                         >
                           {/* EXPANDING RADIANT GLOW BACKGROUND */}
@@ -2106,37 +2106,31 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                             <>
                               <div className="absolute inset-0 bg-black z-0" />
                               {/* White shatter glass cracks expanding */}
-                              <div className="absolute inset-0 z-10 opacity-80 animate-ping pointer-events-none">
+                              <div className="absolute inset-0 z-10 opacity-70 pointer-events-none">
                                 <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-                                  <path d="M50 50 L0 0 M50 50 L100 10 M50 50 L95 90 M50 50 L10 95 M50 50 L0 50 M50 50 L50 100 M50 50 L100 50 M50 50 L50 0" stroke="white" strokeWidth="1.5" fill="none" />
-                                </svg>
-                              </div>
-                              <div className="absolute inset-0 z-10 opacity-90 animate-pulse pointer-events-none">
-                                <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-                                  <path d="M50 50 L20 15 M50 50 L80 25 M50 50 L85 75 M50 50 L30 85 M20 15 L5 40 M80 25 L95 50 M85 75 L60 95" stroke="#ffffff" strokeWidth="1" strokeDasharray="2,2" fill="none" />
+                                  <path d="M50 50 L0 0 M50 50 L100 10 M50 50 L95 90 M50 50 L10 95 M50 50 L0 50 M50 50 L50 100 M50 50 L100 50 M50 50 L50 0" stroke="white" strokeWidth="1.2" fill="none" />
                                 </svg>
                               </div>
                             </>
                           ) : (
                             <>
-                              <div className="absolute inset-0 bg-[radial-gradient(circle,_rgba(251,191,36,0.5)_0%,_rgba(0,0,0,0)_75%)] animate-pulse" />
-                              <div className="absolute w-48 h-48 rounded-full bg-amber-400/25 filter blur-xl animate-ping opacity-75" />
-                              <div className="absolute w-36 h-36 rounded-full bg-yellow-300/35 filter blur-lg animate-scale-up" />
+                              <div className="absolute inset-0 bg-[radial-gradient(circle,_rgba(251,191,36,0.35)_0%,_rgba(0,0,0,0)_75%)]" />
+                              <div className="absolute w-36 h-36 rounded-full bg-yellow-300/25 filter blur-md animate-pulse" />
                             </>
                           )}
 
                           {/* Spinning Star / Secret Icon over background */}
                           <div className="relative z-20 flex flex-col items-center justify-center space-y-4 my-auto">
-                            <span className={`text-6xl sm:text-7xl filter ${
+                            <span className={`text-6xl sm:text-7xl ${
                               isSecretCard 
-                                ? 'drop-shadow-[0_0_30px_rgba(255,255,255,1)] animate-bounce' 
-                                : 'drop-shadow-[0_0_30px_rgba(251,191,36,1)] animate-spin'
+                                ? '[text-shadow:0_0_20px_#ffffff] animate-bounce' 
+                                : '[text-shadow:0_0_20px_#fbbf24] animate-spin'
                             }`}>
                               {isSecretCard ? '🕶️' : '🌟'}
                             </span>
                             <span className={`text-xs font-black uppercase tracking-widest px-3 py-1.5 rounded-full border shadow-lg ${
                               isSecretCard
-                                ? 'bg-white text-black border-white animate-pulse'
+                                ? 'bg-white text-black border-white'
                                 : 'bg-amber-950/90 text-amber-300 border-amber-400/50'
                             }`}>
                               {isSecretCard ? 'GİZLİ SECRET KART AÇILIYOR...' : 'KART HAZIRLANANIYOR...'}
