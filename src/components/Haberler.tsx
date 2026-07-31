@@ -410,10 +410,11 @@ export default function Haberler({ currentUser, currentLang, translations, onNav
 
       <div className="w-full lg:w-90 flex-shrink-0 sticky top-24">
         <iframe 
-          src="https://discord.com/widget?id=1106663307122851850&theme=dark" 
+          src="https://discord.com/widget?id=1512996223370399815&theme=dark" 
           width="100%" 
           height="500" 
-          allowtransparency="true" 
+          allowTransparency={true} 
+          sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts"
           style={{ border: 0 }}
           className="rounded-2xl shadow-md border-b-8 border-brand-maroon"
         ></iframe>
