@@ -59,7 +59,8 @@ const TRANSLATIONS = {
     wait: 'Bekleniyor...',
     ligm: 'LİG MAÇI',
     cupm: 'TURNUVA',
-    mvp: 'MAÇIN OYUNCUSU (MVP)'
+    mvp: 'MAÇIN OYUNCUSU (MVP)',
+    elo: 'ELO Reytingi'
   },
   en: {
     back: 'Back',
@@ -95,7 +96,8 @@ const TRANSLATIONS = {
     wait: 'Pending...',
     ligm: 'LEAGUE MATCH',
     cupm: 'TOURNAMENT',
-    mvp: 'MAN OF THE MATCH (MVP)'
+    mvp: 'MAN OF THE MATCH (MVP)',
+    elo: 'ELO Rating'
   },
   pt: {
     back: 'Voltar',
@@ -131,7 +133,8 @@ const TRANSLATIONS = {
     wait: 'Aguardando...',
     ligm: 'JOGO DA LIGA',
     cupm: 'TORNEIO',
-    mvp: 'MELHOR DO JOGO (MVP)'
+    mvp: 'MELHOR DO JOGO (MVP)',
+    elo: 'Classificação ELO'
   }
 };
 

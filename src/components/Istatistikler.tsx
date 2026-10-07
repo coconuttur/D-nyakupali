@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Player, Team, UserProfile } from '../types';
+import { Player, Team, Match, UserProfile } from '../types';
 import { TROPHIES_LIST, TROPHY_MAP } from '../lib/trophies';
 import { TrophyDetailModal } from './TrophyDetailModal';
+import EloView from './EloView';
 
 interface IstatistiklerProps {
   currentLang: 'tr' | 'en' | 'pt';
@@ -13,13 +14,14 @@ interface IstatistiklerProps {
   currentUser?: UserProfile | null;
 }
 
-type StatType = 'goals' | 'asistsay' | 'gol_mac' | 'gen' | 'ratingoy' | 't_gen' | 'kupa';
+type StatType = 'goals' | 'asistsay' | 'gol_mac' | 'gen' | 'ratingoy' | 't_gen' | 'kupa' | 'elo';
 
 export default function Istatistikler({ currentLang, translations, onNavigate, teamLogos, currentUser = null }: IstatistiklerProps) {
   const [activeStat, setActiveStat] = useState<StatType>('goals');
   const [kupaSubTab, setKupaSubTab] = useState<'teams' | 'players'>('teams');
   const [players, setPlayers] = useState<Player[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
+  const [matches, setMatches] = useState<Match[]>([]);
   const [mvpCounts, setMvpCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [selectedTrophyId, setSelectedTrophyId] = useState<string | null>(null);
@@ -51,13 +53,16 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
   useEffect(() => {
     const unsubscribeMatches = onSnapshot(collection(db, 'matches'), (snap) => {
       const counts: Record<string, number> = {};
+      const matchList: Match[] = [];
       snap.forEach((doc) => {
         const data = doc.data();
+        matchList.push({ id: doc.id, ...data } as Match);
         if (data.played && data.mvp) {
           const mvpName = data.mvp.trim().toUpperCase();
           counts[mvpName] = (counts[mvpName] || 0) + 1;
         }
       });
+      setMatches(matchList);
       setMvpCounts(counts);
     });
     return () => unsubscribeMatches();
@@ -73,6 +78,7 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
     ratingoy: t.rat,
     t_gen: 'Takım GEN Ort.',
     kupa: 'Toplam Kupa',
+    elo: 'ELO Reytingi',
   };
 
   const getTotalTrophies = (kupalar?: Record<string, number>) => {
@@ -155,7 +161,7 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
     <div className="space-y-6">
       {/* Sub tabs list */}
       <div className="flex gap-2 justify-center flex-wrap">
-        {(['goals', 'asistsay', 'gol_mac', 'gen', 'ratingoy', 't_gen', 'kupa'] as StatType[]).map((tab) => (
+        {(['goals', 'asistsay', 'gol_mac', 'gen', 'ratingoy', 't_gen', 'kupa', 'elo'] as StatType[]).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveStat(tab)}
@@ -172,6 +178,7 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
             {tab === 'ratingoy' && t.rat + " " + t.lider}
             {tab === 't_gen' && '⚡ T-GEN'}
             {tab === 'kupa' && '🏆 KUPA SIRALAMASI'}
+            {tab === 'elo' && '⭐ TAKIM ELO'}
           </button>
         ))}
       </div>
@@ -204,6 +211,14 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
 
       {loading ? (
         <h3 className="text-center text-gray-500 font-bold">{t.loading}</h3>
+      ) : activeStat === 'elo' ? (
+        <EloView
+          teams={teams}
+          matches={matches}
+          teamLogos={teamLogos}
+          currentLang={currentLang}
+          onNavigate={onNavigate}
+        />
       ) : activeStat === 'kupa' && kupaSubTab === 'teams' ? (
         teamList.length === 0 ? (
           <h3 className="text-center text-gray-500 font-bold">Takım kupa verisi bulunamadı.</h3>

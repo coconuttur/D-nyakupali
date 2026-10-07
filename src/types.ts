@@ -76,6 +76,8 @@ export interface Match {
   date?: string;
   datejav: number;
   ligm?: boolean;
+  category?: string;
+  isWorldCup?: boolean;
   mvp?: string;
   rating?: string;
   timeline?: MatchTimelineEvent[];
