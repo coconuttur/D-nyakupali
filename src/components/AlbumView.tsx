@@ -3,6 +3,8 @@ import { collection, onSnapshot, doc, setDoc, getDocs, deleteDoc, writeBatch } f
 import { db } from '../firebase';
 import { TROPHIES_LIST } from '../lib/trophies';
 import { Player, Team, UserProfile } from '../types';
+import { ShopModal, ShopPackType, SHOP_PACK_CONFIGS } from './ShopModal';
+import { TradeView } from './TradeView';
 
 interface AlbumViewProps {
   onNavigate: (view: any) => void;
@@ -62,6 +64,7 @@ interface PlayerStickerCardProps {
   isUnlocked: boolean;
   isShiny?: boolean;
   isSecret?: boolean;
+  count?: number;
   onClick?: () => void;
 }
 
@@ -72,6 +75,7 @@ function PlayerStickerCard({
   isUnlocked,
   isShiny = false, 
   isSecret = false,
+  count = 1,
   onClick 
 }: PlayerStickerCardProps) {
   if (!isUnlocked) {
@@ -134,7 +138,20 @@ function PlayerStickerCard({
         <div className="absolute inset-0 bg-gradient-to-tr from-white/10 via-white/30 to-transparent mix-blend-overlay opacity-90 pointer-events-none"></div>
       )}
 
-      {/* Badge (Secret vs Shiny) */}
+      {/* Slot Code (Top Left) */}
+      <div className="absolute top-1 left-1 z-20 flex items-center gap-1">
+        <span className="text-[8px] font-black bg-[#7A1515] text-amber-300 px-1 py-0.5 rounded font-mono shadow-xs">
+          {slotCode}
+        </span>
+        {/* Quantity Badge if count > 1 */}
+        {count > 1 && (
+          <span className="text-[9px] font-black bg-amber-400 text-brand-maroon px-1.5 py-0.2 rounded-full border border-amber-200 shadow-md font-mono">
+            x{count}
+          </span>
+        )}
+      </div>
+
+      {/* Badge (Secret vs Shiny - Top Right) */}
       {isSecret ? (
         <div className="absolute top-1 right-1 z-20">
           <span className="text-[8px] font-black bg-white text-black px-1.5 py-0.5 rounded-full border border-gray-300 shadow-md flex items-center gap-0.5 animate-bounce">
@@ -212,6 +229,7 @@ interface ShinySpecialStickerCardProps {
   type?: 'team' | 'trophy';
   isUnlocked: boolean;
   isSecret?: boolean;
+  count?: number;
   onClick?: () => void;
 }
 
@@ -222,6 +240,7 @@ function ShinySpecialStickerCard({
   type = 'team', 
   isUnlocked, 
   isSecret = false,
+  count = 1,
   onClick 
 }: ShinySpecialStickerCardProps) {
   if (!isUnlocked) {
@@ -280,14 +299,21 @@ function ShinySpecialStickerCard({
 
       {/* Top Foil Badge */}
       <div className="relative z-20 flex items-center justify-between">
-        <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border shadow-xs uppercase tracking-widest flex items-center gap-1 ${
-          isSecret
-            ? 'bg-white text-black border-white'
-            : 'bg-[#800000] text-amber-300 border-amber-400'
-        }`}>
-          <span>{isSecret ? '🕶️' : '✨'}</span>
-          <span>{isSecret ? 'SECRET' : 'PARILTILI'}</span>
-        </span>
+        <div className="flex items-center gap-1">
+          <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border shadow-xs uppercase tracking-widest flex items-center gap-1 ${
+            isSecret
+              ? 'bg-white text-black border-white'
+              : 'bg-[#800000] text-amber-300 border-amber-400'
+          }`}>
+            <span>{isSecret ? '🕶️' : '✨'}</span>
+            <span>{isSecret ? 'SECRET' : 'PARILTILI'}</span>
+          </span>
+          {count > 1 && (
+            <span className="text-[9px] font-black bg-amber-400 text-brand-maroon px-1.5 py-0.2 rounded-full border border-amber-200 shadow-md font-mono">
+              x{count}
+            </span>
+          )}
+        </div>
         <span className="text-xs">{isSecret ? '🕶️' : '⭐'}</span>
       </div>
 
@@ -343,6 +369,12 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
   const [showStatsModal, setShowStatsModal] = useState<boolean>(false);
   const [showInfoModal, setShowInfoModal] = useState<boolean>(false);
   const [showLoginPromptModal, setShowLoginPromptModal] = useState<boolean>(false);
+
+  // User Balance & Shop/Trade States
+  const [userBalance, setUserBalance] = useState<number>(0);
+  const [showShopModal, setShowShopModal] = useState<boolean>(false);
+  const [showTradeModal, setShowTradeModal] = useState<boolean>(false);
+  const [sessionCoinsEarned, setSessionCoinsEarned] = useState<number>(0);
 
   // Leaderboard Data State
   const [leaderboardUsers, setLeaderboardUsers] = useState<LeaderboardUser[]>([]);
@@ -403,6 +435,15 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
             setSecretPityCount(Number(uData.secretPityCount));
           }
           setHasClaimedStarterPack(Boolean(uData.hasClaimedStarterPack));
+
+          // Sync user balance & auto-reset to 0 if economy migration is pending
+          if (uData.economyReset2026 !== true) {
+            setDoc(doc(db, 'users', currentUser.uid), { balance: 0, economyReset2026: true }, { merge: true }).catch(console.error);
+            setUserBalance(0);
+          } else {
+            setUserBalance(Number(uData.balance || 0));
+          }
+
           setUserStats({
             totalUniqueCards: uData.totalUniqueCards || 0,
             totalShinyCards: uData.totalShinyCards || 0,
@@ -614,7 +655,11 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
   }, []);
 
   // Helper to generate N cards for pack openings with Secret Pity System (10 packs = 1 Guaranteed Secret)
-  const generatePackCards = (packCount = 1, startPity = 0) => {
+  const generatePackCards = (
+    packCount = 1,
+    startPity = 0,
+    customOdds?: { shinyChance: number; secretChance: number }
+  ) => {
     const pool: any[] = [];
 
     // Trophies (Always Shiny Special Cards)
@@ -696,15 +741,17 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
         } else if (item.isAlwaysShiny || item.type === 'team' || item.type === 'trophy') {
           isShiny = true;
         } else {
-          // Secret card check: 0.6% chance
-          if (Math.random() < 0.006) {
+          const secretProb = customOdds ? customOdds.secretChance : 0.006;
+          const shinyProb = customOdds ? customOdds.shinyChance : (drawnShinyPlayerCount === 0 ? 0.05 : 0.02);
+
+          // Secret card check
+          if (Math.random() < secretProb) {
             isSecret = true;
             isShiny = true;
             packHasSecret = true;
           } else {
-            // Shiny player card check: 5% for first, 2% for subsequent
-            const shinyProbability = drawnShinyPlayerCount === 0 ? 0.05 : 0.02;
-            if (Math.random() < shinyProbability) {
+            // Shiny player card check
+            if (Math.random() < shinyProb) {
               isShiny = true;
               drawnShinyPlayerCount++;
             }
@@ -714,7 +761,9 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
         return {
           ...item,
           isShiny,
-          isSecret
+          isSecret,
+          decision: 'pending',
+          rewardEarned: 0
         };
       });
 
@@ -769,7 +818,41 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
     return selected;
   };
 
-  // 5. PACK GENERATOR ENGINE (Standard 1 Pack = 5 Cards)
+  // Test User 5 Secret Pack Opener
+  const handleOpenSecretTestPackClick = async () => {
+    if (!currentUser) {
+      setShowLoginPromptModal(true);
+      return;
+    }
+    const drawn = generateSecretTestPackCards();
+    if (drawn.length === 0) return;
+
+    setDrawnCards(drawn);
+    setSessionCoinsEarned(0);
+    setPackStage('box');
+    setActivePackCardIndex(-1);
+    setShinyStarStage('none');
+    setCardAnimStep(0);
+    setSecretCrackClicks(0);
+    setSecretFlash(false);
+    setIsOpeningPackModal(true);
+  };
+
+  // Secret card 5-click glass shatter handler
+  const handleSecretScreenClick = () => {
+    if (secretCrackClicks < 4) {
+      setSecretCrackClicks((prev) => prev + 1);
+    } else {
+      // 5th click -> Trigger flash then complete shatter
+      setSecretFlash(true);
+      setSecretCrackClicks(5);
+      setTimeout(() => {
+        setSecretFlash(false);
+      }, 400);
+    }
+  };
+
+  // 5. PACK GENERATOR ENGINE (Daily / Free Pack = 5 Cards)
   const handleOpenPackClick = async () => {
     if (!currentUser) {
       setShowLoginPromptModal(true);
@@ -784,6 +867,7 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
     if (drawn.length === 0) return;
 
     setDrawnCards(drawn);
+    setSessionCoinsEarned(0);
     setSecretPityCount(nextPity);
     setPackStage('box');
     setActivePackCardIndex(-1);
@@ -816,6 +900,7 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
     if (drawn.length === 0) return;
 
     setDrawnCards(drawn);
+    setSessionCoinsEarned(0);
     setSecretPityCount(nextPity);
     setPackStage('box');
     setActivePackCardIndex(-1);
@@ -839,17 +924,43 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
     }
   };
 
-  // 7. TEST USER SECRET PACK ENGINE (5 Secret Cards For Testing)
-  const handleOpenSecretTestPackClick = () => {
-    if (!currentUser) {
+  // 7. SHOP PACK ENGINE (Normal 500, Enhanced 1000, Secret 5000 with exact specified odds)
+  const handleBuyShopPack = async (packType: ShopPackType, price: number) => {
+    if (!currentUser?.uid) {
       setShowLoginPromptModal(true);
       return;
     }
+    if (userBalance < price) {
+      alert(`⚠️ Yetersiz bakiye! Bu kutu için ${price} Paraya ihtiyacınız var. Mevcut bakiyeniz: ${userBalance} Para.`);
+      return;
+    }
 
-    const drawn = generateSecretTestPackCards();
+    const config = SHOP_PACK_CONFIGS[packType];
+    const newBal = userBalance - price;
+
+    // Deduct coins from user balance in Firestore
+    try {
+      await setDoc(doc(db, 'users', currentUser.uid), {
+        balance: newBal
+      }, { merge: true });
+      setUserBalance(newBal);
+    } catch (err) {
+      console.error('Error deducting balance for shop pack:', err);
+      alert('Bakiye düşülürken hata oluştu.');
+      return;
+    }
+
+    const { drawn, nextPity } = generatePackCards(1, secretPityCount, {
+      shinyChance: config.shinyChance,
+      secretChance: config.secretChance
+    });
+
     if (drawn.length === 0) return;
 
+    setShowShopModal(false);
     setDrawnCards(drawn);
+    setSessionCoinsEarned(0);
+    setSecretPityCount(nextPity);
     setPackStage('box');
     setActivePackCardIndex(-1);
     setShinyStarStage('none');
@@ -857,25 +968,138 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
     setSecretCrackClicks(0);
     setSecretFlash(false);
     setIsOpeningPackModal(true);
-  };
 
-  // Secret Full-Screen 5-Click Glass Shatter Handler
-  const handleSecretScreenClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (secretFlash) return;
-
-    if (secretCrackClicks < 4) {
-      setSecretCrackClicks((prev) => prev + 1);
-    } else if (secretCrackClicks === 4) {
-      setSecretFlash(true);
-      setTimeout(() => {
-        setSecretCrackClicks(5);
-        setSecretFlash(false);
-      }, 400);
+    if (currentUser?.uid) {
+      setDoc(doc(db, 'users', currentUser.uid), {
+        secretPityCount: nextPity
+      }, { merge: true }).catch(err => console.error('Error saving pity count:', err));
     }
   };
 
-  // Step-by-Step Card Reveal Engine (Auto-Sticks Card to Album)
+  // 8. DUPLICATE CHECK & REWARD HELPERS
+  const checkIsDuplicate = (card: any, targetIndex: number) => {
+    if (!card) return false;
+    const existing = userAlbum[card.slotCode];
+    if (card.isSecret) {
+      if (existing?.hasSecret && (existing.countSecret || 0) > 0) return true;
+    } else if (card.isShiny) {
+      if (existing?.hasShiny && (existing.countShiny || 0) > 0) return true;
+    } else {
+      if (existing?.hasNormal && (existing.countNormal || 0) > 0) return true;
+    }
+
+    // Check if an earlier card in this current pack session already granted this card & variant
+    for (let i = 0; i < targetIndex; i++) {
+      const prev = drawnCards[i];
+      if (prev && prev.slotCode === card.slotCode) {
+        if (card.isSecret && prev.isSecret) return true;
+        if (!card.isSecret && card.isShiny && prev.isShiny && !prev.isSecret) return true;
+        if (!card.isSecret && !card.isShiny && !prev.isShiny && !prev.isSecret) return true;
+      }
+    }
+
+    return false;
+  };
+
+  const getDuplicateReward = (card: any) => {
+    if (card.isSecret) return 1000;
+    if (card.isShiny) return 500;
+    return 100;
+  };
+
+  // Sell duplicate card handler
+  const handleSellDuplicate = async (index: number, reward: number) => {
+    if (!currentUser?.uid) return;
+    const card = drawnCards[index];
+    if (!card) return;
+
+    card.decision = 'sold';
+    card.rewardEarned = reward;
+    const newBal = userBalance + reward;
+
+    setSessionCoinsEarned((prev) => prev + reward);
+    setUserBalance(newBal);
+
+    try {
+      await setDoc(doc(db, 'users', currentUser.uid), {
+        balance: newBal
+      }, { merge: true });
+    } catch (err) {
+      console.error('Error adding balance for sold duplicate:', err);
+    }
+
+    // Advance to next card or finished
+    if (index < drawnCards.length - 1) {
+      handleProceedToNextCard(index + 1);
+    } else {
+      setPackStage('finished');
+    }
+  };
+
+  // Keep duplicate card handler (increment count in inventory)
+  const handleKeepDuplicate = async (index: number) => {
+    const card = drawnCards[index];
+    if (!card) return;
+
+    card.decision = 'kept';
+    if (currentUser?.uid) {
+      await saveCardToFirestore(card);
+    }
+
+    // Advance to next card or finished
+    if (index < drawnCards.length - 1) {
+      handleProceedToNextCard(index + 1);
+    } else {
+      setPackStage('finished');
+    }
+  };
+
+  // Sell from modal handler if user has duplicate copies
+  const handleSellFromModal = async (slotCode: string, entry: UserAlbumSlotData) => {
+    if (!currentUser?.uid || !entry) return;
+    const variant = entry.selectedVariant;
+    const countKey = variant === 'secret' ? 'countSecret' : variant === 'shiny' ? 'countShiny' : 'countNormal';
+    const currentCount = entry[countKey] || 1;
+    if (currentCount <= 1) return;
+
+    const reward = variant === 'secret' ? 1000 : variant === 'shiny' ? 500 : 100;
+    const newBal = userBalance + reward;
+    const newCount = currentCount - 1;
+
+    try {
+      await setDoc(doc(db, 'users', currentUser.uid, 'album', slotCode), {
+        [countKey]: newCount
+      }, { merge: true });
+
+      await setDoc(doc(db, 'users', currentUser.uid), {
+        balance: newBal
+      }, { merge: true });
+
+      setUserBalance(newBal);
+      setUserAlbum((prev) => ({
+        ...prev,
+        [slotCode]: {
+          ...prev[slotCode],
+          [countKey]: newCount
+        }
+      }));
+
+      setSelectedCardModal((prev: any) => ({
+        ...prev,
+        userAlbumEntry: {
+          ...prev.userAlbumEntry,
+          [countKey]: newCount
+        }
+      }));
+
+      alert(`✅ 1 Adet çift kart satıldı! +${reward} Para bakiyenize eklendi.`);
+    } catch (err: any) {
+      console.error(err);
+      alert('Satış sırasında hata oluştu.');
+    }
+  };
+
+  // Step-by-Step Card Reveal Engine
   const handleProceedToNextCard = async (targetIndex: number) => {
     if (targetIndex < 0 || targetIndex >= drawnCards.length) return;
 
@@ -890,9 +1114,16 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
     // Reset card animation step directly to step 1 (manual clicks only)
     setCardAnimStep(1);
 
-    // Save drawn card to Firestore automatically
-    if (currentUser?.uid) {
-      await saveCardToFirestore(card);
+    // Check if card is duplicate
+    const isDup = checkIsDuplicate(card, targetIndex);
+    if (!isDup) {
+      card.decision = 'new';
+      // Auto-save non-duplicate card to Firestore
+      if (currentUser?.uid) {
+        await saveCardToFirestore(card);
+      }
+    } else {
+      card.isDuplicate = true;
     }
 
     // If card is shiny or secret, trigger Star Growing -> Yellow Glow animation!
@@ -1110,78 +1341,166 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
   return (
     <div className="max-w-6xl mx-auto space-y-6 animate-fade-in pb-24 select-text relative">
       
-      {/* Navigation Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          {onBack && (
-            <button
-              onClick={onBack}
-              className="bg-brand-card hover:bg-brand-maroon hover:text-white text-brand-maroon font-black text-xs md:text-sm px-4 py-2 rounded-2xl border-2 border-brand-maroon/30 shadow-sm transition-all cursor-pointer uppercase flex items-center gap-2"
-            >
-              <span>←</span>
-              <span>Geri</span>
-            </button>
-          )}
-          <span className="text-xs font-black uppercase text-brand-maroon tracking-wider bg-brand-gold/20 px-3 py-1.5 rounded-full border border-brand-gold/40 flex items-center gap-1.5">
-            <span>📖</span>
-            <span>2026 RESMİ KART & STİCKER ALBÜMÜ</span>
-          </span>
-        </div>
+      {/* ── TOP ACTION & ECONOMY DASHBOARD ── */}
+      <div className="bg-gradient-to-r from-[#4d0000] via-[#751212] to-[#3a0000] border-4 border-amber-400 rounded-3xl p-4 sm:p-5 shadow-2xl space-y-4">
+        
+        {/* Row 1: Back, Title & User Balance Badge */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-400/30 pb-3">
+          <div className="flex items-center gap-3">
+            {onBack && (
+              <button
+                onClick={onBack}
+                className="bg-black/50 hover:bg-black/80 text-amber-300 font-black text-xs px-3.5 py-2 rounded-2xl border border-amber-400/50 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <span>←</span>
+                <span>Geri</span>
+              </button>
+            )}
+            <div>
+              <span className="text-[10px] font-black uppercase text-amber-200/80 tracking-widest block">
+                2026 PANINI KOLEKSİYONU
+              </span>
+              <h1 className="text-lg sm:text-2xl font-black uppercase text-amber-300 tracking-tight flex items-center gap-2">
+                <span>📖</span>
+                <span>STİCKER ALBÜMÜ</span>
+              </h1>
+            </div>
+          </div>
 
-        {/* Top Header Controls: Statistics, Test Mode & Album Actions */}
-        <div className="flex flex-wrap items-center gap-3">
-          
-          {/* GIANT EYE-CATCHING 1 DEFALIK BAŞLANGIÇ PAKETİ BUTTON */}
-          {(!hasClaimedStarterPack || isTestUser) && (
-            <button
-              onClick={handleOpenStarterPackClick}
-              className="relative group bg-gradient-to-r from-emerald-500 via-yellow-400 to-emerald-600 hover:from-emerald-400 hover:to-amber-300 text-black font-black text-xs sm:text-sm px-5 py-2.5 rounded-2xl border-4 border-amber-300 shadow-[0_0_35px_rgba(251,191,36,0.95)] transition-all transform hover:scale-110 active:scale-95 cursor-pointer uppercase flex items-center gap-2 animate-pulse overflow-hidden select-none"
-              title="Tek seferlik 5 paket (25 kart) hediye başlangıç paketi!"
-            >
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-              <span className="text-xl sm:text-2xl animate-bounce">🎁</span>
-              <div className="flex flex-col items-start text-left leading-tight">
-                <span className="text-[9px] font-extrabold text-emerald-950 uppercase tracking-wider bg-amber-200/90 px-1.5 py-0.2 rounded">
-                  HEDİYE 25 KART!
+          <div className="flex items-center gap-3">
+            {/* User Coins Balance Pill */}
+            <div className="flex items-center gap-2 bg-black/70 border-2 border-amber-400 px-4 py-2 rounded-2xl shadow-inner">
+              <span className="text-xl sm:text-2xl animate-pulse">💰</span>
+              <div className="text-left leading-tight">
+                <span className="text-[8.5px] font-black uppercase text-amber-200 block tracking-wider">
+                  BAKİYENİZ
                 </span>
-                <span className="text-xs sm:text-sm font-black text-brand-maroon tracking-tight">
-                  BAŞLANGIÇ PAKETİ (5 KUTU)
+                <span className="text-sm sm:text-lg font-black font-mono text-yellow-300">
+                  {userBalance.toLocaleString('tr-TR')} Para
                 </span>
               </div>
-              <span className="text-base sm:text-lg">✨</span>
-            </button>
-          )}
+            </div>
 
-          {/* STATISTICS LEADERBOARD BUTTON */}
+            {/* If Album is open: Close Book Button */}
+            {isOpen && (
+              <button
+                onClick={() => setIsOpen(false)}
+                className="bg-red-800 hover:bg-red-900 text-white font-black text-xs px-3.5 py-2.5 rounded-2xl border-2 border-red-950 shadow-md transition-all cursor-pointer uppercase flex items-center gap-1.5"
+              >
+                <span>📘</span>
+                <span>Kapağı Kapat</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Row 2: Core Action Buttons: SHOP, TRADE, DAILY BOX, STARTER PACK */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+          
+          {/* 1. SHOP BUTTON */}
           <button
-            onClick={() => {
-              fetchLeaderboard();
-              setShowStatsModal(true);
-            }}
-            className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-brand-maroon font-black text-xs px-3.5 py-2 rounded-2xl border-2 border-amber-300 shadow-md transition-transform hover:scale-105 cursor-pointer uppercase flex items-center gap-1.5"
+            onClick={() => setShowShopModal(true)}
+            className="py-3 px-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-brand-maroon font-black text-xs sm:text-sm uppercase rounded-2xl border-2 border-white shadow-xl transition-all transform hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center gap-2"
           >
-            <span>📊</span>
-            <span>İSTATİSTİKLER</span>
+            <span className="text-xl">🛒</span>
+            <span>SHOP (MAĞAZA)</span>
           </button>
 
-          {/* User Status / Test Mode Badge */}
-          {isTestUser && (
-            <span className="text-[11px] font-black uppercase bg-gradient-to-r from-emerald-600 to-green-700 text-white px-3 py-1.5 rounded-full border border-emerald-400 shadow-md flex items-center gap-1.5">
-              <span>✨</span>
-              <span>TEST MODU (SINIRSIZ KUTU)</span>
-            </span>
-          )}
+          {/* 2. TRADE BUTTON */}
+          <button
+            onClick={() => {
+              if (!currentUser) {
+                setShowLoginPromptModal(true);
+                return;
+              }
+              setShowTradeModal(true);
+            }}
+            className="py-3 px-3 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white font-black text-xs sm:text-sm uppercase rounded-2xl border-2 border-white shadow-xl transition-all transform hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+          >
+            <span className="text-xl">🔄</span>
+            <span>TRADE (TAKAS)</span>
+          </button>
 
-          {isOpen && (
+          {/* 3. DAILY BOX BUTTON */}
+          <button
+            onClick={handleOpenPackClick}
+            disabled={!isTestUser && timeLeftMs > 0}
+            className={`py-3 px-3 font-black text-xs sm:text-sm uppercase rounded-2xl border-2 border-white shadow-xl transition-all flex items-center justify-center gap-2 ${
+              isTestUser || timeLeftMs === 0
+                ? 'bg-gradient-to-r from-yellow-400 via-amber-400 to-yellow-500 hover:scale-105 active:scale-95 text-brand-maroon animate-pulse cursor-pointer'
+                : 'bg-stone-700 text-stone-300 opacity-90 cursor-not-allowed'
+            }`}
+          >
+            <span className="text-xl">🎁</span>
+            <div className="flex flex-col text-left leading-none">
+              <span>DAILY BOX</span>
+              <span className="text-[9px] font-mono font-bold opacity-90">
+                {isTestUser
+                  ? 'SINIRSIZ'
+                  : timeLeftMs > 0
+                  ? `⏱️ ${formatTimer(timeLeftMs)}`
+                  : 'HAZIR (AÇ)'}
+              </span>
+            </div>
+          </button>
+
+          {/* 4. STARTER PACK (ONLY if not claimed) OR İSTATİSTİKLER BUTTON */}
+          {(!hasClaimedStarterPack || isTestUser) ? (
             <button
-              onClick={() => setIsOpen(false)}
-              className="bg-red-700 hover:bg-red-800 text-white font-black text-xs px-4 py-2 rounded-2xl border-2 border-red-900 shadow-sm transition-all cursor-pointer uppercase flex items-center gap-1.5"
+              onClick={handleOpenStarterPackClick}
+              className="py-3 px-3 bg-gradient-to-r from-green-500 via-emerald-400 to-green-600 hover:from-green-400 hover:to-emerald-300 text-black font-black text-xs sm:text-sm uppercase rounded-2xl border-2 border-white shadow-[0_0_25px_rgba(52,211,153,0.8)] transition-all transform hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center gap-2 animate-bounce"
             >
-              <span>📘</span>
-              <span>Kapağı Kapat</span>
+              <span className="text-xl">⭐</span>
+              <div className="flex flex-col text-left leading-none">
+                <span>STARTER PACK</span>
+                <span className="text-[9px] font-extrabold text-stone-900">25 KART HEDİYE</span>
+              </div>
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                fetchLeaderboard();
+                setShowStatsModal(true);
+              }}
+              className="py-3 px-3 bg-stone-900 hover:bg-stone-800 text-amber-300 font-black text-xs sm:text-sm uppercase rounded-2xl border border-amber-400/60 shadow-md transition-all transform hover:scale-105 cursor-pointer flex items-center justify-center gap-2"
+            >
+              <span className="text-xl">📊</span>
+              <span>İSTATİSTİKLER</span>
             </button>
           )}
+
         </div>
+
+        {/* Extra helper info strip */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/10 text-[11px] text-amber-200">
+          <div className="flex items-center gap-2">
+            <span>🎒 Toplam Kart: <b>{userStats.totalUniqueCards}</b></span>
+            <span>•</span>
+            <span>✨ Parıltılı: <b>{userStats.totalShinyCards}</b></span>
+            <span>•</span>
+            <span>🕶️ Secret: <b>{userStats.totalSecretCards}</b></span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {(!hasClaimedStarterPack || isTestUser) && (
+              <button
+                onClick={() => {
+                  fetchLeaderboard();
+                  setShowStatsModal(true);
+                }}
+                className="text-[10px] font-black uppercase text-amber-300 hover:underline cursor-pointer flex items-center gap-1"
+              >
+                <span>📊 Liderlik Tablosu</span>
+              </button>
+            )}
+            {isTestUser && (
+              <span className="text-[10px] font-black uppercase bg-emerald-700 text-white px-2 py-0.5 rounded-full border border-emerald-400">
+                ✨ TEST MODU
+              </span>
+            )}
+          </div>
+        </div>
+
       </div>
 
       {/* COVER VIEW (UNOPENED ALBUM) */}
@@ -1360,6 +1679,9 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                           const variant = getCardVariant(slotCode);
                           const isShiny = variant === 'shiny';
                           const isSecret = variant === 'secret';
+                          const entry = userAlbum[slotCode];
+                          const count = entry?.selectedVariant === 'secret' ? entry?.countSecret : entry?.selectedVariant === 'shiny' ? entry?.countShiny : entry?.countNormal;
+
                           return (
                             <ShinySpecialStickerCard
                               key={trophy.id}
@@ -1369,6 +1691,7 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                               type="trophy"
                               isUnlocked={isUnlocked}
                               isSecret={isSecret}
+                              count={count || 1}
                               onClick={() => setSelectedCardModal({ 
                                 title: trophy.name, 
                                 image: trophy.icon, 
@@ -1410,6 +1733,9 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                           const variant = getCardVariant(slotCode);
                           const isShiny = variant === 'shiny';
                           const isSecret = variant === 'secret';
+                          const entry = userAlbum[slotCode];
+                          const count = entry?.selectedVariant === 'secret' ? entry?.countSecret : entry?.selectedVariant === 'shiny' ? entry?.countShiny : entry?.countNormal;
+
                           return (
                             <ShinySpecialStickerCard
                               key={trophy.id}
@@ -1419,6 +1745,7 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                               type="trophy"
                               isUnlocked={isUnlocked}
                               isSecret={isSecret}
+                              count={count || 1}
                               onClick={() => setSelectedCardModal({ 
                                 title: trophy.name, 
                                 image: trophy.icon, 
@@ -1483,24 +1810,31 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                           {/* Team Badge Sticker Slot */}
                           <div className="bg-[#800000] border-2 border-amber-400 p-3 sm:p-4 rounded-xl flex items-center gap-4">
                             <div className="w-28 sm:w-36 shrink-0">
-                              <ShinySpecialStickerCard
-                                title={team.name}
-                                image={team.logo}
-                                slotCode={teamLogoSlotCode}
-                                type="team"
-                                isUnlocked={isTeamLogoUnlocked}
-                                isSecret={isTeamLogoSecret}
-                                onClick={() => setSelectedCardModal({ 
-                                  title: team.name, 
-                                  image: team.logo, 
-                                  type: 'team', 
-                                  slotCode: teamLogoSlotCode,
-                                  isUnlocked: isTeamLogoUnlocked,
-                                  isShiny: isTeamLogoShiny,
-                                  isSecret: isTeamLogoSecret,
-                                  userAlbumEntry: userAlbum[teamLogoSlotCode]
-                                })}
-                              />
+                              {(() => {
+                                const logoEntry = userAlbum[teamLogoSlotCode];
+                                const logoCount = logoEntry?.selectedVariant === 'secret' ? logoEntry?.countSecret : logoEntry?.selectedVariant === 'shiny' ? logoEntry?.countShiny : logoEntry?.countNormal;
+                                return (
+                                  <ShinySpecialStickerCard
+                                    title={team.name}
+                                    image={team.logo}
+                                    slotCode={teamLogoSlotCode}
+                                    type="team"
+                                    isUnlocked={isTeamLogoUnlocked}
+                                    isSecret={isTeamLogoSecret}
+                                    count={logoCount || 1}
+                                    onClick={() => setSelectedCardModal({ 
+                                      title: team.name, 
+                                      image: team.logo, 
+                                      type: 'team', 
+                                      slotCode: teamLogoSlotCode,
+                                      isUnlocked: isTeamLogoUnlocked,
+                                      isShiny: isTeamLogoShiny,
+                                      isSecret: isTeamLogoSecret,
+                                      userAlbumEntry: userAlbum[teamLogoSlotCode]
+                                    })}
+                                  />
+                                );
+                              })()}
                             </div>
                             <div className="min-w-0 flex-1">
                               <span className="text-[9px] font-black text-amber-400 uppercase tracking-widest block">
@@ -1531,6 +1865,8 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                                   const variant = getCardVariant(slotCode);
                                   const isShiny = variant === 'shiny';
                                   const isSecret = variant === 'secret';
+                                  const entry = userAlbum[slotCode];
+                                  const count = entry?.selectedVariant === 'secret' ? entry?.countSecret : entry?.selectedVariant === 'shiny' ? entry?.countShiny : entry?.countNormal;
 
                                   return (
                                     <PlayerStickerCard
@@ -1541,6 +1877,7 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                                       isUnlocked={isUnlocked}
                                       isShiny={isShiny}
                                       isSecret={isSecret}
+                                      count={count || 1}
                                       onClick={() => setSelectedCardModal({ 
                                         ...player, 
                                         teamLogo: team.logo, 
@@ -1602,6 +1939,8 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                                   const variant = getCardVariant(slotCode);
                                   const isShiny = variant === 'shiny';
                                   const isSecret = variant === 'secret';
+                                  const entry = userAlbum[slotCode];
+                                  const count = entry?.selectedVariant === 'secret' ? entry?.countSecret : entry?.selectedVariant === 'shiny' ? entry?.countShiny : entry?.countNormal;
 
                                   return (
                                     <PlayerStickerCard
@@ -1612,6 +1951,7 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                                       isUnlocked={isUnlocked}
                                       isShiny={isShiny}
                                       isSecret={isSecret}
+                                      count={count || 1}
                                       onClick={() => setSelectedCardModal({ 
                                         ...player, 
                                         teamLogo: team.logo, 
@@ -2143,6 +2483,7 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                       {cardAnimStep === 3 && (
                         <div 
                           onClick={() => {
+                            if (card.isDuplicate && !card.decision) return;
                             if (activePackCardIndex < drawnCards.length - 1) {
                               handleProceedToNextCard(activePackCardIndex + 1);
                             } else {
@@ -2150,7 +2491,7 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                             }
                           }}
                           className="relative group cursor-pointer transition-transform duration-300 hover:scale-105 select-none animate-scale-up"
-                          title="Kartı sola eklemek ve sıradakine geçmek için tıklayın!"
+                          title={card.isDuplicate && !card.decision ? 'Lütfen önce Sat veya Tut seçimini yapın' : 'Sıradaki karta geçmek için tıklayın'}
                         >
                           {/* CARD COMPONENT WRAPPER */}
                           <div className="w-56 h-88 sm:w-64 sm:h-96 relative">
@@ -2191,7 +2532,7 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                               <div className="flex-1 flex items-center justify-center p-2 my-1 overflow-hidden z-10">
                                 <img 
                                   src={card.image || card.playerData?.foto || 'https://via.placeholder.com/120'} 
-                                  alt={card.title}
+                                  alt={card.title} 
                                   className={`max-h-36 sm:max-h-44 max-w-full object-contain filter drop-shadow-xl ${
                                     isSecretCard ? 'brightness-125 contrast-125' : ''
                                   }`}
@@ -2242,12 +2583,64 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                         </div>
                       )}
 
-                      {/* ACTION PROMPT */}
-                      <p className="text-xs font-black text-amber-300 animate-pulse bg-black/60 px-4 py-1 rounded-full border border-amber-400/30">
-                        {cardAnimStep < 3 
-                          ? '👉 Animasyonu geçmek için tıklayın...' 
-                          : `👉 Kartın üstüne tıklayarak sola aktarın (${activePackCardIndex + 1}/${drawnCards.length})`}
-                      </p>
+                      {/* ACTION PROMPTS */}
+                      {cardAnimStep < 3 ? (
+                        <p className="text-xs font-black text-amber-300 animate-pulse bg-black/60 px-4 py-1.5 rounded-full border border-amber-400/30">
+                          👉 Animasyonu geçmek için tıklayın...
+                        </p>
+                      ) : card.isDuplicate && !card.decision ? (
+                        <div className="bg-gradient-to-r from-amber-950 via-stone-900 to-amber-950 border-2 border-amber-400 p-4 rounded-3xl shadow-2xl text-center space-y-2.5 w-full max-w-sm mx-auto animate-fade-in z-30">
+                          <div className="flex items-center justify-center gap-1.5 text-amber-300 font-black text-xs sm:text-sm uppercase tracking-wider">
+                            <span>⚡</span>
+                            <span>ÇİFTE KART ÇIKTI!</span>
+                            <span>⚡</span>
+                          </div>
+                          <p className="text-[11px] text-stone-200 font-bold leading-tight">
+                            Bu kart ({card.isSecret ? 'Secret' : card.isShiny ? 'Altın' : 'Normal'}) koleksiyonunuzda mevcut. Satmak mı yoksa saklamak mı istersiniz?
+                          </p>
+                          <div className="grid grid-cols-2 gap-2 pt-1">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSellDuplicate(activePackCardIndex, getDuplicateReward(card));
+                              }}
+                              className="py-2.5 px-2 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-brand-maroon font-black text-xs uppercase rounded-xl border border-white shadow-lg cursor-pointer transform hover:scale-105 active:scale-95 transition-all flex flex-col items-center justify-center gap-0.5"
+                            >
+                              <span className="text-xs">💰 SAT</span>
+                              <span className="font-mono text-[10px] font-black">+{getDuplicateReward(card)} PARA</span>
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleKeepDuplicate(activePackCardIndex);
+                              }}
+                              className="py-2.5 px-2 bg-stone-800 hover:bg-stone-700 text-amber-200 font-black text-xs uppercase rounded-xl border border-amber-400 shadow-md cursor-pointer transform hover:scale-105 active:scale-95 transition-all flex flex-col items-center justify-center gap-0.5"
+                            >
+                              <span className="text-xs">📦 TUT</span>
+                              <span className="text-[9px] font-bold">ENVANTERDE SAKLA</span>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            if (activePackCardIndex < drawnCards.length - 1) {
+                              handleProceedToNextCard(activePackCardIndex + 1);
+                            } else {
+                              setPackStage('finished');
+                            }
+                          }}
+                          className="py-2.5 px-6 bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 hover:from-yellow-300 hover:to-amber-400 text-brand-maroon font-black text-xs sm:text-sm uppercase rounded-2xl border-2 border-white shadow-xl cursor-pointer hover:scale-105 transition-all flex items-center gap-2"
+                        >
+                          <span>👉</span>
+                          <span>
+                            {activePackCardIndex < drawnCards.length - 1
+                              ? `SIRADAKİ KART (${activePackCardIndex + 2}/${drawnCards.length})`
+                              : 'KUTU AÇILIŞINI TAMAMLA'}
+                          </span>
+                          <span>→</span>
+                        </button>
+                      )}
 
                     </div>
                   );
@@ -2259,8 +2652,13 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
             {/* STAGE 3: FINISHED REVEAL SUMMARY */}
             {packStage === 'finished' && (
               <div className="py-4 space-y-4 animate-fade-in">
-                <div className="bg-emerald-950/80 border-2 border-emerald-400 text-emerald-200 p-3 rounded-2xl text-xs font-black uppercase">
-                  🎉 TEBRİKLER! 5 ADET STİCKER KARTINIZ ALBÜMÜNÜZE BAŞARIYLA YAPIŞTIRILDI!
+                <div className="bg-emerald-950/80 border-2 border-emerald-400 text-emerald-200 p-3.5 rounded-2xl text-xs font-black uppercase space-y-1">
+                  <div>🎉 TEBRİKLER! {drawnCards.length} ADET STİCKER KARTINIZ İŞLENDİ!</div>
+                  {sessionCoinsEarned > 0 && (
+                    <div className="text-yellow-300 font-mono text-sm">
+                      💰 Satılan Çift Kartlardan Toplam +{sessionCoinsEarned.toLocaleString('tr-TR')} Para Kazandınız!
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
@@ -2326,6 +2724,23 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                         }`}>
                           {card.title}
                         </span>
+
+                        {/* Decision Status Badge */}
+                        <div className="w-full z-10 mt-0.5">
+                          {card.decision === 'sold' ? (
+                            <span className="text-[7.5px] font-black bg-amber-400 text-brand-maroon px-1 py-0.5 rounded-full border border-amber-200 block truncate">
+                              💰 Satıldı (+{card.rewardEarned} Para)
+                            </span>
+                          ) : card.decision === 'kept' ? (
+                            <span className="text-[7.5px] font-black bg-emerald-700 text-white px-1 py-0.5 rounded-full border border-emerald-400 block truncate">
+                              📦 Saklandı (Envanter)
+                            </span>
+                          ) : (
+                            <span className="text-[7.5px] font-black bg-blue-700 text-white px-1 py-0.5 rounded-full border border-blue-400 block truncate">
+                              ✨ Yeni Eklendi
+                            </span>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -2667,11 +3082,63 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                 </div>
               </div>
             )}
+
+            {/* Inventory Quantity Display & Duplicate Sell Action */}
+            {selectedCardModal.isUnlocked && selectedCardModal.userAlbumEntry && (() => {
+              const entry = userAlbum[selectedCardModal.slotCode] || selectedCardModal.userAlbumEntry;
+              const v = entry.selectedVariant || 'normal';
+              const currentCount = v === 'secret' ? (entry.countSecret || 1) : v === 'shiny' ? (entry.countShiny || 1) : (entry.countNormal || 1);
+              const reward = v === 'secret' ? 1000 : v === 'shiny' ? 500 : 100;
+              return (
+                <div className="bg-amber-50/80 p-3 rounded-2xl border border-amber-300 space-y-2 text-center">
+                  <div className="flex items-center justify-between text-xs font-black text-amber-950">
+                    <span>📦 ENVANTERDEKİ ADET:</span>
+                    <span className="bg-amber-400 text-brand-maroon px-2 py-0.5 rounded-full font-mono font-black text-sm">
+                      {currentCount} Adet
+                    </span>
+                  </div>
+                  {currentCount > 1 ? (
+                    <button
+                      onClick={() => handleSellFromModal(selectedCardModal.slotCode, entry)}
+                      className="w-full py-2 px-3 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-brand-maroon font-black text-xs uppercase rounded-xl border border-white shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <span>💰</span>
+                      <span>1 Adet Çifti Sat (+{reward} Para)</span>
+                    </button>
+                  ) : (
+                    <p className="text-[10px] text-stone-500 font-bold">
+                      (Sadece 2 veya daha fazla kopyanız olduğunda çifti satabilirsiniz)
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
 
+      {/* ======================================================= */}
+      {/* SHOP MODAL (MAĞAZA) */}
+      {/* ======================================================= */}
+      {showShopModal && (
+        <ShopModal
+          currentUser={currentUser || null}
+          currentBalance={userBalance}
+          onClose={() => setShowShopModal(false)}
+          onBuyPack={handleBuyShopPack}
+        />
+      )}
 
+      {/* ======================================================= */}
+      {/* TRADE VIEW (TAKAS) */}
+      {/* ======================================================= */}
+      {showTradeModal && currentUser && (
+        <TradeView
+          currentUser={currentUser}
+          userAlbum={userAlbum}
+          onClose={() => setShowTradeModal(false)}
+        />
+      )}
 
     </div>
   );

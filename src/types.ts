@@ -11,6 +11,33 @@ export interface UserProfile {
   bio?: string;
   followers?: string[];
   following?: string[];
+  economyReset2026?: boolean;
+}
+
+export interface TradeCardItem {
+  slotCode: string;
+  variant: 'normal' | 'shiny' | 'secret';
+  title: string;
+  image: string;
+  teamLogo?: string;
+  count?: number;
+}
+
+export interface TradeOffer {
+  id: string;
+  senderUid: string;
+  senderName: string;
+  senderAvatar?: string;
+  receiverUid: string;
+  receiverName: string;
+  receiverAvatar?: string;
+  offeredCards: TradeCardItem[];
+  requestedCards: TradeCardItem[];
+  status: 'pending' | 'accepted' | 'rejected' | 'cancelled';
+  createdAt: number;
+  completedAt?: number;
+  weekKey: string;
+  pairKey: string;
 }
 
 export interface Team {

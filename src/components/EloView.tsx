@@ -788,7 +788,12 @@ export default function EloView({
                           <div className="bg-brand-maroon text-brand-gold px-3 py-1 rounded-xl font-black font-mono text-sm tracking-wider shadow-sm">
                             {pred.predictedScore1} - {pred.predictedScore2}
                           </div>
-                          <span className="text-[9px] font-black uppercase text-emerald-700 mt-1">
+                          {pred.iyScore && (
+                            <span className="text-[9px] font-bold text-gray-500 mt-0.5">
+                              İY: {pred.iyScore}
+                            </span>
+                          )}
+                          <span className="text-[9px] font-black uppercase text-emerald-700 mt-0.5">
                             {pred.predictedWinner === 'team1'
                               ? `${pred.team1} Kazanır`
                               : pred.predictedWinner === 'team2'
@@ -934,7 +939,12 @@ export default function EloView({
                     <div className="bg-brand-maroon text-brand-gold px-5 py-2 rounded-2xl font-black font-mono text-2xl shadow-md">
                       {h2hResult.predictedScore1} - {h2hResult.predictedScore2}
                     </div>
-                    <span className="text-[11px] font-black uppercase text-emerald-700 mt-2">
+                    {h2hResult.iyScore && (
+                      <span className="text-[10px] font-bold text-gray-500 mt-1">
+                        İlk Yarı: {h2hResult.iyScore}
+                      </span>
+                    )}
+                    <span className="text-[11px] font-black uppercase text-emerald-700 mt-1">
                       {h2hResult.simulatedWinner === 'team1'
                         ? `${h2hTeam1} Galibiyeti`
                         : h2hResult.simulatedWinner === 'team2'

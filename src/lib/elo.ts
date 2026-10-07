@@ -1,4 +1,5 @@
 import { Match, Team } from '../types';
+import { getAllSeasonMatches } from './fixtureGenerator';
 
 export interface EloMatchLog {
   matchId: string;
@@ -53,6 +54,7 @@ export interface MatchPrediction {
   predictedWinner: 'team1' | 'draw' | 'team2';
   expectedPoints1: number;
   expectedPoints2: number;
+  iyScore?: string;
 }
 
 export interface SimulatedStanding {
@@ -318,6 +320,109 @@ export function calculateAllTeamsElo(
 }
 
 /**
+ * Simulates a realistic Bobble League match score:
+ * - Half 1 ends when a team reaches 3 goals (or very rarely time ends).
+ * - Half 2 ends when a team reaches 3 goals (or very rarely time ends).
+ * - Maximum goals for any single team is 6 (3 in H1 + 3 in H2).
+ * - Total score in a match is at least 5 goals (most commonly 5-3, 6-2, 6-3, 5-4, 6-4, 5-5).
+ * - Scores like 1-0 or 2-0 are virtually impossible in this game format.
+ */
+export function simulateBobbleScore(
+  prob1: number,
+  prob2: number,
+  probDraw: number
+): {
+  score1: number;
+  score2: number;
+  simulatedWinner: 'team1' | 'draw' | 'team2';
+  iyScore: string;
+} {
+  // Relative win probability for team 1 (bounded 0.15 to 0.85)
+  const p1Ratio = Math.max(0.15, Math.min(0.85, prob1 / ((prob1 + prob2) || 1)));
+
+  // Simulates a single half played to 3 goals (first to 3)
+  const simSingleHalf = (t1Advantage: number): { g1: number; g2: number } => {
+    // 2.5% chance of rare time-out before reaching 3 goals
+    const isTimeout = Math.random() < 0.025;
+    if (isTimeout) {
+      const rareDraws = [[1, 1], [2, 2], [2, 1], [1, 2]];
+      const pick = rareDraws[Math.floor(Math.random() * rareDraws.length)];
+      return { g1: pick[0], g2: pick[1] };
+    }
+
+    const roll = Math.random();
+    if (roll < t1Advantage) {
+      // Team 1 scores 3 goals in this half
+      const oppRoll = Math.random();
+      let oppG = 1;
+      if (t1Advantage > 0.65) {
+        oppG = oppRoll < 0.45 ? 0 : oppRoll < 0.80 ? 1 : 2;
+      } else if (t1Advantage < 0.35) {
+        oppG = oppRoll < 0.15 ? 0 : oppRoll < 0.50 ? 1 : 2;
+      } else {
+        oppG = oppRoll < 0.28 ? 0 : oppRoll < 0.68 ? 1 : 2;
+      }
+      return { g1: 3, g2: oppG };
+    } else {
+      // Team 2 scores 3 goals in this half
+      const t2Advantage = 1 - t1Advantage;
+      const oppRoll = Math.random();
+      let oppG = 1;
+      if (t2Advantage > 0.65) {
+        oppG = oppRoll < 0.45 ? 0 : oppRoll < 0.80 ? 1 : 2;
+      } else if (t2Advantage < 0.35) {
+        oppG = oppRoll < 0.15 ? 0 : oppRoll < 0.50 ? 1 : 2;
+      } else {
+        oppG = oppRoll < 0.28 ? 0 : oppRoll < 0.68 ? 1 : 2;
+      }
+      return { g1: oppG, g2: 3 };
+    }
+  };
+
+  // 1st Half
+  const h1 = simSingleHalf(p1Ratio);
+
+  // 2nd Half: Second half dynamic with potential comeback or momentum
+  let h2Ratio = p1Ratio;
+  if (h1.g1 === 3 && h1.g2 <= 1) {
+    // Team 1 dominated H1 (e.g. 3-0). Team 2 pushes hard in H2 (yielding classic 5-3 / 6-2)
+    h2Ratio = p1Ratio * 0.82 + 0.12;
+  } else if (h1.g2 === 3 && h1.g1 <= 1) {
+    // Team 2 dominated H1. Team 1 pushes in H2
+    h2Ratio = p1Ratio * 1.15;
+  }
+  const h2 = simSingleHalf(Math.max(0.15, Math.min(0.85, h2Ratio)));
+
+  let score1 = h1.g1 + h2.g1;
+  let score2 = h1.g2 + h2.g2;
+
+  // Rule 1: No team can score more than 6 goals (capped at 6)
+  score1 = Math.min(6, Math.max(0, score1));
+  score2 = Math.min(6, Math.max(0, score2));
+
+  // Rule 2: Total match goals is at least 5 (typically 5-3, 6-2, 6-3, 5-4, 5-5)
+  if (score1 + score2 < 5) {
+    if (score1 >= score2) {
+      score1 = Math.max(3, score1);
+      score2 = Math.max(2, 5 - score1);
+    } else {
+      score2 = Math.max(3, score2);
+      score1 = Math.max(2, 5 - score2);
+    }
+  }
+
+  const simulatedWinner: 'team1' | 'draw' | 'team2' =
+    score1 > score2 ? 'team1' : score1 < score2 ? 'team2' : 'draw';
+
+  return {
+    score1,
+    score2,
+    simulatedWinner,
+    iyScore: `${h1.g1} - ${h1.g2}`,
+  };
+}
+
+/**
  * Predicts head-to-head probabilities and score between two teams given their Elo ratings
  * luckFactor: 0.0 (pure Elo) to 0.5 (more upsets/randomness)
  */
@@ -333,6 +438,7 @@ export function predictHeadToHead(
   predictedScore1: number;
   predictedScore2: number;
   simulatedWinner: 'team1' | 'draw' | 'team2';
+  iyScore: string;
 } {
   // Home advantage (+2.0 Elo points in our scale where 1 win is ~3.5 pts)
   const homeAdv = isHomeAway ? 2.0 : 0;
@@ -348,9 +454,9 @@ export function predictHeadToHead(
   // Blend with 50/50 based on luckFactor (luckFactor shrinks the gap slightly)
   baseP1 = baseP1 * (1 - luckFactor * 0.6) + 0.5 * (luckFactor * 0.6);
 
-  // Draw probability in football typically 22% - 28%, decreasing when disparity is huge
-  const baseDraw = 0.26 * Math.exp(-Math.abs(z) * 0.35);
-  const pDraw = Math.max(0.12, Math.min(0.30, baseDraw));
+  // Draw probability in football typically 20% - 26%, decreasing when disparity is huge
+  const baseDraw = 0.24 * Math.exp(-Math.abs(z) * 0.35);
+  const pDraw = Math.max(0.12, Math.min(0.28, baseDraw));
 
   // Distribute remaining probability
   const p1 = (1 - pDraw) * baseP1;
@@ -365,42 +471,17 @@ export function predictHeadToHead(
     pct1 = 100 - pctDraw - pct2;
   }
 
-  // Simulate outcome with a realistic random roll
-  const roll = Math.random();
-  let simulatedWinner: 'team1' | 'draw' | 'team2';
-  let score1 = 0;
-  let score2 = 0;
-
-  if (roll < p1) {
-    simulatedWinner = 'team1';
-    // Generate realistic winning score
-    const goalDiffRoll = Math.random();
-    const margin = goalDiffRoll < 0.6 ? 1 : goalDiffRoll < 0.88 ? 2 : 3;
-    const oppG = Math.floor(Math.random() * 2); // 0 or 1
-    score1 = oppG + margin;
-    score2 = oppG;
-  } else if (roll < p1 + pDraw) {
-    simulatedWinner = 'draw';
-    const drawRoll = Math.random();
-    const g = drawRoll < 0.3 ? 0 : drawRoll < 0.75 ? 1 : 2;
-    score1 = g;
-    score2 = g;
-  } else {
-    simulatedWinner = 'team2';
-    const goalDiffRoll = Math.random();
-    const margin = goalDiffRoll < 0.6 ? 1 : goalDiffRoll < 0.88 ? 2 : 3;
-    const oppG = Math.floor(Math.random() * 2);
-    score2 = oppG + margin;
-    score1 = oppG;
-  }
+  // Simulate realistic Bobble game outcome
+  const sim = simulateBobbleScore(pct1, pct2, pctDraw);
 
   return {
     prob1: pct1,
     probDraw: pctDraw,
     prob2: pct2,
-    predictedScore1: score1,
-    predictedScore2: score2,
-    simulatedWinner,
+    predictedScore1: sim.score1,
+    predictedScore2: sim.score2,
+    simulatedWinner: sim.simulatedWinner,
+    iyScore: sim.iyScore,
   };
 }
 
@@ -420,8 +501,11 @@ export function simulateLeagueSeason(
 } {
   const resolveTeam = buildTeamNameResolver(teams);
 
+  // Incorporate full 22 weeks of league matches (including return fixtures for weeks 12-22)
+  const fullSeasonMatches = getAllSeasonMatches(matches);
+
   // Filter unplayed league matches
-  const unplayedMatches = matches.filter((m) => {
+  const unplayedMatches = fullSeasonMatches.filter((m) => {
     if (m.played) return false;
     const cat = (m.category || '').toUpperCase().trim();
     if (cat.includes('TURNUVA') || cat.includes('UCL') || cat.includes('UEL') || cat.includes('UECL')) {
@@ -496,6 +580,7 @@ export function simulateLeagueSeason(
       predictedWinner: sim.simulatedWinner,
       expectedPoints1: expPts1,
       expectedPoints2: expPts2,
+      iyScore: sim.iyScore,
     });
 
     // Accumulate simulation stats

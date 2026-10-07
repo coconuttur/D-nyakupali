@@ -11,7 +11,6 @@ import PuanDurumu from './components/PuanDurumu';
 import Haftalar from './components/Haftalar';
 import Turnuvalar from './components/Turnuvalar';
 import Istatistikler from './components/Istatistikler';
-import Iddia from './components/Iddia';
 import Forum from './components/Forum';
 
 // Deatil sub-views components
@@ -145,7 +144,6 @@ type ViewState =
   | { type: 'haftalar' }
   | { type: 'turnuva' }
   | { type: 'istatistik' }
-  | { type: 'iddia' }
   | { type: 'forum' }
   | { type: 'album' }
   | { type: 'all-trophies' }
@@ -191,7 +189,13 @@ export default function App() {
         // Listen for real-time changes safely without destructive lazy overwriting
         unsubSnapshot = onSnapshot(userRef, (docSnap) => {
           if (docSnap.exists()) {
-            setUserProfile({ uid: firebaseUser.uid, ...docSnap.data() } as UserProfile);
+            const data = docSnap.data();
+            if (data.economyReset2026 !== true) {
+              setDoc(userRef, { balance: 0, economyReset2026: true }, { merge: true }).catch(console.error);
+              setUserProfile({ uid: firebaseUser.uid, ...data, balance: 0, economyReset2026: true } as UserProfile);
+            } else {
+              setUserProfile({ uid: firebaseUser.uid, ...data } as UserProfile);
+            }
           }
         });
 
@@ -201,7 +205,8 @@ export default function App() {
             const initials = displayNameInitials(firebaseUser.displayName || 'Kullanici');
             setDoc(userRef, {
               displayName: firebaseUser.displayName || 'Kullanıcı',
-              balance: 1000, // Starts off with 1000 Coins gift!
+              balance: 0, // Starts off with 0 Coins
+              economyReset2026: true,
               admin: false,
               avatar: `https://ui-avatars.com/api/?name=${initials}&background=800000&color=ffd700&size=100`,
               favTeam: ''
@@ -255,7 +260,8 @@ export default function App() {
         const userRef = doc(db, 'users', credential.user.uid);
         await setDoc(userRef, {
           displayName: authDisplayName.trim(),
-          balance: 1000,
+          balance: 0,
+          economyReset2026: true,
           admin: false,
           avatar: `https://ui-avatars.com/api/?name=${authDisplayName.substring(0,2).toUpperCase()}&background=800000&color=ffd700&size=100`,
           favTeam: ''
@@ -422,10 +428,9 @@ export default function App() {
             })}
           </div>
 
-          {/* Row 2: İDDAA, FORUM, ALBÜM, KUPALAR */}
+          {/* Row 2: FORUM, ALBÜM, KUPALAR */}
           <div className="flex flex-wrap items-center justify-center gap-3">
             {[
-              { id: 'iddia', label: currentLang === 'tr' ? 'İDDİA' : currentLang === 'en' ? 'BETTING' : 'APOSTA' },
               { id: 'forum', label: currentLang === 'tr' ? 'FORUM' : currentLang === 'en' ? 'FORUM' : 'FÓRUM' },
               { id: 'album', label: currentLang === 'tr' ? 'ALBÜM' : currentLang === 'en' ? 'ALBUM' : 'ÁLBUM' },
               { id: 'all-trophies', label: currentLang === 'tr' ? 'KUPALAR' : currentLang === 'en' ? 'TROPHIES' : 'TROFÉUS' }
@@ -507,14 +512,6 @@ export default function App() {
             onNavigate={handleNavigate} 
             teamLogos={teamLogos} 
             currentUser={userProfile}
-          />
-        )}
-
-        {currentView.type === 'iddia' && (
-          <Iddia 
-            currentUser={userProfile} 
-            onNavigate={handleNavigate} 
-            teamLogos={teamLogos} 
           />
         )}
 

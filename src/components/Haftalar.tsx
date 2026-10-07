@@ -3,6 +3,7 @@ import { collection, onSnapshot, doc, getDoc, setDoc } from 'firebase/firestore'
 import { db } from '../firebase';
 import { Match, UserProfile, Team } from '../types';
 import { recalculateStandings } from '../lib/standings';
+import { getAllSeasonMatches, saveReturnFixturesToFirestore } from '../lib/fixtureGenerator';
 
 interface HaftalarProps {
   currentLang: 'tr' | 'en' | 'pt';
@@ -70,6 +71,8 @@ export default function Haftalar({ currentLang, translations, onNavigate, teamLo
   const [isAdmin, setIsAdmin] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [allTeams, setAllTeams] = useState<Team[]>([]);
+  const [syncingReturnFixtures, setSyncingReturnFixtures] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
 
   // Form states
   const [team1, setTeam1] = useState('');
@@ -152,17 +155,20 @@ export default function Haftalar({ currentLang, translations, onNavigate, teamLo
 
   const t = translations[currentLang];
 
+  // Merge Firestore matches with generated return fixtures for weeks 12-22
+  const allSeasonMatches = getAllSeasonMatches(matches);
+
   // Group matches by week
   const grouped: Record<number, Match[]> = {};
-  matches.forEach(m => {
+  allSeasonMatches.forEach(m => {
     const w = Number(m.hafta);
     if (!grouped[w]) grouped[w] = [];
     grouped[w].push(m);
   });
 
-  // Generate sequence from 1 to maximum week to allow full navigation
-  const maxWeekFromGroup = Math.max(...Object.keys(grouped).map(Number), 1);
-  const maxWeek = maxWeekFromGroup > 0 ? maxWeekFromGroup : 1;
+  // Always show exactly 22 weeks of league action
+  const maxWeekFromGroup = Math.max(...Object.keys(grouped).map(Number), 22);
+  const maxWeek = Math.max(maxWeekFromGroup, 22);
   const weekNumbers = Array.from({ length: maxWeek }, (_, i) => i + 1);
 
   return (
@@ -208,12 +214,38 @@ export default function Haftalar({ currentLang, translations, onNavigate, teamLo
           {/* Matches List for selected Week */}
           <div className="max-w-2xl mx-auto space-y-8 px-4">
             {isAdmin && (
-              <div className="flex justify-center mb-6">
+              <div className="flex flex-wrap items-center justify-center gap-3 mb-6">
                 <button
                   onClick={() => setAddModalOpen(true)}
                   className="bg-brand-maroon text-brand-gold border-2 border-brand-gold shadow-[0_4px_0_0_#5c0101] hover:bg-[#600000] active:translate-y-1 py-3 px-6 rounded-2xl font-black text-xs uppercase tracking-wider cursor-pointer flex items-center gap-2 select-none"
                 >
                   ➕ Yeni Maç Ekle
+                </button>
+                <button
+                  disabled={syncingReturnFixtures}
+                  onClick={async () => {
+                    if (!confirm("12-22. haftanın rövanş lig maçlarını (66 maç) Firebase veritabanına kaydetmek istiyor musunuz?")) return;
+                    setSyncingReturnFixtures(true);
+                    try {
+                      const count = await saveReturnFixturesToFirestore(db, (curr, tot) => {
+                        setSyncProgress({ current: curr, total: tot });
+                      });
+                      alert(`Tebrikler! ${count} rövanş maçı başarıyla Firebase veritabanına kaydedildi.`);
+                    } catch (err: any) {
+                      console.error(err);
+                      alert('Rövanş maçları kaydedilirken hata oluştu: ' + (err.message || 'Yetki yetersiz'));
+                    } finally {
+                      setSyncingReturnFixtures(false);
+                      setSyncProgress(null);
+                    }
+                  }}
+                  className={`bg-brand-gold text-brand-dark border-2 border-brand-dark shadow-[0_4px_0_0_#1a1a1a] hover:bg-[#e0b020] active:translate-y-1 py-3 px-6 rounded-2xl font-black text-xs uppercase tracking-wider cursor-pointer flex items-center gap-2 select-none ${
+                    syncingReturnFixtures ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                >
+                  {syncingReturnFixtures 
+                    ? `⏳ Kaydediliyor (${syncProgress?.current || 0}/${syncProgress?.total || 66})...` 
+                    : '⚡ 12-22. Hafta Rövanşlarını DB\'ye Kaydet'}
                 </button>
               </div>
             )}
