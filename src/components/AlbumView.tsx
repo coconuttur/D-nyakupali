@@ -410,24 +410,27 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
 
   // 1. Listen User Test/Admin Status & User Album Data from Firestore
   useEffect(() => {
-    const isAdmin = Boolean(currentUser?.admin);
-    if (!isAdmin && currentUser?.test === true) {
-      setIsTestUser(true);
-    } else {
-      setIsTestUser(false);
-    }
+    const isTest = Boolean(
+      currentUser?.test === true ||
+      currentUser?.email?.toLowerCase().includes('test') ||
+      currentUser?.displayName?.toLowerCase().includes('test')
+    );
+    setIsTestUser(isTest);
 
     if (currentUser?.uid) {
       // Listen User Document for lastPackOpenedAt & stats
       const unsubUserDoc = onSnapshot(doc(db, 'users', currentUser.uid), (docSnap) => {
         if (docSnap.exists()) {
           const uData = docSnap.data();
-          const userIsAdmin = Boolean(uData.admin || currentUser?.admin);
-          if (!userIsAdmin && uData.test === true) {
-            setIsTestUser(true);
-          } else {
-            setIsTestUser(false);
-          }
+          const docIsTest = Boolean(
+            uData.test === true ||
+            currentUser?.test === true ||
+            currentUser?.email?.toLowerCase().includes('test') ||
+            currentUser?.displayName?.toLowerCase().includes('test') ||
+            uData.displayName?.toLowerCase().includes('test')
+          );
+          setIsTestUser(docIsTest);
+
           if (uData.lastPackOpenedAt) {
             setLastPackOpenedAt(Number(uData.lastPackOpenedAt));
           }
@@ -436,8 +439,18 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
           }
           setHasClaimedStarterPack(Boolean(uData.hasClaimedStarterPack));
 
-          // Sync user balance & auto-reset to 0 if economy migration is pending
-          if (uData.economyReset2026 !== true) {
+          // If test user and test bonus not granted yet, add 10,000 coins!
+          if (docIsTest && uData.testBonus10kGiven !== true) {
+            const currentCoins = Number(uData.balance || 0);
+            const targetCoins = Math.max(10000, currentCoins + 10000);
+            setDoc(doc(db, 'users', currentUser.uid), {
+              balance: targetCoins,
+              testBonus10kGiven: true,
+              test: true,
+              economyReset2026: true
+            }, { merge: true }).catch(console.error);
+            setUserBalance(targetCoins);
+          } else if (uData.economyReset2026 !== true) {
             setDoc(doc(db, 'users', currentUser.uid), { balance: 0, economyReset2026: true }, { merge: true }).catch(console.error);
             setUserBalance(0);
           } else {
@@ -838,6 +851,26 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
     setIsOpeningPackModal(true);
   };
 
+  // Add 10,000 Coins to Test Account
+  const handleAddTestCoins = async (amount: number = 10000) => {
+    if (!currentUser?.uid) {
+      setShowLoginPromptModal(true);
+      return;
+    }
+    const newBal = (userBalance || 0) + amount;
+    setUserBalance(newBal);
+    try {
+      await setDoc(doc(db, 'users', currentUser.uid), {
+        balance: newBal,
+        test: true,
+        economyReset2026: true
+      }, { merge: true });
+      alert(`🎉 Test hesabına başarıyla +${amount.toLocaleString('tr-TR')} Para eklendi! Güncel bakiye: ${newBal.toLocaleString('tr-TR')} Para.`);
+    } catch (err) {
+      console.error('Error adding test coins:', err);
+    }
+  };
+
   // Secret card 5-click glass shatter handler
   const handleSecretScreenClick = () => {
     if (secretCrackClicks < 4) {
@@ -980,12 +1013,14 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
   const checkIsDuplicate = (card: any, targetIndex: number) => {
     if (!card) return false;
     const existing = userAlbum[card.slotCode];
-    if (card.isSecret) {
-      if (existing?.hasSecret && (existing.countSecret || 0) > 0) return true;
-    } else if (card.isShiny) {
-      if (existing?.hasShiny && (existing.countShiny || 0) > 0) return true;
-    } else {
-      if (existing?.hasNormal && (existing.countNormal || 0) > 0) return true;
+    if (existing) {
+      if (card.isSecret) {
+        if (existing.hasSecret || (existing.countSecret || 0) > 0) return true;
+      } else if (card.isShiny) {
+        if (existing.hasShiny || (existing.countShiny || 0) > 0) return true;
+      } else {
+        if (existing.hasNormal || (existing.countNormal || 0) > 0 || (existing.hasNormal !== false && !existing.hasShiny && !existing.hasSecret)) return true;
+      }
     }
 
     // Check if an earlier card in this current pack session already granted this card & variant
@@ -1118,13 +1153,16 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
     const isDup = checkIsDuplicate(card, targetIndex);
     if (!isDup) {
       card.decision = 'new';
+      card.isDuplicate = false;
       // Auto-save non-duplicate card to Firestore
       if (currentUser?.uid) {
         await saveCardToFirestore(card);
       }
     } else {
       card.isDuplicate = true;
+      card.decision = 'pending';
     }
+    setDrawnCards([...drawnCards]);
 
     // If card is shiny or secret, trigger Star Growing -> Yellow Glow animation!
     if (card.isSecret) {
@@ -1195,6 +1233,9 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
 
       await setDoc(albumDocRef, {
         slotCode: card.slotCode,
+        title: card.title || '',
+        image: card.image || '',
+        teamLogo: card.teamLogo || '',
         hasNormal: newHasNormal,
         hasShiny: newHasShiny,
         hasSecret: newHasSecret,
@@ -1204,6 +1245,21 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
         countSecret: newCountSecret,
         updatedAt: Date.now()
       }, { merge: true });
+
+      // Optimistically update in-memory album state so duplicates in same session are detected immediately
+      setUserAlbum((prev) => ({
+        ...prev,
+        [card.slotCode]: {
+          slotCode: card.slotCode,
+          hasNormal: newHasNormal,
+          hasShiny: newHasShiny,
+          hasSecret: newHasSecret,
+          selectedVariant: selectedVar,
+          countNormal: newCountNormal,
+          countShiny: newCountShiny,
+          countSecret: newCountSecret
+        }
+      }));
 
       // Update user lastPackOpenedAt timestamp & stats
       await setDoc(userDocRef, {
@@ -1494,9 +1550,18 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
               </button>
             )}
             {isTestUser && (
-              <span className="text-[10px] font-black uppercase bg-emerald-700 text-white px-2 py-0.5 rounded-full border border-emerald-400">
-                ✨ TEST MODU
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-black uppercase bg-emerald-700 text-white px-2 py-0.5 rounded-full border border-emerald-400">
+                  ✨ TEST MODU
+                </span>
+                <button
+                  onClick={() => handleAddTestCoins(10000)}
+                  className="text-[10px] font-black uppercase bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-brand-maroon px-2.5 py-0.5 rounded-full border border-white shadow cursor-pointer transition-all hover:scale-105 active:scale-95"
+                  title="Test Hesabına +10.000 Para Ekle"
+                >
+                  💰 +10.000 PARA EKLE
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -2018,14 +2083,24 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
           {/* Top Control Bar: Info Button + Test User Secret Pack Button */}
           <div className="flex items-center gap-2">
             {isTestUser && (
-              <button
-                onClick={handleOpenSecretTestPackClick}
-                className="px-3 py-1.5 bg-gradient-to-r from-purple-800 via-stone-900 to-black hover:from-purple-700 hover:to-stone-800 text-amber-300 font-black text-[10px] uppercase rounded-xl border-2 border-amber-400 shadow-xl transition-transform hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1.5"
-                title="Test moduna özel 5 adet Secret Kartlı Kutu Aç"
-              >
-                <span>🕶️</span>
-                <span>TEST: 5 SECRET KUTU</span>
-              </button>
+              <>
+                <button
+                  onClick={() => handleAddTestCoins(10000)}
+                  className="px-2.5 py-1.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-brand-maroon font-black text-[10px] uppercase rounded-xl border border-white shadow-xl transition-transform hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1"
+                  title="Test Hesabına +10.000 Para Ekle"
+                >
+                  <span>💰</span>
+                  <span>+10K PARA</span>
+                </button>
+                <button
+                  onClick={handleOpenSecretTestPackClick}
+                  className="px-2.5 py-1.5 bg-gradient-to-r from-purple-800 via-stone-900 to-black hover:from-purple-700 hover:to-stone-800 text-amber-300 font-black text-[10px] uppercase rounded-xl border-2 border-amber-400 shadow-xl transition-transform hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1.5"
+                  title="Test moduna özel 5 adet Secret Kartlı Kutu Aç"
+                >
+                  <span>🕶️</span>
+                  <span>TEST: 5 SECRET</span>
+                </button>
+              </>
             )}
 
             <button
@@ -2513,7 +2588,11 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                                 }`}>
                                   {card.slotCode}
                                 </span>
-                                {isSecretCard ? (
+                                {card.isDuplicate ? (
+                                  <span className="text-[9px] font-black bg-red-600 text-yellow-200 px-2 py-0.5 rounded-full uppercase tracking-tighter shadow-md animate-pulse border border-yellow-300">
+                                    ⚡ ÇİFT KART
+                                  </span>
+                                ) : isSecretCard ? (
                                   <span className="text-[9px] font-black bg-white text-black px-2 py-0.5 rounded-full uppercase tracking-tighter shadow-md animate-pulse">
                                     🕶️ GİZLİ SECRET
                                   </span>
@@ -2585,18 +2664,23 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
 
                       {/* ACTION PROMPTS */}
                       {cardAnimStep < 3 ? (
-                        <p className="text-xs font-black text-amber-300 animate-pulse bg-black/60 px-4 py-1.5 rounded-full border border-amber-400/30">
-                          👉 Animasyonu geçmek için tıklayın...
-                        </p>
+                        <button
+                          onClick={() => setCardAnimStep(3)}
+                          className="py-2.5 px-6 bg-black/90 hover:bg-black text-amber-300 hover:text-white font-black text-xs uppercase rounded-full border-2 border-amber-400 shadow-xl cursor-pointer hover:scale-105 transition-all flex items-center gap-2 animate-pulse"
+                        >
+                          <span>👉</span>
+                          <span>Kartı Gör / Animasyonu Geç</span>
+                          <span>⚡</span>
+                        </button>
                       ) : card.isDuplicate && !card.decision ? (
-                        <div className="bg-gradient-to-r from-amber-950 via-stone-900 to-amber-950 border-2 border-amber-400 p-4 rounded-3xl shadow-2xl text-center space-y-2.5 w-full max-w-sm mx-auto animate-fade-in z-30">
-                          <div className="flex items-center justify-center gap-1.5 text-amber-300 font-black text-xs sm:text-sm uppercase tracking-wider">
+                        <div className="bg-gradient-to-r from-amber-950 via-stone-900 to-amber-950 border-2 border-amber-400 p-4 rounded-3xl shadow-2xl text-center space-y-2.5 w-full max-w-sm mx-auto animate-fade-in z-30 ring-4 ring-amber-500/30">
+                          <div className="flex items-center justify-center gap-1.5 text-amber-300 font-black text-sm uppercase tracking-wider animate-bounce">
                             <span>⚡</span>
                             <span>ÇİFTE KART ÇIKTI!</span>
                             <span>⚡</span>
                           </div>
-                          <p className="text-[11px] text-stone-200 font-bold leading-tight">
-                            Bu kart ({card.isSecret ? 'Secret' : card.isShiny ? 'Altın' : 'Normal'}) koleksiyonunuzda mevcut. Satmak mı yoksa saklamak mı istersiniz?
+                          <p className="text-xs text-stone-200 font-bold leading-tight">
+                            Bu kart ({card.isSecret ? 'Secret' : card.isShiny ? 'Parıltılı' : 'Normal'}) koleksiyonunuzda zaten mevcut! Satmak mı yoksa saklamak mı istersiniz?
                           </p>
                           <div className="grid grid-cols-2 gap-2 pt-1">
                             <button
@@ -2604,20 +2688,20 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                                 e.stopPropagation();
                                 handleSellDuplicate(activePackCardIndex, getDuplicateReward(card));
                               }}
-                              className="py-2.5 px-2 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-brand-maroon font-black text-xs uppercase rounded-xl border border-white shadow-lg cursor-pointer transform hover:scale-105 active:scale-95 transition-all flex flex-col items-center justify-center gap-0.5"
+                              className="py-3 px-3 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-brand-maroon font-black text-xs uppercase rounded-xl border-2 border-white shadow-xl cursor-pointer transform hover:scale-105 active:scale-95 transition-all flex flex-col items-center justify-center gap-0.5"
                             >
-                              <span className="text-xs">💰 SAT</span>
-                              <span className="font-mono text-[10px] font-black">+{getDuplicateReward(card)} PARA</span>
+                              <span className="text-xs font-black">💰 SAT</span>
+                              <span className="font-mono text-[10px] font-black">+{getDuplicateReward(card)} PARA KAZAN</span>
                             </button>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleKeepDuplicate(activePackCardIndex);
                               }}
-                              className="py-2.5 px-2 bg-stone-800 hover:bg-stone-700 text-amber-200 font-black text-xs uppercase rounded-xl border border-amber-400 shadow-md cursor-pointer transform hover:scale-105 active:scale-95 transition-all flex flex-col items-center justify-center gap-0.5"
+                              className="py-3 px-3 bg-stone-800 hover:bg-stone-700 text-amber-200 font-black text-xs uppercase rounded-xl border-2 border-amber-400 shadow-md cursor-pointer transform hover:scale-105 active:scale-95 transition-all flex flex-col items-center justify-center gap-0.5"
                             >
-                              <span className="text-xs">📦 TUT</span>
-                              <span className="text-[9px] font-bold">ENVANTERDE SAKLA</span>
+                              <span className="text-xs font-black">📦 TUT</span>
+                              <span className="text-[10px] font-bold">ENVANTERDE SAKLA</span>
                             </button>
                           </div>
                         </div>

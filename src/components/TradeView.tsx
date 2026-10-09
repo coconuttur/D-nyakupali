@@ -135,7 +135,7 @@ export function TradeView({ currentUser, userAlbum, onClose, onTradeFinished }: 
       const entry = userAlbum[slotCode];
       if (!entry) return;
 
-      if (entry.hasSecret && (entry.countSecret || 0) > 0) {
+      if (entry.hasSecret || (entry.countSecret || 0) > 0) {
         list.push({
           slotCode,
           variant: 'secret',
@@ -144,7 +144,7 @@ export function TradeView({ currentUser, userAlbum, onClose, onTradeFinished }: 
           count: entry.countSecret || 1
         });
       }
-      if (entry.hasShiny && (entry.countShiny || 0) > 0) {
+      if (entry.hasShiny || (entry.countShiny || 0) > 0) {
         list.push({
           slotCode,
           variant: 'shiny',
@@ -153,7 +153,7 @@ export function TradeView({ currentUser, userAlbum, onClose, onTradeFinished }: 
           count: entry.countShiny || 1
         });
       }
-      if (entry.hasNormal && (entry.countNormal || 0) > 0) {
+      if (entry.hasNormal || (entry.countNormal || 0) > 0) {
         list.push({
           slotCode,
           variant: 'normal',
@@ -173,7 +173,7 @@ export function TradeView({ currentUser, userAlbum, onClose, onTradeFinished }: 
       const entry = partnerAlbum[slotCode];
       if (!entry) return;
 
-      if (entry.hasSecret && (entry.countSecret || 0) > 0) {
+      if (entry.hasSecret || (entry.countSecret || 0) > 0) {
         list.push({
           slotCode,
           variant: 'secret',
@@ -182,7 +182,7 @@ export function TradeView({ currentUser, userAlbum, onClose, onTradeFinished }: 
           count: entry.countSecret || 1
         });
       }
-      if (entry.hasShiny && (entry.countShiny || 0) > 0) {
+      if (entry.hasShiny || (entry.countShiny || 0) > 0) {
         list.push({
           slotCode,
           variant: 'shiny',
@@ -191,7 +191,7 @@ export function TradeView({ currentUser, userAlbum, onClose, onTradeFinished }: 
           count: entry.countShiny || 1
         });
       }
-      if (entry.hasNormal && (entry.countNormal || 0) > 0) {
+      if (entry.hasNormal || (entry.countNormal || 0) > 0) {
         list.push({
           slotCode,
           variant: 'normal',
@@ -252,14 +252,17 @@ export function TradeView({ currentUser, userAlbum, onClose, onTradeFinished }: 
       const tradeId = `trade_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const pairKey = getTradePairKey(currentUser.uid, selectedPartner.uid);
 
+      const senderImg = currentUser.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.displayName || 'U')}&background=800000&color=ffd700`;
+      const receiverImg = selectedPartner.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedPartner.displayName || 'U')}&background=064e3b&color=a7f3d0`;
+
       await setDoc(doc(db, 'trades', tradeId), {
         id: tradeId,
         senderUid: currentUser.uid,
         senderName: currentUser.displayName || 'Kullanıcı',
-        senderAvatar: currentUser.avatar || '',
+        senderAvatar: senderImg,
         receiverUid: selectedPartner.uid,
         receiverName: selectedPartner.displayName || 'Kullanıcı',
-        receiverAvatar: selectedPartner.avatar || '',
+        receiverAvatar: receiverImg,
         offeredCards,
         requestedCards,
         status: 'pending',
@@ -473,20 +476,37 @@ export function TradeView({ currentUser, userAlbum, onClose, onTradeFinished }: 
         {activeTab === 'create' && (
           <div className="space-y-4">
             
-            {/* User Selector Dropdown */}
+            {/* User Selector with Profile Pictures & Cards */}
             <div className="bg-black/60 border-2 border-amber-400/40 rounded-2xl p-4 space-y-3">
-              <label className="text-xs font-black uppercase text-amber-300 block">
-                1. Takas Yapmak İstediğiniz Kullanıcıyı Seçin:
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-black uppercase text-amber-300 flex items-center gap-2">
+                  <span>👥</span>
+                  <span>1. Takas Yapmak İstediğiniz Kullanıcıyı Seçin:</span>
+                </label>
+                <span className="text-[10px] text-stone-400 font-mono">
+                  {allUsers.length} Kayıtlı Kullanıcı
+                </span>
+              </div>
 
+              {/* Search Bar */}
               <div className="flex flex-wrap items-center gap-3">
-                <input
-                  type="text"
-                  placeholder="Kullanıcı adı ara..."
-                  value={userSearchQuery}
-                  onChange={(e) => setUserSearchQuery(e.target.value)}
-                  className="bg-stone-900 border border-amber-400/50 rounded-xl px-3 py-2 text-xs text-white placeholder-stone-500 w-full sm:w-64"
-                />
+                <div className="relative flex-1 min-w-[200px]">
+                  <input
+                    type="text"
+                    placeholder="🔍 Kullanıcı veya takım adı ara..."
+                    value={userSearchQuery}
+                    onChange={(e) => setUserSearchQuery(e.target.value)}
+                    className="bg-stone-900 border border-amber-400/50 rounded-xl px-3.5 py-2 text-xs text-white placeholder-stone-500 w-full focus:outline-none focus:border-amber-400"
+                  />
+                  {userSearchQuery && (
+                    <button
+                      onClick={() => setUserSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-white text-xs cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
 
                 <select
                   value={selectedPartner?.uid || ''}
@@ -496,43 +516,126 @@ export function TradeView({ currentUser, userAlbum, onClose, onTradeFinished }: 
                     setOfferedCards([]);
                     setRequestedCards([]);
                   }}
-                  className="bg-stone-900 border-2 border-amber-400 rounded-xl px-3 py-2 text-xs text-amber-300 font-bold flex-1"
+                  className="bg-stone-900 border-2 border-amber-400/70 rounded-xl px-3 py-2 text-xs text-amber-300 font-bold max-w-xs"
                 >
-                  <option value="">-- Kullanıcı Listesinden Seç --</option>
+                  <option value="">-- Hızlı Açılır Liste --</option>
                   {allUsers
                     .filter((u) => !userSearchQuery || u.displayName.toLowerCase().includes(userSearchQuery.toLowerCase()))
                     .map((u) => (
                       <option key={u.uid} value={u.uid}>
-                        👤 {u.displayName} {u.favTeam ? `(${u.favTeam})` : ''}
+                        {u.displayName} {u.favTeam ? `(${u.favTeam})` : ''}
                       </option>
                     ))}
                 </select>
               </div>
 
+              {/* Visual User Profile Cards Carousel / Grid */}
+              <div className="space-y-1.5 pt-1">
+                <span className="text-[10px] font-black uppercase text-amber-200/80 block">
+                  Kullanıcı Profil Kartları (Seçmek için tıklayın):
+                </span>
+                
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 max-h-44 overflow-y-auto pr-1">
+                  {allUsers
+                    .filter((u) => 
+                      !userSearchQuery || 
+                      u.displayName.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
+                      (u.favTeam && u.favTeam.toLowerCase().includes(userSearchQuery.toLowerCase()))
+                    )
+                    .map((u) => {
+                      const isSelected = selectedPartner?.uid === u.uid;
+                      const avatarSrc = u.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.displayName || 'U')}&background=800000&color=ffd700`;
+
+                      return (
+                        <div
+                          key={u.uid}
+                          onClick={() => {
+                            setSelectedPartner(u);
+                            setOfferedCards([]);
+                            setRequestedCards([]);
+                          }}
+                          className={`p-2 rounded-xl border flex items-center gap-2.5 cursor-pointer transition-all select-none ${
+                            isSelected
+                              ? 'bg-gradient-to-r from-amber-950 via-stone-900 to-amber-950 border-amber-400 ring-2 ring-amber-400 shadow-lg scale-[1.02]'
+                              : 'bg-stone-900/90 border-stone-800 hover:border-amber-400/50 hover:bg-stone-850'
+                          }`}
+                        >
+                          <img
+                            src={avatarSrc}
+                            alt={u.displayName}
+                            className={`w-9 h-9 rounded-full object-cover border-2 flex-shrink-0 ${
+                              isSelected ? 'border-amber-400 shadow-md ring-2 ring-amber-400/40' : 'border-stone-700'
+                            }`}
+                          />
+                          <div className="min-w-0 flex-1 leading-tight">
+                            <div className="flex items-center gap-1">
+                              <span className={`text-[11px] font-black truncate block ${isSelected ? 'text-amber-300' : 'text-white'}`}>
+                                {u.displayName}
+                              </span>
+                              {isSelected && (
+                                <span className="text-emerald-400 text-[10px] font-black">✓</span>
+                              )}
+                            </div>
+                            <span className="text-[9px] text-stone-400 truncate block">
+                              {u.favTeam ? `⚽ ${u.favTeam}` : '👤 Taraftar'}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+
+              {/* Selected Partner Details Banner */}
               {selectedPartner && (
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-amber-400/20 text-xs">
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-amber-400/30 bg-amber-950/30 p-2.5 rounded-xl">
+                  <div className="flex items-center gap-3">
                     <img 
-                      src={selectedPartner.avatar || 'https://via.placeholder.com/32'} 
+                      src={selectedPartner.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedPartner.displayName || 'U')}&background=064e3b&color=a7f3d0`} 
                       alt={selectedPartner.displayName} 
-                      className="w-7 h-7 rounded-full border border-amber-400"
+                      className="w-10 h-10 rounded-full border-2 border-emerald-400 object-cover shadow-md"
                     />
-                    <span className="font-black text-amber-200">
-                      Seçilen Ortak: <span className="text-white">{selectedPartner.displayName}</span>
-                    </span>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase text-emerald-300 bg-emerald-950 px-2 py-0.5 rounded-full border border-emerald-500/50">
+                          Seçilen Takas Ortağı
+                        </span>
+                        {selectedPartner.favTeam && (
+                          <span className="text-[10px] text-amber-300 font-bold">
+                            ⚽ {selectedPartner.favTeam}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-sm font-black text-white">
+                        {selectedPartner.displayName}
+                      </span>
+                    </div>
                   </div>
 
-                  {checkingLimit ? (
-                    <span className="text-stone-400">Limit kontrol ediliyor...</span>
-                  ) : (
-                    <span className={`font-mono font-black px-2.5 py-1 rounded-xl border ${
-                      weeklyCompletedTrades >= 2 
-                        ? 'bg-red-900/80 text-red-300 border-red-500' 
-                        : 'bg-emerald-900/80 text-emerald-300 border-emerald-500'
-                    }`}>
-                      Bu Hafta Tamamlanan Takas: {weeklyCompletedTrades} / 2 {weeklyCompletedTrades >= 2 && '🚫 LİMİT DOLDU'}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {checkingLimit ? (
+                      <span className="text-stone-400 text-xs">Limit kontrol ediliyor...</span>
+                    ) : (
+                      <span className={`font-mono font-black text-xs px-3 py-1.5 rounded-xl border ${
+                        weeklyCompletedTrades >= 2 
+                          ? 'bg-red-900/80 text-red-300 border-red-500' 
+                          : 'bg-emerald-900/80 text-emerald-300 border-emerald-500 shadow-md'
+                      }`}>
+                        Bu Hafta: {weeklyCompletedTrades} / 2 Takas {weeklyCompletedTrades >= 2 && '🚫 LİMİT DOLDU'}
+                      </span>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        setSelectedPartner(null);
+                        setOfferedCards([]);
+                        setRequestedCards([]);
+                      }}
+                      className="text-[10px] font-black text-stone-400 hover:text-white px-2 py-1 bg-stone-800 rounded-lg border border-stone-700 hover:border-amber-400 cursor-pointer"
+                    >
+                      Değiştir
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -545,9 +648,16 @@ export function TradeView({ currentUser, userAlbum, onClose, onTradeFinished }: 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-black/70 border border-amber-400/40 rounded-2xl p-3">
                   {/* Left: What You Offer */}
                   <div className="space-y-1.5 border-b md:border-b-0 md:border-r border-amber-400/20 pb-2 md:pb-0 md:pr-3">
-                    <span className="text-[10px] font-black uppercase text-amber-300 block">
-                      📤 Vereceğiniz Kartlar ({offeredCards.length} Kart Seçildi):
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <img
+                        src={currentUser.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.displayName || 'U')}&background=800000&color=ffd700`}
+                        alt={currentUser.displayName}
+                        className="w-5 h-5 rounded-full border border-amber-400 object-cover"
+                      />
+                      <span className="text-[10px] font-black uppercase text-amber-300 block">
+                        📤 Vereceğiniz Kartlar ({offeredCards.length} Kart Seçildi):
+                      </span>
+                    </div>
                     {offeredCards.length === 0 ? (
                       <span className="text-[11px] text-stone-400 italic block">Aşağıdan vermek istediğiniz kartları tıklayın.</span>
                     ) : (
@@ -569,9 +679,16 @@ export function TradeView({ currentUser, userAlbum, onClose, onTradeFinished }: 
 
                   {/* Right: What You Request */}
                   <div className="space-y-1.5 md:pl-2">
-                    <span className="text-[10px] font-black uppercase text-emerald-300 block">
-                      📥 Alacağınız Kartlar ({requestedCards.length} Kart Seçildi):
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <img
+                        src={selectedPartner.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedPartner.displayName || 'U')}&background=064e3b&color=a7f3d0`}
+                        alt={selectedPartner.displayName}
+                        className="w-5 h-5 rounded-full border border-emerald-400 object-cover"
+                      />
+                      <span className="text-[10px] font-black uppercase text-emerald-300 block">
+                        📥 {selectedPartner.displayName} Adlı Kullanıcıdan İstediğiniz ({requestedCards.length} Kart):
+                      </span>
+                    </div>
                     {requestedCards.length === 0 ? (
                       <span className="text-[11px] text-stone-400 italic block">Karşı tarafın kartlarından istediklerinizi tıklayın.</span>
                     ) : (
@@ -598,9 +715,16 @@ export function TradeView({ currentUser, userAlbum, onClose, onTradeFinished }: 
                   {/* Left Column: Your Inventory */}
                   <div className="bg-black/50 border border-amber-400/30 rounded-2xl p-3 space-y-2">
                     <div className="flex items-center justify-between border-b border-amber-400/20 pb-2">
-                      <span className="text-xs font-black uppercase text-amber-300">
-                        🎒 Senin Kart Envanterin
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <img
+                          src={currentUser.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.displayName || 'U')}&background=800000&color=ffd700`}
+                          alt={currentUser.displayName}
+                          className="w-6 h-6 rounded-full border border-amber-400 object-cover"
+                        />
+                        <span className="text-xs font-black uppercase text-amber-300">
+                          🎒 Sizin Kart Envanteriniz
+                        </span>
+                      </div>
                       <span className="text-[10px] text-amber-200/80 font-mono">
                         {getMyTradeableCards().length} Kart Mevcut
                       </span>
@@ -656,9 +780,16 @@ export function TradeView({ currentUser, userAlbum, onClose, onTradeFinished }: 
                   {/* Right Column: Partner's Inventory */}
                   <div className="bg-black/50 border border-emerald-400/30 rounded-2xl p-3 space-y-2">
                     <div className="flex items-center justify-between border-b border-emerald-400/20 pb-2">
-                      <span className="text-xs font-black uppercase text-emerald-300">
-                        🎒 {selectedPartner.displayName} Kart Envanteri
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <img
+                          src={selectedPartner.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedPartner.displayName || 'U')}&background=064e3b&color=a7f3d0`}
+                          alt={selectedPartner.displayName}
+                          className="w-6 h-6 rounded-full border border-emerald-400 object-cover"
+                        />
+                        <span className="text-xs font-black uppercase text-emerald-300">
+                          🎒 {selectedPartner.displayName} Kart Envanteri
+                        </span>
+                      </div>
                       <span className="text-[10px] text-emerald-200/80 font-mono">
                         {loadingPartner ? 'Yükleniyor...' : `${getPartnerTradeableCards().length} Kart`}
                       </span>
@@ -780,16 +911,31 @@ export function TradeView({ currentUser, userAlbum, onClose, onTradeFinished }: 
                       key={offer.id}
                       className="bg-black/70 border-2 border-amber-400/40 rounded-2xl p-4 space-y-3 shadow-md"
                     >
-                      {/* Offer Header */}
+                      {/* Offer Header with Profile Pictures */}
                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
-                        <div className="flex items-center gap-2">
-                          <img
-                            src={offer.senderAvatar || 'https://via.placeholder.com/32'}
-                            alt={offer.senderName}
-                            className="w-7 h-7 rounded-full border border-amber-400"
-                          />
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center -space-x-2">
+                            <img
+                              src={offer.senderAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(offer.senderName || 'U')}&background=800000&color=ffd700`}
+                              alt={offer.senderName}
+                              className="w-8 h-8 rounded-full border-2 border-amber-400 object-cover shadow"
+                              title={`Teklif Gönderen: ${offer.senderName}`}
+                            />
+                            <div className="w-5 h-5 rounded-full bg-stone-900 border border-white/40 flex items-center justify-center text-[9px] z-10 text-white font-bold">
+                              ➔
+                            </div>
+                            <img
+                              src={currentUser.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.displayName || 'U')}&background=064e3b&color=a7f3d0`}
+                              alt={currentUser.displayName}
+                              className="w-8 h-8 rounded-full border-2 border-emerald-400 object-cover shadow"
+                              title={`Alıcı (Siz): ${currentUser.displayName}`}
+                            />
+                          </div>
                           <div>
-                            <span className="text-xs font-black text-white">{offer.senderName}</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-black text-white">{offer.senderName}</span>
+                              <span className="text-[10px] text-amber-300 font-bold">size teklif yaptı</span>
+                            </div>
                             <span className="text-[10px] text-stone-400 block font-mono">
                               {new Date(offer.createdAt).toLocaleDateString('tr-TR')} {new Date(offer.createdAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
                             </span>
@@ -894,14 +1040,29 @@ export function TradeView({ currentUser, userAlbum, onClose, onTradeFinished }: 
                       className="bg-black/70 border border-white/20 rounded-2xl p-4 space-y-3 shadow-md"
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
-                        <div className="flex items-center gap-2">
-                          <img
-                            src={offer.receiverAvatar || 'https://via.placeholder.com/32'}
-                            alt={offer.receiverName}
-                            className="w-7 h-7 rounded-full border border-amber-400"
-                          />
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center -space-x-2">
+                            <img
+                              src={currentUser.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.displayName || 'U')}&background=800000&color=ffd700`}
+                              alt={currentUser.displayName}
+                              className="w-8 h-8 rounded-full border-2 border-amber-400 object-cover shadow"
+                              title={`Teklif Gönderen (Siz): ${currentUser.displayName}`}
+                            />
+                            <div className="w-5 h-5 rounded-full bg-stone-900 border border-white/40 flex items-center justify-center text-[9px] z-10 text-white font-bold">
+                              ➔
+                            </div>
+                            <img
+                              src={offer.receiverAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(offer.receiverName || 'U')}&background=064e3b&color=a7f3d0`}
+                              alt={offer.receiverName}
+                              className="w-8 h-8 rounded-full border-2 border-emerald-400 object-cover shadow"
+                              title={`Alıcı: ${offer.receiverName}`}
+                            />
+                          </div>
                           <div>
-                            <span className="text-xs font-black text-white">Alıcı: {offer.receiverName}</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] text-amber-300 font-bold">Alıcı:</span>
+                              <span className="text-xs font-black text-white">{offer.receiverName}</span>
+                            </div>
                             <span className="text-[10px] text-stone-400 block font-mono">
                               {new Date(offer.createdAt).toLocaleDateString('tr-TR')} {new Date(offer.createdAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
                             </span>

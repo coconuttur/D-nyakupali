@@ -190,11 +190,22 @@ export default function App() {
         unsubSnapshot = onSnapshot(userRef, (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
-            if (data.economyReset2026 !== true) {
+            const isTestAcc = Boolean(
+              data.test === true ||
+              firebaseUser.email?.toLowerCase().includes('test') ||
+              firebaseUser.displayName?.toLowerCase().includes('test') ||
+              data.displayName?.toLowerCase().includes('test')
+            );
+
+            if (isTestAcc && data.testBonus10kGiven !== true) {
+              const newBal = (Number(data.balance) || 0) + 10000;
+              setDoc(userRef, { balance: newBal, testBonus10kGiven: true, test: true, economyReset2026: true }, { merge: true }).catch(console.error);
+              setUserProfile({ uid: firebaseUser.uid, displayName: firebaseUser.displayName || 'Kullanıcı', ...data, balance: newBal, test: true, testBonus10kGiven: true, economyReset2026: true } as unknown as UserProfile);
+            } else if (data.economyReset2026 !== true) {
               setDoc(userRef, { balance: 0, economyReset2026: true }, { merge: true }).catch(console.error);
-              setUserProfile({ uid: firebaseUser.uid, ...data, balance: 0, economyReset2026: true } as UserProfile);
+              setUserProfile({ uid: firebaseUser.uid, displayName: firebaseUser.displayName || 'Kullanıcı', ...data, balance: 0, economyReset2026: true } as unknown as UserProfile);
             } else {
-              setUserProfile({ uid: firebaseUser.uid, ...data } as UserProfile);
+              setUserProfile({ uid: firebaseUser.uid, displayName: firebaseUser.displayName || 'Kullanıcı', ...data, ...(isTestAcc ? { test: true } : {}) } as unknown as UserProfile);
             }
           }
         });
@@ -203,11 +214,17 @@ export default function App() {
         getDoc(userRef).then((docSnap) => {
           if (!docSnap.exists()) {
             const initials = displayNameInitials(firebaseUser.displayName || 'Kullanici');
+            const isTestAcc = Boolean(
+              firebaseUser.email?.toLowerCase().includes('test') ||
+              firebaseUser.displayName?.toLowerCase().includes('test')
+            );
             setDoc(userRef, {
               displayName: firebaseUser.displayName || 'Kullanıcı',
-              balance: 0, // Starts off with 0 Coins
+              balance: isTestAcc ? 10000 : 0, // Starts off with 10k Coins for test user, 0 for regular
               economyReset2026: true,
               admin: false,
+              test: isTestAcc,
+              testBonus10kGiven: isTestAcc,
               avatar: `https://ui-avatars.com/api/?name=${initials}&background=800000&color=ffd700&size=100`,
               favTeam: ''
             });
