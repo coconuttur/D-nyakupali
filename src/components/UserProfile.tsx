@@ -47,6 +47,19 @@ interface ActivityItem {
   type: string;
 }
 
+function isLightColor(hex?: string): boolean {
+  if (!hex) return false;
+  let c = hex.replace('#', '').trim();
+  if (c.length === 3) c = c.split('').map((x) => x + x).join('');
+  if (c.length !== 6) return false;
+  const num = parseInt(c, 16);
+  if (isNaN(num)) return false;
+  const r = (num >> 16) & 255;
+  const g = (num >> 8) & 255;
+  const b = num & 255;
+  return ((0.299 * r + 0.587 * g + 0.114 * b) / 255) > 0.55;
+}
+
 export default function UserProfile({ 
   userId, 
   currentUser, 
@@ -442,8 +455,20 @@ export default function UserProfile({
 
   const currentAvatar = profile?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.displayName || 'U')}&background=800000&color=ffd700&size=150`;
 
+  const profileBgStart = profile?.bgGradientStart || '#800000';
+  const profileBgEnd = profile?.bgGradientEnd || '#1e1f22';
+  const profileGradient = `linear-gradient(to bottom, ${profileBgStart}, ${profileBgEnd})`;
+  const isProfileLight = isLightColor(profileBgEnd);
+
   return (
-    <div className="bg-[#e8e1d1] min-h-screen text-[#3d3d3d] font-sans">
+    <div 
+      className="min-h-screen text-[#3d3d3d] font-sans transition-colors"
+      style={{
+        background: profile?.bgGradientStart 
+          ? `radial-gradient(ellipse 80% 50% at 50% 0%, ${profileBgStart}25 0%, #e8e1d1 65%)` 
+          : '#e8e1d1'
+      }}
+    >
       
       {/* Navbar Header resembling user custom layout */}
       <div className="bg-[#800000] py-4 px-6 flex items-center justify-between border-b-4 border-[#1a1a1a] shadow-md sticky top-0 z-20">
@@ -478,14 +503,22 @@ export default function UserProfile({
       ) : (
         <div className="max-w-4xl mx-auto py-8 px-4 space-y-6">
           
-          {/* Main User Card Section */}
-          <div className="bg-[#f2ede1] rounded-3xl border-b-8 border-[#800000] shadow-sm overflow-hidden">
+          {/* Main User Card Section - Styled with user's selected 2-color gradient! */}
+          <div 
+            className="rounded-3xl border-b-8 shadow-2xl overflow-hidden transition-all border"
+            style={{
+              background: profileGradient,
+              borderBottomColor: profileBgStart,
+              borderColor: isProfileLight ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.15)',
+              color: isProfileLight ? '#171717' : '#ffffff'
+            }}
+          >
             
             {/* Banner Section */}
             <div 
               className="relative h-36 sm:h-52 w-full overflow-hidden group"
               style={{
-                background: `linear-gradient(to bottom, ${profile.bgGradientStart || '#800000'}, ${profile.bgGradientEnd || '#1e1f22'})`
+                background: profile.banner ? undefined : 'transparent'
               }}
             >
               {profile.banner ? (
@@ -496,9 +529,9 @@ export default function UserProfile({
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
-                  <div className="text-center opacity-40">
+                  <div className={`text-center ${isProfileLight ? 'opacity-30 text-black' : 'opacity-40 text-white'}`}>
                     <span className="text-4xl block">⚽</span>
-                    <span className="text-[10px] font-black uppercase tracking-widest text-white">BOBBLE LEAGUE BANNER</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest">BOBBLE LEAGUE BANNER</span>
                   </div>
                 </div>
               )}
@@ -528,11 +561,15 @@ export default function UserProfile({
                   <div className="flex-shrink-0 relative group cursor-pointer">
                     <img 
                       src={currentAvatar} 
-                      className="w-28 h-28 md:w-36 md:h-36 rounded-full border-4 border-[#800000] object-cover bg-white p-1 shadow-2xl ring-4 ring-[#f2ede1] transition-transform group-hover:scale-105" 
+                      className="w-28 h-28 md:w-36 md:h-36 rounded-full border-4 object-cover bg-white p-1 shadow-2xl transition-transform group-hover:scale-105" 
+                      style={{ 
+                        borderColor: profileBgStart,
+                        boxShadow: `0 10px 25px -5px ${profileBgStart}66`
+                      }}
                       alt="avatar" 
                     />
                     {profile.admin && (
-                      <span className="absolute bottom-1 right-1/2 translate-x-1/2 bg-red-600 text-white rounded-md px-2 py-0.5 text-[8px] font-black tracking-wide border-2 border-[#f2ede1] shadow">
+                      <span className="absolute bottom-1 right-1/2 translate-x-1/2 bg-red-600 text-white rounded-md px-2 py-0.5 text-[8px] font-black tracking-wide border shadow">
                         YÖNETİCİ
                       </span>
                     )}
@@ -542,14 +579,20 @@ export default function UserProfile({
                 {/* Informative credentials */}
                 <div className="flex-1 text-center md:text-left space-y-3 w-full">
                   <div className="flex flex-wrap items-center justify-center md:justify-start gap-4">
-                    <h1 className="text-2xl md:text-3xl font-black text-brand-dark max-w-xs truncate uppercase leading-none">
+                    <h1 className={`text-2xl md:text-3xl font-black max-w-xs truncate uppercase leading-none ${
+                      isProfileLight ? 'text-neutral-950 font-black' : 'text-white font-black'
+                    }`}>
                       {profile.displayName || 'İsimsiz'}
                     </h1>
                     
                     {isOwnProfile ? (
                       <button 
                         onClick={() => setEditModalOpen(true)}
-                        className="bg-[#1a1a1a] hover:bg-black text-[#ffd700] hover:scale-102 cursor-pointer font-black text-xs px-4 py-2 rounded-lg transition-transform flex items-center gap-1.5 uppercase"
+                        className={`hover:scale-102 cursor-pointer font-black text-xs px-4 py-2 rounded-lg transition-transform flex items-center gap-1.5 uppercase shadow ${
+                          isProfileLight 
+                            ? 'bg-neutral-900 hover:bg-black text-amber-300' 
+                            : 'bg-black/60 hover:bg-black text-[#ffd700] border border-amber-400/40'
+                        }`}
                       >
                         <Settings className="w-3.5 h-3.5" />
                         {currentLang === 'tr' ? 'HESAP KONSOLU' : 'ACCOUNT SETTINGS'}
@@ -570,37 +613,45 @@ export default function UserProfile({
                   </div>
 
                 {/* Profile Bio */}
-                <p className="text-sm font-semibold text-gray-700 leading-relaxed max-w-md whitespace-pre-wrap word-break h-auto">
+                <p className={`text-sm font-semibold leading-relaxed max-w-md whitespace-pre-wrap word-break h-auto p-3.5 rounded-2xl backdrop-blur-sm border ${
+                  isProfileLight 
+                    ? 'bg-black/10 text-neutral-900 border-black/10' 
+                    : 'bg-black/35 text-neutral-100 border-white/10'
+                }`}>
                   {profile.bio || (currentLang === 'tr' ? 'Henüz bir biyografi eklenmemiş.' : 'No biography added yet.')}
                 </p>
 
                 {/* Counter metrics (Clickable list loaders) */}
                 <div className="flex items-center justify-center md:justify-start gap-6 pt-3 select-none">
                   <div className="text-center md:text-left">
-                    <span className="block text-xl font-black text-brand-dark leading-none">{commentCount}</span>
-                    <span className="text-[11px] font-bold text-gray-500 uppercase">{currentLang === 'tr' ? 'Aktivite' : 'Activities'}</span>
+                    <span className={`block text-xl font-black leading-none ${isProfileLight ? 'text-neutral-950' : 'text-white'}`}>{commentCount}</span>
+                    <span className={`text-[11px] font-bold uppercase ${isProfileLight ? 'text-neutral-700' : 'text-neutral-300'}`}>{currentLang === 'tr' ? 'Aktivite' : 'Activities'}</span>
                   </div>
                   <div 
                     onClick={() => handleOpenFollowModal('followers')}
                     className="text-center md:text-left cursor-pointer hover:opacity-80 transition-opacity"
                   >
-                    <span className="block text-xl font-black text-brand-dark leading-none">{followersCount}</span>
-                    <span className="text-[11px] font-bold text-gray-500 uppercase hover:underline">{currentLang === 'tr' ? 'Takipçi' : 'Followers'}</span>
+                    <span className={`block text-xl font-black leading-none ${isProfileLight ? 'text-neutral-950' : 'text-white'}`}>{followersCount}</span>
+                    <span className={`text-[11px] font-bold uppercase hover:underline ${isProfileLight ? 'text-neutral-700' : 'text-neutral-300'}`}>{currentLang === 'tr' ? 'Takipçi' : 'Followers'}</span>
                   </div>
                   <div 
                     onClick={() => handleOpenFollowModal('following')}
                     className="text-center md:text-left cursor-pointer hover:opacity-80 transition-opacity"
                   >
-                    <span className="block text-xl font-black text-brand-dark leading-none">{followingCount}</span>
-                    <span className="text-[11px] font-bold text-gray-500 uppercase hover:underline">{currentLang === 'tr' ? 'Takip Edilen' : 'Following'}</span>
+                    <span className={`block text-xl font-black leading-none ${isProfileLight ? 'text-neutral-950' : 'text-white'}`}>{followingCount}</span>
+                    <span className={`text-[11px] font-bold uppercase hover:underline ${isProfileLight ? 'text-neutral-700' : 'text-neutral-300'}`}>{currentLang === 'tr' ? 'Takip Edilen' : 'Following'}</span>
                   </div>
                 </div>
 
                 {/* Balance coin display */}
-                <div className="bg-[#1a1a1a]/10 backdrop-blur-sm shadow-sm rounded-xl p-2.5 inline-flex items-center gap-2 mt-4 px-4">
-                  <Coins className="w-4 h-4 text-amber-600" />
-                  <span className="text-xs font-black text-brand-dark">
-                    Cüzdan Bakiyesi: <strong className="text-[#800000]">{(profile.balance || 0).toLocaleString()} ฿</strong>
+                <div className={`backdrop-blur-sm shadow-sm rounded-xl p-2.5 inline-flex items-center gap-2 mt-4 px-4 border ${
+                  isProfileLight 
+                    ? 'bg-black/10 text-neutral-900 border-black/10' 
+                    : 'bg-black/35 text-white border-white/10'
+                }`}>
+                  <Coins className={`w-4 h-4 ${isProfileLight ? 'text-neutral-900' : 'text-amber-400'}`} />
+                  <span className="text-xs font-black">
+                    Cüzdan Bakiyesi: <strong className={isProfileLight ? 'text-neutral-950 font-black' : 'text-amber-300'}>{(profile.balance || 0).toLocaleString()} ฿</strong>
                   </span>
                 </div>
               </div>
@@ -776,30 +827,48 @@ export default function UserProfile({
               {currentLang === 'tr' ? 'Hesap Konsolu' : 'Account Console'}
             </h3>
 
-            {/* Banner & Avatar Preview */}
-            <div className="mb-4 relative rounded-2xl overflow-hidden border-2 border-brand-maroon/40 shadow">
+            {/* Banner & Avatar Preview - Full gradient preview */}
+            <div 
+              className="mb-4 relative rounded-2xl overflow-hidden shadow-md border transition-all"
+              style={{
+                background: `linear-gradient(to bottom, ${editBgStart}, ${editBgEnd})`,
+                borderColor: isLightColor(editBgEnd) ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.2)',
+                color: isLightColor(editBgEnd) ? '#171717' : '#ffffff'
+              }}
+            >
               <div 
-                className="h-20 w-full overflow-hidden flex items-center justify-center"
-                style={{ background: `linear-gradient(to bottom, ${editBgStart}, ${editBgEnd})` }}
+                className="h-16 w-full overflow-hidden flex items-center justify-center relative"
               >
                 {editBanner ? (
                   <img src={editBanner} className="w-full h-full object-cover" alt="banner preview" />
                 ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center text-white text-[10px] font-black uppercase opacity-70">
+                  <div className={`w-full h-full flex flex-col items-center justify-center text-[10px] font-black uppercase ${
+                    isLightColor(editBgStart) ? 'text-black/30' : 'text-white/40'
+                  }`}>
                     <span className="text-xs">⚽</span>
-                    <span>Renk Karışımı Banner</span>
+                    <span>BOBBLE LİG</span>
                   </div>
                 )}
               </div>
-              <div className="-mt-8 ml-4 mb-2 flex items-end gap-2">
+              <div className="-mt-7 ml-3 mb-2 flex items-end gap-2.5 px-1">
                 <img 
                   src={editAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(editName || 'U')}`} 
-                  className="w-14 h-14 rounded-full border-2 border-[#800000] object-cover bg-white p-0.5 shadow-md" 
+                  className="w-12 h-12 rounded-full border-2 object-cover bg-white p-0.5 shadow-md" 
+                  style={{ borderColor: editBgStart }}
                   alt="preview" 
                 />
-                <span className="text-[10px] font-black text-brand-dark pb-1 truncate max-w-[150px]">
-                  {editName || 'Kullanıcı'}
-                </span>
+                <div className="leading-tight pb-0.5">
+                  <span className={`text-[11px] font-black block truncate max-w-[170px] ${
+                    isLightColor(editBgEnd) ? 'text-neutral-950 font-black' : 'text-white font-black'
+                  }`}>
+                    {editName || 'Kullanıcı'}
+                  </span>
+                  <span className={`text-[9px] font-bold ${
+                    isLightColor(editBgEnd) ? 'text-neutral-700' : 'text-gray-300'
+                  }`}>
+                    Profil & Hover Kart Önizlemesi
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -836,8 +905,8 @@ export default function UserProfile({
                 </div>
                 <p className="text-[9px] text-gray-500 font-semibold leading-tight">
                   {currentLang === 'tr' 
-                    ? 'Üst ve alt rengi seçin, profilinizde ve kartınızda birbirine karışarak görünür.' 
-                    : 'Pick top and bottom colors to create a seamless vertical blend on your profile & hover card.'}
+                    ? 'Üst ve alt rengi seçin. Profil sayfanızda ve cursor ile profil resmine gelindiğindeki kartta bu renkler görünür.' 
+                    : 'Pick top and bottom colors to blend on your profile page and hover card.'}
                 </p>
 
                 {/* Color Pickers (Top & Bottom) */}
@@ -883,10 +952,31 @@ export default function UserProfile({
                   </div>
                 </div>
 
+                {/* Quick copy buttons for solid color */}
+                <div className="flex items-center gap-1.5 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setEditBgEnd(editBgStart)}
+                    className="flex-1 py-1 px-1.5 bg-gray-100 hover:bg-amber-100 hover:border-amber-300 border border-gray-300 rounded text-[9px] font-black text-gray-700 cursor-pointer transition-colors"
+                  >
+                    ⚡ Üstü Alta Eşitle (Tek Renk)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditBgStart(editBgEnd)}
+                    className="flex-1 py-1 px-1.5 bg-gray-100 hover:bg-amber-100 hover:border-amber-300 border border-gray-300 rounded text-[9px] font-black text-gray-700 cursor-pointer transition-colors"
+                  >
+                    ⚡ Altı Üste Eşitle
+                  </button>
+                </div>
+
                 {/* Blended Preview Bar */}
                 <div 
-                  className="h-8 rounded-xl border border-gray-300 shadow-inner flex items-center justify-center text-white text-[9px] font-black tracking-wider uppercase drop-shadow"
-                  style={{ background: `linear-gradient(to bottom, ${editBgStart}, ${editBgEnd})` }}
+                  className="h-8 rounded-xl border border-gray-300 shadow-inner flex items-center justify-center text-[9px] font-black tracking-wider uppercase drop-shadow"
+                  style={{ 
+                    background: `linear-gradient(to bottom, ${editBgStart}, ${editBgEnd})`,
+                    color: isLightColor(editBgEnd) ? '#171717' : '#ffffff'
+                  }}
                 >
                   ✨ {currentLang === 'tr' ? 'Renk Karışımı Önizleme' : 'Gradient Blend Preview'}
                 </div>
@@ -896,16 +986,20 @@ export default function UserProfile({
                   <span className="text-[9px] text-gray-400 font-bold block mb-1">
                     {currentLang === 'tr' ? 'Hızlı Renk Temaları:' : 'Quick Color Themes:'}
                   </span>
-                  <div className="grid grid-cols-4 gap-1">
+                  <div className="grid grid-cols-3 gap-1">
                     {[
+                      { name: '🟡 Tamamen Sarı', c1: '#facc15', c2: '#facc15' },
+                      { name: '💛 Sarı & Altın', c1: '#facc15', c2: '#ca8a04' },
+                      { name: '🔵 Sarı & Lacivert', c1: '#facc15', c2: '#1e3a8a' },
+                      { name: '🔴 Sarı & Kırmızı', c1: '#facc15', c2: '#dc2626' },
+                      { name: '⚫ Sarı & Siyah', c1: '#facc15', c2: '#18181b' },
                       { name: '🍷 Bordo & Gece', c1: '#800000', c2: '#1e1f22' },
                       { name: '👑 Kraliyet & Altın', c1: '#6b21a8', c2: '#f59e0b' },
                       { name: '🌊 Okyanus & Gece', c1: '#0284c7', c2: '#0f172a' },
                       { name: '🔥 Ateş & Kor', c1: '#b91c1c', c2: '#ea580c' },
                       { name: '🌲 Zümrüt & Çim', c1: '#047857', c2: '#064e3b' },
                       { name: '⚡ Siber Mor', c1: '#9333ea', c2: '#ec4899' },
-                      { name: '🌑 Karbon Gece', c1: '#18181b', c2: '#3f3f46' },
-                      { name: '🏆 Altın Şampiyon', c1: '#ca8a04', c2: '#1c1917' }
+                      { name: '🌑 Karbon Gece', c1: '#18181b', c2: '#3f3f46' }
                     ].map((preset, idx) => (
                       <button
                         key={idx}
@@ -914,7 +1008,7 @@ export default function UserProfile({
                           setEditBgStart(preset.c1);
                           setEditBgEnd(preset.c2);
                         }}
-                        className="py-1 px-1 bg-gray-50 hover:bg-amber-50 border border-gray-200 rounded text-[8px] font-black text-brand-dark truncate cursor-pointer transition-colors"
+                        className="py-1 px-1 bg-gray-50 hover:bg-amber-50 border border-gray-200 rounded text-[8px] font-black text-brand-dark truncate cursor-pointer transition-colors text-left"
                         title={preset.name}
                       >
                         {preset.name}
