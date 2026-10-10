@@ -13,7 +13,7 @@ interface MatchDetailProps {
   onNavigate: (view: any) => void;
 }
 
-type TabType = 'goal' | 'period' | 'card' | 'date' | 'mvp' | 'quick' | 'loan';
+type TabType = 'goal' | 'period' | 'card' | 'sub' | 'date' | 'mvp' | 'quick' | 'loan';
 
 export default function MatchDetail({ matchId, currentUser, currentLang, translations, onBack, onNavigate }: MatchDetailProps) {
   const [match, setMatch] = useState<Match | null>(null);
@@ -49,8 +49,14 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
 
   const [selectedCardTeam, setSelectedCardTeam] = useState<'team1' | 'team2'>('team1');
   const [selectedCardPlayer, setSelectedCardPlayer] = useState('');
-  const [cardColor, setCardColor] = useState<'Sarı' | 'Kırmızı'>('Sarı');
+  const [cardColor, setCardColor] = useState<'Sarı' | 'Kırmızı' | 'Yeşil'>('Sarı');
   const [cardMinute, setCardMinute] = useState('');
+
+  // Oyuncu Değişikliği (Substitution) States
+  const [selectedSubTeam, setSelectedSubTeam] = useState<'team1' | 'team2'>('team1');
+  const [selectedSubOut, setSelectedSubOut] = useState<string>('');
+  const [selectedSubIn, setSelectedSubIn] = useState<string>('');
+  const [subMinute, setSubMinute] = useState<string>('');
 
   const [matchDateText, setMatchDateText] = useState('');
   const [matchDatejavText, setMatchDatejavText] = useState('');
@@ -366,7 +372,7 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
         timeline: events,
         score1: String(calScore1),
         score2: String(calScore2),
-        played: events.some(evt => evt.type === 'goal' || evt.type === 'period')
+        played: events.some(evt => evt.type === 'goal' || evt.type === 'period' || evt.type === 'card' || evt.type === 'sub')
       });
       await recalculateStandings();
     } catch (e) {
@@ -458,6 +464,43 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
     const updated = [...(match?.timeline || []), newEvt];
     await handleSaveTimeline(updated);
     setCardMinute('');
+  };
+
+  const handleAddSub = async () => {
+    const subOutTrimmed = selectedSubOut.trim();
+    const subInTrimmed = selectedSubIn.trim();
+
+    if (!subOutTrimmed && !subInTrimmed) {
+      alert('Lütfen çıkan veya giren en az bir oyuncu seçiniz!');
+      return;
+    }
+    if (!subMinute.trim()) {
+      alert('Lütfen dakika giriniz!');
+      return;
+    }
+    if (subOutTrimmed && subInTrimmed && subOutTrimmed.toLowerCase() === subInTrimmed.toLowerCase()) {
+      alert('Giren ve çıkan oyuncu aynı kişi olamaz!');
+      return;
+    }
+
+    let min = subMinute.trim();
+    if (!min.endsWith("'")) min += "'";
+
+    const newEvt: MatchTimelineEvent = {
+      id: 'evt_' + Date.now(),
+      type: 'sub',
+      team: selectedSubTeam,
+      subOut: subOutTrimmed || undefined,
+      subIn: subInTrimmed || undefined,
+      minute: min
+    };
+
+    const updated = [...(match?.timeline || []), newEvt];
+    await handleSaveTimeline(updated);
+    setSubMinute('');
+    setSelectedSubOut('');
+    setSelectedSubIn('');
+    alert('Oyuncu değişikliği başarıyla kaydedildi!');
   };
 
   const handleUpdateDate = async () => {
@@ -676,7 +719,66 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                         );
                       }
 
+                      if (evt.type === 'sub') {
+                        const isT1 = evt.team === 'team1';
+                        return (
+                          <div key={i} className="grid grid-cols-[1fr_70px_1fr] items-center gap-4 py-2 select-text">
+                            {/* Left Col (T1) */}
+                            {isT1 ? (
+                              <div className="flex items-center gap-2.5 justify-end">
+                                <div className="text-right space-y-0.5">
+                                  <span className="text-[9px] font-black text-gray-400 uppercase tracking-wider block">🔄 Oyuncu Değişikliği</span>
+                                  {evt.subIn && (
+                                    <div className="text-xs md:text-sm font-black text-emerald-700 flex items-center justify-end gap-1.5 truncate max-w-36 md:max-w-48">
+                                      <span className="truncate">{evt.subIn}</span>
+                                      <span className="text-[8px] md:text-[9px] font-black text-emerald-800 bg-emerald-100 border border-emerald-300 px-1.5 py-0.2 rounded-full shrink-0">▲ GİREN</span>
+                                    </div>
+                                  )}
+                                  {evt.subOut && (
+                                    <div className="text-xs md:text-sm font-black text-red-600 flex items-center justify-end gap-1.5 truncate max-w-36 md:max-w-48">
+                                      <span className="truncate">{evt.subOut}</span>
+                                      <span className="text-[8px] md:text-[9px] font-black text-red-800 bg-red-100 border border-red-300 px-1.5 py-0.2 rounded-full shrink-0">▼ ÇIKAN</span>
+                                    </div>
+                                  )}
+                                </div>
+                                <span className="text-xl shrink-0">🔄</span>
+                              </div>
+                            ) : <div />}
+
+                            {/* Center Min block */}
+                            <div className="flex flex-col items-center justify-center p-1 bg-brand-card rounded-xl border border-gray-300 shadow-sm shrink-0">
+                              <span className="text-xs font-black text-brand-maroon">{evt.minute}</span>
+                              <span className="text-[8px] font-bold text-gray-500 uppercase tracking-tighter">DEĞ.</span>
+                            </div>
+
+                            {/* Right Col (T2) */}
+                            {!isT1 ? (
+                              <div className="flex items-center gap-2.5 justify-start">
+                                <span className="text-xl shrink-0">🔄</span>
+                                <div className="text-left space-y-0.5">
+                                  <span className="text-[9px] font-black text-gray-400 uppercase tracking-wider block">🔄 Oyuncu Değişikliği</span>
+                                  {evt.subIn && (
+                                    <div className="text-xs md:text-sm font-black text-emerald-700 flex items-center justify-start gap-1.5 truncate max-w-36 md:max-w-48">
+                                      <span className="text-[8px] md:text-[9px] font-black text-emerald-800 bg-emerald-100 border border-emerald-300 px-1.5 py-0.2 rounded-full shrink-0">▲ GİREN</span>
+                                      <span className="truncate">{evt.subIn}</span>
+                                    </div>
+                                  )}
+                                  {evt.subOut && (
+                                    <div className="text-xs md:text-sm font-black text-red-600 flex items-center justify-start gap-1.5 truncate max-w-36 md:max-w-48">
+                                      <span className="text-[8px] md:text-[9px] font-black text-red-800 bg-red-100 border border-red-300 px-1.5 py-0.2 rounded-full shrink-0">▼ ÇIKAN</span>
+                                      <span className="truncate">{evt.subOut}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ) : <div />}
+                          </div>
+                        );
+                      }
+
                       const isT1 = evt.team === 'team1';
+                      const cardEmoji = evt.cardColor === 'Sarı' ? '🟨' : evt.cardColor === 'Yeşil' ? '🟩' : '🟥';
+                      const cardLabel = `${evt.cardColor || 'Sarı'} Kart`;
 
                       return (
                         <div key={i} className="grid grid-cols-[1fr_70px_1fr] items-center gap-4 py-1.5 select-text">
@@ -687,9 +789,9 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                                 <span className={`text-xs md:text-sm font-black text-brand-dark block uppercase truncate max-w-32 ${evt.isKK ? 'text-red-500' : ''}`}>
                                   {evt.scorer} {evt.isKK ? '(K.K)' : ''} {evt.player}
                                 </span>
-                                <span className="text-[10px] text-gray-400 font-bold block truncate max-w-32">{evt.type === 'goal' ? `Asist: ${evt.assist}` : `${evt.cardColor} Kart`}</span>
+                                <span className="text-[10px] text-gray-400 font-bold block truncate max-w-32">{evt.type === 'goal' ? `Asist: ${evt.assist}` : cardLabel}</span>
                               </div>
-                              <span className="text-xl">{evt.type === 'goal' ? '⚽' : evt.cardColor === 'Sarı' ? '🟨' : '🟥'}</span>
+                              <span className="text-xl">{evt.type === 'goal' ? '⚽' : cardEmoji}</span>
                             </div>
                           ) : <div />}
 
@@ -704,12 +806,12 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                           {/* Right Col */}
                           {!isT1 ? (
                             <div className="flex items-center gap-2.5 justify-start">
-                              <span className="text-xl">{evt.type === 'goal' ? '⚽' : evt.cardColor === 'Sarı' ? '🟨' : '🟥'}</span>
+                              <span className="text-xl">{evt.type === 'goal' ? '⚽' : cardEmoji}</span>
                               <div className="text-left">
                                 <span className={`text-xs md:text-sm font-black text-brand-dark block uppercase truncate max-w-32 ${evt.isKK ? 'text-red-500' : ''}`}>
                                   {evt.scorer} {evt.isKK ? '(K.K)' : ''} {evt.player}
                                 </span>
-                                <span className="text-[10px] text-gray-400 font-bold block truncate max-w-32">{evt.type === 'goal' ? `Asist: ${evt.assist}` : `${evt.cardColor} Kart`}</span>
+                                <span className="text-[10px] text-gray-400 font-bold block truncate max-w-32">{evt.type === 'goal' ? `Asist: ${evt.assist}` : cardLabel}</span>
                               </div>
                             </div>
                           ) : <div />}
@@ -744,7 +846,7 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
               const t2DEF = t2Active.filter((p: any) => p.position === 'DEF');
 
               const renderPitchPlayer = (player: any, left: string, top: string) => {
-                const playerDb = [...team1Players, ...team2Players].find(dbP => dbP.pname === player.pname);
+                const playerDb = [...team1Players, ...team2Players].find(dbP => dbP.pname.toLowerCase().trim() === player.pname.toLowerCase().trim());
                 const fotoUrl = playerDb?.foto || '';
                 const rating = Number(player.rating) || 0;
                 
@@ -754,6 +856,18 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                 } else if (rating < 5.0) {
                   ratingBg = 'bg-red-600 border-red-400 text-white';
                 }
+
+                // Oyuncunun bu maçtaki değişiklik olayları (giren / çıkan)
+                const pNameLower = player.pname.toLowerCase().trim();
+                const subInEvents = (match?.timeline || []).filter(e => e.type === 'sub' && e.subIn?.toLowerCase().trim() === pNameLower);
+                const subOutEvents = (match?.timeline || []).filter(e => e.type === 'sub' && e.subOut?.toLowerCase().trim() === pNameLower);
+                const isSubIn = subInEvents.length > 0;
+                const isSubOut = subOutEvents.length > 0;
+                const subInMins = subInEvents.map(e => e.minute).join(', ');
+                const subOutMins = subOutEvents.map(e => e.minute).join(', ');
+
+                // Oyuncunun bu maçtaki kartları (Sarı, Yeşil, Kırmızı)
+                const playerCards = (match?.timeline || []).filter(e => e.type === 'card' && e.player?.toLowerCase().trim() === pNameLower);
 
                 return (
                   <div 
@@ -774,9 +888,55 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                           <span className="text-white text-[10px] md:text-xs font-black uppercase tracking-wider">{player.pname.substring(0, 2)}</span>
                         )}
                       </div>
-                      <span className={`absolute -top-1 -right-1 text-[8px] md:text-[9px] font-black px-1.5 py-0.5 rounded-full border shadow-md z-30 ${ratingBg}`}>
-                        {rating.toFixed(1)}
-                      </span>
+
+                      {/* KARTLAR - Sahadaki oyuncu dairesinin sol üstünde (Sarı, Yeşil, Kırmızı) */}
+                      {playerCards.length > 0 && (
+                        <div className="absolute -top-1.5 -left-1.5 flex items-center -space-x-1 z-30 pointer-events-none">
+                          {playerCards.map((c, cIdx) => {
+                            const isYellow = c.cardColor === 'Sarı';
+                            const isGreen = c.cardColor === 'Yeşil';
+                            const cardBg = isYellow 
+                              ? 'bg-amber-400 border-amber-500 text-amber-950' 
+                              : isGreen 
+                                ? 'bg-emerald-500 border-emerald-400 text-white' 
+                                : 'bg-rose-600 border-rose-500 text-white';
+                            const cardEmoji = isYellow ? '🟨' : isGreen ? '🟩' : '🟥';
+                            return (
+                              <span
+                                key={cIdx}
+                                title={`${c.cardColor || 'Kart'} (${c.minute})`}
+                                className={`w-3.5 h-4 md:w-4 md:h-5 rounded-[2px] border shadow-md flex items-center justify-center text-[7px] font-black ${cardBg}`}
+                              >
+                                <span className="scale-75 select-none">{cardEmoji}</span>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* REYTİNG BADGE & ALTINDA KÜÇÜK YEŞİL / KIRMIZI OK */}
+                      <div className="absolute -top-1 -right-1 flex flex-col items-center z-30 pointer-events-none">
+                        <span className={`text-[8px] md:text-[9px] font-black px-1.5 py-0.5 rounded-full border shadow-md leading-none ${ratingBg}`}>
+                          {rating.toFixed(1)}
+                        </span>
+                        {(isSubIn || isSubOut) && (
+                          <div 
+                            className="flex items-center gap-0.5 mt-0.5 bg-black/85 px-1 py-0.5 rounded-full border border-white/30 shadow-md text-[7px] md:text-[8px] font-black leading-none"
+                            title={`${isSubIn ? `Giren Oyuncu (${subInMins})` : ''}${isSubIn && isSubOut ? ' | ' : ''}${isSubOut ? `Çıkan Oyuncu (${subOutMins})` : ''}`}
+                          >
+                            {isSubIn && (
+                              <span className="text-emerald-400 font-extrabold flex items-center" title={`Oyuna Girdi: ${subInMins}`}>
+                                ▲
+                              </span>
+                            )}
+                            {isSubOut && (
+                              <span className="text-rose-500 font-extrabold flex items-center" title={`Oyundan Çıktı: ${subOutMins}`}>
+                                ▼
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <span className="bg-black/75 text-white text-[8px] md:text-[9px] font-black px-1.5 py-0.5 rounded mt-1 shadow truncate max-w-16 md:max-w-20 tracking-wide block uppercase text-center select-none pointer-events-none">
                       {player.pname.split(' ')[0]}
@@ -869,6 +1029,11 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                         const position = hasLineup ? playerLineup.position : '';
                         const rating = hasLineup ? Number(playerLineup.rating) : 0;
 
+                        const pNameLower = player.pname.toLowerCase().trim();
+                        const pCards = (match?.timeline || []).filter(e => e.type === 'card' && e.player?.toLowerCase().trim() === pNameLower);
+                        const pSubIn = (match?.timeline || []).filter(e => e.type === 'sub' && e.subIn?.toLowerCase().trim() === pNameLower);
+                        const pSubOut = (match?.timeline || []).filter(e => e.type === 'sub' && e.subOut?.toLowerCase().trim() === pNameLower);
+
                         let ratingColor = 'bg-gray-200 text-gray-500';
                         if (hasLineup && played) {
                           if (rating > 7.0) {
@@ -898,11 +1063,28 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                               <img 
                                 src={player.foto || 'https://via.placeholder.com/100'} 
                                 referrerPolicy="no-referrer" 
-                                className="w-8 h-8 rounded-full object-cover border border-gray-200" 
+                                className="w-8 h-8 rounded-full object-cover border border-gray-200 shrink-0" 
                                 alt={player.pname} 
                               />
                               <div>
-                                <span className="text-xs font-black text-brand-dark uppercase block leading-none">{player.pname}</span>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-xs font-black text-brand-dark uppercase block leading-none">{player.pname}</span>
+                                  {pCards.map((c, cIdx) => (
+                                    <span key={cIdx} title={`${c.cardColor} Kart (${c.minute})`} className="text-[10px] leading-none">
+                                      {c.cardColor === 'Sarı' ? '🟨' : c.cardColor === 'Yeşil' ? '🟩' : '🟥'}
+                                    </span>
+                                  ))}
+                                  {pSubIn.map((s, sIdx) => (
+                                    <span key={`in-${sIdx}`} className="text-[8px] font-black text-emerald-800 bg-emerald-100 px-1 py-0.2 rounded border border-emerald-300">
+                                      ▲ {s.minute}
+                                    </span>
+                                  ))}
+                                  {pSubOut.map((s, sIdx) => (
+                                    <span key={`out-${sIdx}`} className="text-[8px] font-black text-rose-800 bg-rose-100 px-1 py-0.2 rounded border border-rose-300">
+                                      ▼ {s.minute}
+                                    </span>
+                                  ))}
+                                </div>
                                 <span className="text-[9px] text-gray-400 font-bold uppercase mt-1 block">
                                   {hasLineup ? (
                                     <span className="flex items-center gap-1.5">
@@ -1046,13 +1228,13 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
 
             {/* Admin sub-tabs */}
             <div className="flex gap-1 border-b border-gray-300 pb-2 mb-4 overflow-x-auto">
-              {(['goal', 'period', 'card', 'date', 'mvp', 'loan'] as TabType[]).map((tab) => (
+              {(['goal', 'period', 'card', 'sub', 'date', 'mvp', 'loan'] as TabType[]).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveAdminTab(tab)}
                   className={`py-1.5 px-3 rounded text-[9px] font-black uppercase tracking-wider shrink-0 ${activeAdminTab === tab ? 'bg-brand-maroon text-brand-gold' : 'bg-white border border-gray-300 text-gray-500'}`}
                 >
-                  {tab === 'goal' ? '⚽ Gol GİR' : tab === 'period' ? '⏱ Def/Tur' : tab === 'card' ? '🟨 Kart GİR' : tab === 'date' ? '📅 Tarih' : tab === 'mvp' ? '🏆 MVP' : '🔄 Kiralık Ekle'}
+                  {tab === 'goal' ? '⚽ Gol GİR' : tab === 'period' ? '⏱ Def/Tur' : tab === 'card' ? '🟨 Kart GİR' : tab === 'sub' ? '🔄 Değişiklik GİR' : tab === 'date' ? '📅 Tarih' : tab === 'mvp' ? '🏆 MVP' : '🔄 Kiralık Ekle'}
                 </button>
               ))}
             </div>
@@ -1145,8 +1327,9 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-black text-gray-500">Renk</label>
                     <select value={cardColor} onChange={(e) => setCardColor(e.target.value as any)} className="bg-white border rounded p-2 text-xs font-bold w-full">
-                      <option value="Sarı">🟨 SarıKart</option>
-                      <option value="Kırmızı">🟥 KırmızıKart</option>
+                      <option value="Sarı">🟨 Sarı Kart</option>
+                      <option value="Yeşil">🟩 Yeşil Kart</option>
+                      <option value="Kırmızı">🟥 Kırmızı Kart</option>
                     </select>
                   </div>
                   <div className="flex flex-col gap-1">
@@ -1156,6 +1339,92 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                 </div>
 
                 <button onClick={handleAddCard} className="w-full py-2.5 bg-green-700 text-white font-black rounded-lg text-xs">KARTI KAYDET</button>
+              </div>
+            )}
+
+            {/* Substitution Form Panel */}
+            {activeAdminTab === 'sub' && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3 bg-white/50 p-2 rounded-xl border border-gray-200">
+                  <button 
+                    type="button"
+                    onClick={() => setSelectedSubTeam('team1')} 
+                    className={`py-2 rounded-lg font-black text-xs border-2 ${selectedSubTeam === 'team1' ? 'border-brand-maroon bg-white text-brand-maroon shadow-sm' : 'border-transparent text-gray-500'}`}
+                  >
+                    T1: {team1Name}
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setSelectedSubTeam('team2')} 
+                    className={`py-2 rounded-lg font-black text-xs border-2 ${selectedSubTeam === 'team2' ? 'border-brand-maroon bg-white text-brand-maroon shadow-sm' : 'border-transparent text-gray-500'}`}
+                  >
+                    T2: {team2Name}
+                  </button>
+                </div>
+
+                {/* Çıkan Oyuncu (Giden) */}
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-black text-rose-600 uppercase">🔻 Çıkan (Giden) Oyuncu</label>
+                    <span className="text-[9px] text-gray-400 font-bold">(İsteğe Bağlı)</span>
+                  </div>
+                  <select 
+                    value={selectedSubOut}
+                    onChange={(e) => setSelectedSubOut(e.target.value)}
+                    className="w-full bg-white border border-rose-200 focus:border-rose-500 rounded p-2 text-xs font-bold text-gray-800"
+                  >
+                    <option value="">-- Çıkan Oyuncu Yok / Seçilmedi --</option>
+                    {(selectedSubTeam === 'team1' ? team1Players : team2Players).map((p, idx) => (
+                      <option key={idx} value={p.pname}>
+                        {p.pname} ({p.pteam === (selectedSubTeam === 'team1' ? team1Name : team2Name) ? 'Asil' : 'Kiralık'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Giren Oyuncu */}
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-black text-emerald-700 uppercase">▲ Giren Oyuncu</label>
+                    <span className="text-[9px] text-gray-400 font-bold">(İsteğe Bağlı)</span>
+                  </div>
+                  <select 
+                    value={selectedSubIn}
+                    onChange={(e) => setSelectedSubIn(e.target.value)}
+                    className="w-full bg-white border border-emerald-200 focus:border-emerald-500 rounded p-2 text-xs font-bold text-gray-800"
+                  >
+                    <option value="">-- Giren Oyuncu Yok / Seçilmedi --</option>
+                    {(selectedSubTeam === 'team1' ? team1Players : team2Players).map((p, idx) => (
+                      <option key={idx} value={p.pname}>
+                        {p.pname} ({p.pteam === (selectedSubTeam === 'team1' ? team1Name : team2Name) ? 'Asil' : 'Kiralık'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Dakika */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-black text-gray-500">⏱ Dakika</label>
+                  <input 
+                    type="text" 
+                    placeholder="Örn: 65 veya 65'" 
+                    value={subMinute} 
+                    onChange={(e) => setSubMinute(e.target.value)} 
+                    className="w-full bg-white border border-gray-300 rounded p-2 text-xs font-bold" 
+                  />
+                </div>
+
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-[10px] text-amber-900 font-bold leading-relaxed">
+                  💡 İkisini de girmek zorunlu değildir. Sadece çıkan (örn. sakatlık/ihraç) veya sadece oyuna dahil olan oyuncu girilebilir.
+                </div>
+
+                <button 
+                  type="button"
+                  onClick={handleAddSub} 
+                  className="w-full py-2.5 bg-brand-maroon hover:bg-[#600000] text-brand-gold font-black rounded-lg text-xs tracking-wider uppercase shadow cursor-pointer transition-colors"
+                >
+                  🔄 OYUNCU DEĞİŞİKLİĞİNİ KAYDET
+                </button>
               </div>
             )}
 
@@ -1347,7 +1616,13 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                     if (e.type === 'goal') {
                       desc = `⚽ [${e.minute}] ${e.scorer} - Asist: ${e.assist}`;
                     } else if (e.type === 'card') {
-                      desc = `${e.cardColor === 'Sarı' ? '🟨' : '🟥'} [${e.minute}] ${e.player}`;
+                      const cEmoji = e.cardColor === 'Sarı' ? '🟨' : e.cardColor === 'Yeşil' ? '🟩' : '🟥';
+                      desc = `${cEmoji} [${e.minute}] ${e.player} (${e.cardColor || 'Sarı'} Kart)`;
+                    } else if (e.type === 'sub') {
+                      const parts = [];
+                      if (e.subIn) parts.push(`▲ Giren: ${e.subIn}`);
+                      if (e.subOut) parts.push(`▼ Çıkan: ${e.subOut}`);
+                      desc = `🔄 [${e.minute}] ${parts.join(' | ') || 'Değişiklik'}`;
                     } else if (e.type === 'period') {
                       desc = `⏱️ [${e.minute}] ${e.text}`;
                     }

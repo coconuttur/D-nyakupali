@@ -313,6 +313,29 @@ export default function Haftalar({ currentLang, translations, onNavigate, teamLo
                         </div>
                       </div>
 
+                      {/* Mini event summary (Goals, Cards including Green card, Substitutions) */}
+                      {m.played && m.timeline && m.timeline.length > 0 && (
+                        <div className="px-5 pb-2.5 pt-1 flex justify-center items-center gap-3 text-[10px] font-black text-gray-500 border-t border-gray-100/80">
+                          {(() => {
+                            const goalsCount = m.timeline.filter(e => e.type === 'goal').length;
+                            const yellowCards = m.timeline.filter(e => e.type === 'card' && e.cardColor === 'Sarı').length;
+                            const greenCards = m.timeline.filter(e => e.type === 'card' && e.cardColor === 'Yeşil').length;
+                            const redCards = m.timeline.filter(e => e.type === 'card' && e.cardColor === 'Kırmızı').length;
+                            const subsCount = m.timeline.filter(e => e.type === 'sub').length;
+
+                            return (
+                              <div className="flex items-center gap-2.5 flex-wrap justify-center">
+                                {goalsCount > 0 && <span title={`${goalsCount} Gol`}>⚽ {goalsCount}</span>}
+                                {yellowCards > 0 && <span title={`${yellowCards} Sarı Kart`}>🟨 {yellowCards}</span>}
+                                {greenCards > 0 && <span title={`${greenCards} Yeşil Kart`}>🟩 {greenCards}</span>}
+                                {redCards > 0 && <span title={`${redCards} Kırmızı Kart`}>🟥 {redCards}</span>}
+                                {subsCount > 0 && <span title={`${subsCount} Oyuncu Değişikliği`} className="text-gray-600">🔄 {subsCount}</span>}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
+
                       {/* MVP Section inside the same white card at the bottom */}
                       {hasMvp && (
                         <div className="bg-brand-dark text-brand-gold py-2.5 px-6 text-[10px] md:text-xs font-bold flex justify-between items-center border-t border-brand-gold/30">

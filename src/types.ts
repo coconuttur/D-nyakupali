@@ -83,14 +83,16 @@ export interface Player {
 
 export interface MatchTimelineEvent {
   id: string;
-  type: 'goal' | 'period' | 'card';
+  type: 'goal' | 'period' | 'card' | 'sub';
   team?: 'team1' | 'team2';
   scorer?: string;
   assist?: string;
   minute: string;
   isKK?: boolean;
   player?: string;
-  cardColor?: 'Sarı' | 'Kırmızı';
+  cardColor?: 'Sarı' | 'Kırmızı' | 'Yeşil';
+  subOut?: string;
+  subIn?: string;
   text?: string;
   score?: string;
 }
