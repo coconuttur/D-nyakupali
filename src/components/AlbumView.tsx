@@ -2558,7 +2558,7 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                       {cardAnimStep === 3 && (
                         <div 
                           onClick={() => {
-                            if (card.isDuplicate && !card.decision) return;
+                            if (card.isDuplicate && (card.decision === 'pending' || !card.decision)) return;
                             if (activePackCardIndex < drawnCards.length - 1) {
                               handleProceedToNextCard(activePackCardIndex + 1);
                             } else {
@@ -2566,7 +2566,7 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
                             }
                           }}
                           className="relative group cursor-pointer transition-transform duration-300 hover:scale-105 select-none animate-scale-up"
-                          title={card.isDuplicate && !card.decision ? 'Lütfen önce Sat veya Tut seçimini yapın' : 'Sıradaki karta geçmek için tıklayın'}
+                          title={card.isDuplicate && (card.decision === 'pending' || !card.decision) ? 'Lütfen önce Sat veya Tut seçimini yapın' : 'Sıradaki karta geçmek için tıklayın'}
                         >
                           {/* CARD COMPONENT WRAPPER */}
                           <div className="w-56 h-88 sm:w-64 sm:h-96 relative">
@@ -2664,15 +2664,17 @@ export function AlbumView({ onNavigate, onBack, currentUser }: AlbumViewProps) {
 
                       {/* ACTION PROMPTS */}
                       {cardAnimStep < 3 ? (
-                        <button
-                          onClick={() => setCardAnimStep(3)}
-                          className="py-2.5 px-6 bg-black/90 hover:bg-black text-amber-300 hover:text-white font-black text-xs uppercase rounded-full border-2 border-amber-400 shadow-xl cursor-pointer hover:scale-105 transition-all flex items-center gap-2 animate-pulse"
-                        >
-                          <span>👉</span>
-                          <span>Kartı Gör / Animasyonu Geç</span>
-                          <span>⚡</span>
-                        </button>
-                      ) : card.isDuplicate && !card.decision ? (
+                        <div className="flex flex-col items-center gap-2">
+                          <button
+                            onClick={() => setCardAnimStep(3)}
+                            className="py-2.5 px-6 bg-black/90 hover:bg-black text-amber-300 hover:text-white font-black text-xs uppercase rounded-full border-2 border-amber-400 shadow-xl cursor-pointer hover:scale-105 transition-all flex items-center gap-2 animate-pulse"
+                          >
+                            <span>👉</span>
+                            <span>{card.isDuplicate ? '⚡ ÇİFT KART! Aç & Sat/Tut Seç' : 'Kartı Gör / Animasyonu Geç'}</span>
+                            <span>⚡</span>
+                          </button>
+                        </div>
+                      ) : card.isDuplicate && (card.decision === 'pending' || !card.decision) ? (
                         <div className="bg-gradient-to-r from-amber-950 via-stone-900 to-amber-950 border-2 border-amber-400 p-4 rounded-3xl shadow-2xl text-center space-y-2.5 w-full max-w-sm mx-auto animate-fade-in z-30 ring-4 ring-amber-500/30">
                           <div className="flex items-center justify-center gap-1.5 text-amber-300 font-black text-sm uppercase tracking-wider animate-bounce">
                             <span>⚡</span>

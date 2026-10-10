@@ -3,6 +3,9 @@ export interface UserProfile {
   displayName: string;
   email?: string;
   avatar?: string;
+  banner?: string;
+  bgGradientStart?: string;
+  bgGradientEnd?: string;
   balance?: number;
   admin?: boolean;
   test?: boolean;
@@ -132,6 +135,7 @@ export interface ForumPost {
   avatar: string;
   baslik: string;
   icerik: string;
+  mediaUrl?: string;
   tarih: any;
   likes?: string[];
   admin?: boolean;
@@ -145,6 +149,9 @@ export interface ForumReply {
   ad: string;
   avatar: string;
   yorum: string;
+  mediaUrl?: string;
+  replyToId?: string;
+  replyToName?: string;
   tarih: any;
   likes?: string[];
   admin?: boolean;
@@ -158,6 +165,9 @@ export interface NewsComment {
   ad: string;
   avatar: string;
   yorum: string;
+  mediaUrl?: string;
+  replyToId?: string;
+  replyToName?: string;
   tarih: any;
   likes?: string[];
   admin?: boolean;
@@ -171,6 +181,9 @@ export interface NewsReply {
   ad: string;
   avatar: string;
   yorum: string;
+  mediaUrl?: string;
+  replyToId?: string;
+  replyToName?: string;
   tarih: any;
   likes?: string[];
   admin?: boolean;

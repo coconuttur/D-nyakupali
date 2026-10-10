@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { UserProfile as UserProfileType, Team, Player } from '../types';
+import UserHoverCard from './UserHoverCard';
 import { 
   ArrowLeft, 
   Coins, 
@@ -26,7 +27,8 @@ import {
   Users, 
   Settings, 
   X, 
-  ExternalLink 
+  ExternalLink,
+  Palette
 } from 'lucide-react';
 
 interface UserProfileProps {
@@ -71,6 +73,9 @@ export default function UserProfile({
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editName, setEditName] = useState('');
   const [editAvatar, setEditAvatar] = useState('');
+  const [editBanner, setEditBanner] = useState('');
+  const [editBgStart, setEditBgStart] = useState('#800000');
+  const [editBgEnd, setEditBgEnd] = useState('#1e1f22');
   const [editBio, setEditBio] = useState('');
 
   // Dropdown selectors for Favoriler (Lazy loaded/loaded on demand when owner viewed)
@@ -118,6 +123,9 @@ export default function UserProfile({
           setProfile(data);
           setEditName(data.displayName || '');
           setEditAvatar(data.avatar || '');
+          setEditBanner(data.banner || '');
+          setEditBgStart(data.bgGradientStart || '#800000');
+          setEditBgEnd(data.bgGradientEnd || '#1e1f22');
           setEditBio(data.bio || '');
           setSelectedFavTeam(data.favTeam || '');
           setSelectedFavPlayer(data.favPlayer || '');
@@ -335,6 +343,9 @@ export default function UserProfile({
       const updates = {
         displayName: editName.trim(),
         avatar: editAvatar.trim(),
+        banner: editBanner.trim(),
+        bgGradientStart: editBgStart,
+        bgGradientEnd: editBgEnd,
         bio: editBio.trim()
       };
       await updateDoc(ref, updates);
@@ -468,52 +479,95 @@ export default function UserProfile({
         <div className="max-w-4xl mx-auto py-8 px-4 space-y-6">
           
           {/* Main User Card Section */}
-          <div className="bg-[#f2ede1] p-6 rounded-3xl border-b-8 border-[#800000] shadow-sm">
-            <div className="flex flex-col md:flex-row items-center gap-6 md:gap-10">
-              
-              {/* Avatar circle */}
-              <div className="flex-shrink-0 relative">
+          <div className="bg-[#f2ede1] rounded-3xl border-b-8 border-[#800000] shadow-sm overflow-hidden">
+            
+            {/* Banner Section */}
+            <div 
+              className="relative h-36 sm:h-52 w-full overflow-hidden group"
+              style={{
+                background: `linear-gradient(to bottom, ${profile.bgGradientStart || '#800000'}, ${profile.bgGradientEnd || '#1e1f22'})`
+              }}
+            >
+              {profile.banner ? (
                 <img 
-                  src={currentAvatar} 
-                  className="w-28 h-28 md:w-36 md:h-36 rounded-full border-4 border-[#800000] object-cover bg-white p-1 shadow-inner" 
-                  alt="avatar" 
+                  src={profile.banner} 
+                  alt="profile banner" 
+                  className="w-full h-full object-cover"
                 />
-                {profile.admin && (
-                  <span className="absolute bottom-1 right-1/2 translate-x-1/2 bg-red-600 text-white rounded-md px-2 py-0.5 text-[8px] font-black tracking-wide border-2 border-[#f2ede1]">
-                    YÖNETİCİ
-                  </span>
-                )}
-              </div>
-
-              {/* Informative credentials */}
-              <div className="flex-1 text-center md:text-left space-y-3 w-full">
-                <div className="flex flex-wrap items-center justify-center md:justify-start gap-4">
-                  <h1 className="text-2xl md:text-3xl font-black text-brand-dark max-w-xs truncate uppercase leading-none">
-                    {profile.displayName || 'İsimsiz'}
-                  </h1>
-                  
-                  {isOwnProfile ? (
-                    <button 
-                      onClick={() => setEditModalOpen(true)}
-                      className="bg-[#1a1a1a] hover:bg-black text-[#ffd700] hover:scale-102 cursor-pointer font-black text-xs px-4 py-2 rounded-lg transition-transform flex items-center gap-1.5 uppercase"
-                    >
-                      <Settings className="w-3.5 h-3.5" />
-                      {currentLang === 'tr' ? 'HESAP KONSOLU' : 'ACCOUNT SETTINGS'}
-                    </button>
-                  ) : (
-                    <button 
-                      onClick={toggleFollow}
-                      disabled={actionLoading}
-                      className={`font-black text-xs px-5 py-2.5 rounded-xl cursor-pointer shadow transition-all duration-150 shrink-0 uppercase tracking-wider ${
-                        isFollowing 
-                          ? 'bg-gray-400 text-white hover:bg-gray-500' 
-                          : 'bg-[#800000] text-[#ffd700] hover:bg-[#600000]'
-                      }`}
-                    >
-                      {actionLoading ? '...' : isFollowing ? (currentLang === 'tr' ? 'Takibi Bırak' : 'Unfollow') : (currentLang === 'tr' ? 'Takip Et' : 'Takip Et')}
-                    </button>
-                  )}
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <div className="text-center opacity-40">
+                    <span className="text-4xl block">⚽</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-white">BOBBLE LEAGUE BANNER</span>
+                  </div>
                 </div>
+              )}
+              {isOwnProfile && (
+                <button
+                  onClick={() => setEditModalOpen(true)}
+                  className="absolute top-3 right-3 bg-black/75 hover:bg-black text-[#ffd700] px-3 py-1.5 rounded-xl text-[11px] font-black uppercase flex items-center gap-1.5 border border-amber-400/50 shadow-md transition-all hover:scale-105 cursor-pointer backdrop-blur-sm"
+                >
+                  <PenSquare className="w-3.5 h-3.5" />
+                  {currentLang === 'tr' ? 'Bannerı Düzenle' : 'Edit Banner'}
+                </button>
+              )}
+            </div>
+
+            <div className="p-6 pt-0">
+              <div className="flex flex-col md:flex-row items-center md:items-end gap-6 md:gap-8 -mt-16 md:-mt-20 mb-4">
+                
+                {/* Avatar circle with UserHoverCard on cursor hover */}
+                <UserHoverCard
+                  uid={profile.uid}
+                  userProfile={profile}
+                  fallbackName={profile.displayName}
+                  fallbackAvatar={currentAvatar}
+                  teamLogos={{ [profile.favTeam || '']: favTeamLogo }}
+                  onNavigate={onNavigate}
+                >
+                  <div className="flex-shrink-0 relative group cursor-pointer">
+                    <img 
+                      src={currentAvatar} 
+                      className="w-28 h-28 md:w-36 md:h-36 rounded-full border-4 border-[#800000] object-cover bg-white p-1 shadow-2xl ring-4 ring-[#f2ede1] transition-transform group-hover:scale-105" 
+                      alt="avatar" 
+                    />
+                    {profile.admin && (
+                      <span className="absolute bottom-1 right-1/2 translate-x-1/2 bg-red-600 text-white rounded-md px-2 py-0.5 text-[8px] font-black tracking-wide border-2 border-[#f2ede1] shadow">
+                        YÖNETİCİ
+                      </span>
+                    )}
+                  </div>
+                </UserHoverCard>
+
+                {/* Informative credentials */}
+                <div className="flex-1 text-center md:text-left space-y-3 w-full">
+                  <div className="flex flex-wrap items-center justify-center md:justify-start gap-4">
+                    <h1 className="text-2xl md:text-3xl font-black text-brand-dark max-w-xs truncate uppercase leading-none">
+                      {profile.displayName || 'İsimsiz'}
+                    </h1>
+                    
+                    {isOwnProfile ? (
+                      <button 
+                        onClick={() => setEditModalOpen(true)}
+                        className="bg-[#1a1a1a] hover:bg-black text-[#ffd700] hover:scale-102 cursor-pointer font-black text-xs px-4 py-2 rounded-lg transition-transform flex items-center gap-1.5 uppercase"
+                      >
+                        <Settings className="w-3.5 h-3.5" />
+                        {currentLang === 'tr' ? 'HESAP KONSOLU' : 'ACCOUNT SETTINGS'}
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={toggleFollow}
+                        disabled={actionLoading}
+                        className={`font-black text-xs px-5 py-2.5 rounded-xl cursor-pointer shadow transition-all duration-150 shrink-0 uppercase tracking-wider ${
+                          isFollowing 
+                            ? 'bg-gray-400 text-white hover:bg-gray-500' 
+                            : 'bg-[#800000] text-[#ffd700] hover:bg-[#600000]'
+                        }`}
+                      >
+                        {actionLoading ? '...' : isFollowing ? (currentLang === 'tr' ? 'Takibi Bırak' : 'Unfollow') : (currentLang === 'tr' ? 'Takip Et' : 'Takip Et')}
+                      </button>
+                    )}
+                  </div>
 
                 {/* Profile Bio */}
                 <p className="text-sm font-semibold text-gray-700 leading-relaxed max-w-md whitespace-pre-wrap word-break h-auto">
@@ -552,6 +606,7 @@ export default function UserProfile({
               </div>
             </div>
           </div>
+        </div>
 
           {/* Favori Seçim Paneli (Only if Owner and is dropdown choices filled) */}
           {isOwnProfile && (
@@ -717,40 +772,202 @@ export default function UserProfile({
               <X className="w-5 h-5" />
             </button>
 
-            <h3 className="text-xl font-black text-[#800000] text-center mb-6 uppercase">
+            <h3 className="text-xl font-black text-[#800000] text-center mb-4 uppercase">
               {currentLang === 'tr' ? 'Hesap Konsolu' : 'Account Console'}
             </h3>
 
-            {/* Avatar Preview */}
-            <div className="mb-4">
-              <img 
-                src={editAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(editName || 'U')}`} 
-                className="w-20 h-20 rounded-full border-3 border-[#800000] mx-auto object-cover bg-white p-0.5 shadow" 
-                alt="preview" 
-              />
+            {/* Banner & Avatar Preview */}
+            <div className="mb-4 relative rounded-2xl overflow-hidden border-2 border-brand-maroon/40 shadow">
+              <div 
+                className="h-20 w-full overflow-hidden flex items-center justify-center"
+                style={{ background: `linear-gradient(to bottom, ${editBgStart}, ${editBgEnd})` }}
+              >
+                {editBanner ? (
+                  <img src={editBanner} className="w-full h-full object-cover" alt="banner preview" />
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center text-white text-[10px] font-black uppercase opacity-70">
+                    <span className="text-xs">⚽</span>
+                    <span>Renk Karışımı Banner</span>
+                  </div>
+                )}
+              </div>
+              <div className="-mt-8 ml-4 mb-2 flex items-end gap-2">
+                <img 
+                  src={editAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(editName || 'U')}`} 
+                  className="w-14 h-14 rounded-full border-2 border-[#800000] object-cover bg-white p-0.5 shadow-md" 
+                  alt="preview" 
+                />
+                <span className="text-[10px] font-black text-brand-dark pb-1 truncate max-w-[150px]">
+                  {editName || 'Kullanıcı'}
+                </span>
+              </div>
             </div>
 
-            <div className="space-y-4 font-bold text-xs text-left">
+            <div className="space-y-3 font-bold text-xs text-left max-h-[60vh] overflow-y-auto pr-1">
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] font-black text-gray-500 uppercase">{currentLang === 'tr' ? 'Görünen Adın' : 'Display Name'}</label>
                 <input 
                   type="text" 
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  className="bg-white border rounded p-3 font-semibold text-xs block w-full focus:border-brand-maroon outline-none text-[#333]"
+                  className="bg-white border rounded p-2.5 font-semibold text-xs block w-full focus:border-brand-maroon outline-none text-[#333]"
                   placeholder="Ad Soyad veya Takma Ad"
                 />
               </div>
 
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-black text-gray-500 uppercase">{currentLang === 'tr' ? 'Profil Resmi URL' : 'Profile Picture URL'}</label>
+                <label className="text-[10px] font-black text-gray-500 uppercase">{currentLang === 'tr' ? 'Profil Resmi URL (Fotoğraf / GIF)' : 'Profile Picture URL'}</label>
                 <input 
                   type="url" 
                   value={editAvatar}
                   onChange={(e) => setEditAvatar(e.target.value)}
-                  className="bg-white border rounded p-3 font-semibold text-xs block w-full focus:border-brand-maroon outline-none text-[#333]"
-                  placeholder="https://images.unsplash.com/..."
+                  className="bg-white border rounded p-2.5 font-semibold text-xs block w-full focus:border-brand-maroon outline-none text-[#333]"
+                  placeholder="https://images.unsplash.com/... veya GIF linki"
                 />
+              </div>
+
+              {/* 2-COLOR GRADIENT BACKGROUND CUSTOMIZER */}
+              <div className="bg-white p-3 rounded-2xl border border-gray-200 space-y-2">
+                <div className="flex items-center gap-1.5 text-brand-maroon">
+                  <Palette className="w-4 h-4 text-amber-600" />
+                  <span className="text-[11px] font-black uppercase">
+                    {currentLang === 'tr' ? 'Profil Arka Plan Rengi (2 Renk Karışımı)' : 'Profile Background Colors (2-Color Blend)'}
+                  </span>
+                </div>
+                <p className="text-[9px] text-gray-500 font-semibold leading-tight">
+                  {currentLang === 'tr' 
+                    ? 'Üst ve alt rengi seçin, profilinizde ve kartınızda birbirine karışarak görünür.' 
+                    : 'Pick top and bottom colors to create a seamless vertical blend on your profile & hover card.'}
+                </p>
+
+                {/* Color Pickers (Top & Bottom) */}
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <div className="bg-gray-50 p-2 rounded-xl border border-gray-200">
+                    <label className="text-[9px] font-black uppercase text-gray-500 block mb-1">
+                      {currentLang === 'tr' ? 'Üst Renk' : 'Top Color'}
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <input 
+                        type="color" 
+                        value={editBgStart} 
+                        onChange={(e) => setEditBgStart(e.target.value)}
+                        className="w-8 h-8 rounded-lg cursor-pointer border border-gray-300 bg-white p-0.5"
+                      />
+                      <input 
+                        type="text" 
+                        value={editBgStart} 
+                        onChange={(e) => setEditBgStart(e.target.value)}
+                        className="w-full bg-white border border-gray-200 rounded px-1.5 py-1 text-[10px] font-mono font-bold uppercase outline-none focus:border-brand-maroon"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 p-2 rounded-xl border border-gray-200">
+                    <label className="text-[9px] font-black uppercase text-gray-500 block mb-1">
+                      {currentLang === 'tr' ? 'Alt Renk' : 'Bottom Color'}
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <input 
+                        type="color" 
+                        value={editBgEnd} 
+                        onChange={(e) => setEditBgEnd(e.target.value)}
+                        className="w-8 h-8 rounded-lg cursor-pointer border border-gray-300 bg-white p-0.5"
+                      />
+                      <input 
+                        type="text" 
+                        value={editBgEnd} 
+                        onChange={(e) => setEditBgEnd(e.target.value)}
+                        className="w-full bg-white border border-gray-200 rounded px-1.5 py-1 text-[10px] font-mono font-bold uppercase outline-none focus:border-brand-maroon"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Blended Preview Bar */}
+                <div 
+                  className="h-8 rounded-xl border border-gray-300 shadow-inner flex items-center justify-center text-white text-[9px] font-black tracking-wider uppercase drop-shadow"
+                  style={{ background: `linear-gradient(to bottom, ${editBgStart}, ${editBgEnd})` }}
+                >
+                  ✨ {currentLang === 'tr' ? 'Renk Karışımı Önizleme' : 'Gradient Blend Preview'}
+                </div>
+
+                {/* Gradient Presets */}
+                <div className="pt-1">
+                  <span className="text-[9px] text-gray-400 font-bold block mb-1">
+                    {currentLang === 'tr' ? 'Hızlı Renk Temaları:' : 'Quick Color Themes:'}
+                  </span>
+                  <div className="grid grid-cols-4 gap-1">
+                    {[
+                      { name: '🍷 Bordo & Gece', c1: '#800000', c2: '#1e1f22' },
+                      { name: '👑 Kraliyet & Altın', c1: '#6b21a8', c2: '#f59e0b' },
+                      { name: '🌊 Okyanus & Gece', c1: '#0284c7', c2: '#0f172a' },
+                      { name: '🔥 Ateş & Kor', c1: '#b91c1c', c2: '#ea580c' },
+                      { name: '🌲 Zümrüt & Çim', c1: '#047857', c2: '#064e3b' },
+                      { name: '⚡ Siber Mor', c1: '#9333ea', c2: '#ec4899' },
+                      { name: '🌑 Karbon Gece', c1: '#18181b', c2: '#3f3f46' },
+                      { name: '🏆 Altın Şampiyon', c1: '#ca8a04', c2: '#1c1917' }
+                    ].map((preset, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setEditBgStart(preset.c1);
+                          setEditBgEnd(preset.c2);
+                        }}
+                        className="py-1 px-1 bg-gray-50 hover:bg-amber-50 border border-gray-200 rounded text-[8px] font-black text-brand-dark truncate cursor-pointer transition-colors"
+                        title={preset.name}
+                      >
+                        {preset.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Banner Input & Presets */}
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-black text-gray-500 uppercase">{currentLang === 'tr' ? 'Banner URL (Fotoğraf / GIF)' : 'Banner URL (Image / GIF)'}</label>
+                  {editBanner && (
+                    <button 
+                      type="button"
+                      onClick={() => setEditBanner('')}
+                      className="text-[9px] text-red-600 font-bold hover:underline cursor-pointer"
+                    >
+                      Kaldır
+                    </button>
+                  )}
+                </div>
+                <input 
+                  type="url" 
+                  value={editBanner}
+                  onChange={(e) => setEditBanner(e.target.value)}
+                  className="bg-white border rounded p-2.5 font-semibold text-xs block w-full focus:border-brand-maroon outline-none text-[#333]"
+                  placeholder="https://... (Fotoğraf veya GIF linki)"
+                />
+                
+                {/* Fast Banner Presets */}
+                <div className="pt-1">
+                  <span className="text-[9px] text-gray-400 font-bold block mb-1">Hızlı Hazır Bannerlar:</span>
+                  <div className="grid grid-cols-4 gap-1">
+                    {[
+                      { name: '🏟️ Stadyum', url: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&w=1200&q=80' },
+                      { name: '✨ Şampiyon', url: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=1200&q=80' },
+                      { name: '⚽ Saha', url: 'https://images.unsplash.com/photo-1522778119026-d647f0596c20?auto=format&fit=crop&w=1200&q=80' },
+                      { name: '🔥 Tribün', url: 'https://images.unsplash.com/photo-1518091043644-c1d4457512c6?auto=format&fit=crop&w=1200&q=80' }
+                    ].map((preset, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setEditBanner(preset.url)}
+                        className="py-1 px-1 bg-white hover:bg-amber-100 border border-gray-300 rounded text-[9px] font-black text-brand-dark truncate cursor-pointer transition-colors"
+                        title={preset.name}
+                      >
+                        {preset.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               <div className="flex flex-col gap-1">
@@ -758,8 +975,8 @@ export default function UserProfile({
                 <textarea 
                   value={editBio}
                   onChange={(e) => setEditBio(e.target.value.slice(0, 150))}
-                  rows={3}
-                  className="bg-white border rounded p-3 font-semibold text-xs block w-full focus:border-brand-maroon outline-none text-[#333]"
+                  rows={2}
+                  className="bg-white border rounded p-2.5 font-semibold text-xs block w-full focus:border-brand-maroon outline-none text-[#333]"
                   placeholder={currentLang === 'tr' ? "Biyografin (Max 150 karakter)" : "Brief bio..."}
                 />
                 <span className="text-[9px] text-right text-gray-400 block mt-0.5">{editBio.length}/150</span>
