@@ -167,75 +167,23 @@ export async function recalculateStandings() {
 
     await batch.commit();
     console.log("Standings recalculated successfully.");
+    
+    // Also synchronize player stats from matches
+    await recalculatePlayerStats();
   } catch (err) {
     console.error("Error recalculating standings:", err);
   }
 }
 
-export async function recalculatePlayerRatings() {
+import { syncPlayerStatsToFirestore } from './playerStats';
+
+export async function recalculatePlayerStats() {
   try {
-    const playersSnap = await getDocs(collection(db, 'players'));
-    const matchesSnap = await getDocs(collection(db, 'matches'));
-
-    const batch = writeBatch(db);
-
-    playersSnap.forEach((pdoc) => {
-      const pname = pdoc.data().pname;
-      if (!pname) return;
-
-      const pnameUpper = pname.trim().toUpperCase();
-      let totalRating = 0;
-      let ratedMatchCount = 0;
-      let playedMatchCount = 0;
-
-      matchesSnap.forEach((mdoc) => {
-        const m = mdoc.data();
-        if (!m.played) return;
-
-        // Lineup can be stored in m.lineup
-        const lineup = m.lineup || {};
-        
-        // Find player in lineup by checking case-insensitive or exact match
-        let playerLineup = lineup[pname];
-        if (!playerLineup) {
-          // Fallback to case-insensitive check
-          const foundKey = Object.keys(lineup).find(k => k.trim().toUpperCase() === pnameUpper);
-          if (foundKey) {
-            playerLineup = lineup[foundKey];
-          }
-        }
-
-        if (playerLineup) {
-          // If they played in this match
-          if (playerLineup.played) {
-            playedMatchCount += 1;
-            const ratingVal = Number(playerLineup.rating);
-            if (!isNaN(ratingVal) && ratingVal > 0) {
-              totalRating += ratingVal;
-              ratedMatchCount += 1;
-            }
-          }
-        }
-      });
-
-      const updates: Record<string, any> = {};
-      if (ratedMatchCount > 0) {
-        const avgRating = totalRating / ratedMatchCount;
-        updates.ratingoy = avgRating.toFixed(2);
-      }
-      
-      if (playedMatchCount > 0) {
-        updates.poyn = playedMatchCount;
-      }
-
-      if (Object.keys(updates).length > 0) {
-        batch.update(pdoc.ref, updates);
-      }
-    });
-
-    await batch.commit();
-    console.log("Player ratings recalculated successfully.");
+    await syncPlayerStatsToFirestore();
+    console.log("Player stats recalculated from matches successfully.");
   } catch (err) {
-    console.error("Error recalculating player ratings:", err);
+    console.error("Error recalculating player stats:", err);
   }
 }
+
+export const recalculatePlayerRatings = recalculatePlayerStats;

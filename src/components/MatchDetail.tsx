@@ -38,11 +38,11 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
   const [selectedLoanPlayerName, setSelectedLoanPlayerName] = useState<string>('');
   const [customLoanName, setCustomLoanName] = useState<string>('');
 
-  // Input states
   const [selectedGoalTeam, setSelectedGoalTeam] = useState<'team1' | 'team2'>('team1');
   const [selectedScorer, setSelectedScorer] = useState('');
   const [selectedAssist, setSelectedAssist] = useState('');
   const [goalMinute, setGoalMinute] = useState('');
+  const [isKKGoal, setIsKKGoal] = useState(false);
 
   const [periodText, setPeriodText] = useState('');
   const [periodMinute, setPeriodMinute] = useState('45');
@@ -303,6 +303,32 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
   }, [selectedGoalTeam, team1Players, team2Players]);
 
   useEffect(() => {
+    if (!selectedScorer) {
+      setIsKKGoal(false);
+      return;
+    }
+    const scoringTeamName = selectedGoalTeam === 'team1' ? team1Name : team2Name;
+    const playerInDb = [...team1Players, ...team2Players].find(p => p.pname === selectedScorer);
+    if (playerInDb) {
+      const pTeamLower = (playerInDb.pteam || '').toLowerCase().trim();
+      const pKiralikLower = (playerInDb.kiralikTakim || '').toLowerCase().trim();
+      const sTeamLower = scoringTeamName.toLowerCase().trim();
+      
+      const pDocId = teamNameToDocIdMap[pTeamLower] || pTeamLower;
+      const pKiralikDocId = teamNameToDocIdMap[pKiralikLower] || pKiralikLower;
+      const sDocId = teamNameToDocIdMap[sTeamLower] || sTeamLower;
+      
+      let autoKK = false;
+      if (playerInDb.kiralik && pKiralikLower) {
+        autoKK = pKiralikDocId !== sDocId;
+      } else {
+        autoKK = pDocId !== sDocId;
+      }
+      setIsKKGoal(autoKK);
+    }
+  }, [selectedScorer, selectedGoalTeam, team1Name, team2Name, teamNameToDocIdMap, team1Players, team2Players]);
+
+  useEffect(() => {
     const list = selectedCardTeam === 'team1' ? team1Players : team2Players;
     if (list.length > 0) {
       setSelectedCardPlayer(list[0].pname);
@@ -416,7 +442,7 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
       scorer: selectedScorer,
       assist: selectedAssist || 'Şut',
       minute: min,
-      isKK
+      isKK: isKKGoal
     };
 
     const updated = [...(match?.timeline || []), newEvt];
@@ -834,8 +860,8 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                 .map(([pname, info]: any) => ({ pname, ...info }))
                 .filter((p: any) => p.played && p.position);
 
-              const t1Active = activeList.filter((p: any) => team1Players.some((dbP) => dbP.pname === p.pname));
-              const t2Active = activeList.filter((p: any) => team2Players.some((dbP) => dbP.pname === p.pname));
+              const t1Active = activeList.filter((p: any) => p.team === 'team1' || team1Players.some((dbP) => dbP.pname.toLowerCase().trim() === p.pname.toLowerCase().trim()));
+              const t2Active = activeList.filter((p: any) => p.team === 'team2' || (team2Players.some((dbP) => dbP.pname.toLowerCase().trim() === p.pname.toLowerCase().trim()) && !t1Active.some((t1P: any) => t1P.pname.toLowerCase().trim() === p.pname.toLowerCase().trim())));
 
               const t1DEF = t1Active.filter((p: any) => p.position === 'DEF');
               const t1MD  = t1Active.filter((p: any) => p.position === 'MD');
@@ -846,7 +872,7 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
               const t2DEF = t2Active.filter((p: any) => p.position === 'DEF');
 
               const renderPitchPlayer = (player: any, left: string, top: string) => {
-                const playerDb = [...team1Players, ...team2Players].find(dbP => dbP.pname.toLowerCase().trim() === player.pname.toLowerCase().trim());
+                const playerDb = [...team1Players, ...team2Players, ...allGlobalPlayers].find(dbP => dbP.pname.toLowerCase().trim() === player.pname.toLowerCase().trim());
                 const fotoUrl = playerDb?.foto || '';
                 const rating = Number(player.rating) || 0;
                 
@@ -868,6 +894,25 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
 
                 // Oyuncunun bu maçtaki kartları (Sarı, Yeşil, Kırmızı)
                 const playerCards = (match?.timeline || []).filter(e => e.type === 'card' && e.player?.toLowerCase().trim() === pNameLower);
+
+                // Oyuncunun bu maçtaki kendi kalesine golleri (K.K.)
+                const playerKKEvents = (match?.timeline || []).filter(e => {
+                  if (e.type !== 'goal') return false;
+                  const isKK = Boolean(
+                    e.isKK === true ||
+                    (e.scorer || '').toLowerCase().includes('(k.k') ||
+                    (e.scorer || '').toLowerCase().includes('(kk') ||
+                    (e.scorer || '').toLowerCase().includes('kendi kalesine') ||
+                    (e.assist || '').toLowerCase().includes('kendi kalesine')
+                  );
+                  if (!isKK) return false;
+                  const clean = (e.scorer || '')
+                    .replace(/\(k\.?k\.?\)/gi, '')
+                    .replace(/kendi kalesine/gi, '')
+                    .trim()
+                    .toLowerCase();
+                  return clean === pNameLower;
+                });
 
                 return (
                   <div 
@@ -911,6 +956,17 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                               </span>
                             );
                           })}
+                        </div>
+                      )}
+
+                      {/* K.K. (Kendi Kalesine Gol) BADGE - Sahadaki oyuncu dairesinin sol altında */}
+                      {playerKKEvents.length > 0 && (
+                        <div 
+                          className="absolute -bottom-1.5 -left-1.5 bg-red-700 text-white border border-white rounded-full px-1 py-0.2 text-[7px] font-black z-30 shadow leading-none select-none flex items-center gap-0.5"
+                          title={`Kendi Kalesine Gol: ${playerKKEvents.map(e => e.minute).join(', ')}`}
+                        >
+                          <span>🥅</span>
+                          <span>K.K.</span>
                         </div>
                       )}
 
@@ -1022,7 +1078,21 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
 
                     {/* Grid of Players */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-60 overflow-y-auto pr-1 select-text">
-                      {(activeLineupTeam === 'team1' ? team1Players : team2Players).map((player) => {
+                      {(() => {
+                        const base = activeLineupTeam === 'team1' ? team1Players : team2Players;
+                        const added = [...base];
+                        Object.keys(lineup).forEach(pName => {
+                          if (!added.some(p => p.pname.toLowerCase().trim() === pName.toLowerCase().trim())) {
+                            const pInfo = lineup[pName];
+                            if (pInfo && (pInfo.team === activeLineupTeam || (activeLineupTeam === 'team1' ? t1Active : t2Active).some((a: any) => a.pname.toLowerCase().trim() === pName.toLowerCase().trim()))) {
+                              const globalP = allGlobalPlayers.find(p => p.pname.toLowerCase().trim() === pName.toLowerCase().trim());
+                              if (globalP) added.push(globalP);
+                              else added.push({ pname: pName, pteam: activeLineupTeam === 'team1' ? match.team1 : match.team2, foto: '', goals: 0 });
+                            }
+                          }
+                        });
+                        return added;
+                      })().map((player) => {
                         const playerLineup = lineup[player.pname];
                         const hasLineup = !!playerLineup;
                         const played = hasLineup && playerLineup.played;
@@ -1033,6 +1103,23 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                         const pCards = (match?.timeline || []).filter(e => e.type === 'card' && e.player?.toLowerCase().trim() === pNameLower);
                         const pSubIn = (match?.timeline || []).filter(e => e.type === 'sub' && e.subIn?.toLowerCase().trim() === pNameLower);
                         const pSubOut = (match?.timeline || []).filter(e => e.type === 'sub' && e.subOut?.toLowerCase().trim() === pNameLower);
+                        const pKKGoals = (match?.timeline || []).filter(e => {
+                          if (e.type !== 'goal') return false;
+                          const isKK = Boolean(
+                            e.isKK === true ||
+                            (e.scorer || '').toLowerCase().includes('(k.k') ||
+                            (e.scorer || '').toLowerCase().includes('(kk') ||
+                            (e.scorer || '').toLowerCase().includes('kendi kalesine') ||
+                            (e.assist || '').toLowerCase().includes('kendi kalesine')
+                          );
+                          if (!isKK) return false;
+                          const clean = (e.scorer || '')
+                            .replace(/\(k\.?k\.?\)/gi, '')
+                            .replace(/kendi kalesine/gi, '')
+                            .trim()
+                            .toLowerCase();
+                          return clean === pNameLower;
+                        });
 
                         let ratingColor = 'bg-gray-200 text-gray-500';
                         if (hasLineup && played) {
@@ -1082,6 +1169,11 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                                   {pSubOut.map((s, sIdx) => (
                                     <span key={`out-${sIdx}`} className="text-[8px] font-black text-rose-800 bg-rose-100 px-1 py-0.2 rounded border border-rose-300">
                                       ▼ {s.minute}
+                                    </span>
+                                  ))}
+                                  {pKKGoals.map((g, gIdx) => (
+                                    <span key={`kk-${gIdx}`} className="text-[8px] font-black text-white bg-red-700 px-1.5 py-0.2 rounded-full border border-red-500 shadow-sm" title={`Kendi Kalesine Gol (${g.minute})`}>
+                                      🥅 K.K. {g.minute}
                                     </span>
                                   ))}
                                 </div>
@@ -1281,6 +1373,22 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] font-black text-gray-500">⏱ Dakika</label>
                   <input type="text" placeholder="Örn: 14" value={goalMinute} onChange={(e) => setGoalMinute(e.target.value)} className="w-full bg-white border border-gray-300 rounded p-2 text-xs font-bold" />
+                </div>
+
+                <div className="flex items-center justify-between bg-red-50 p-2.5 rounded-xl border border-red-200 select-none">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">🥅</span>
+                    <div>
+                      <span className="text-xs font-black text-red-800 block">Kendi Kalesine Gol (K.K.)</span>
+                      <span className="text-[9px] font-bold text-red-600 block">Kendi kalesine atılan goller istatistiğine işlenir</span>
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={isKKGoal}
+                    onChange={(e) => setIsKKGoal(e.target.checked)}
+                    className="w-5 h-5 accent-red-600 cursor-pointer"
+                  />
                 </div>
 
                 <button onClick={handleAddGoal} className="w-full py-2.5 bg-green-700 text-white font-black rounded-lg text-xs tracking-wider">GOLÜ KAYDET</button>

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, where, doc, getDoc, getDocs, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Player, UserProfile } from '../types';
+import { Player, Match, UserProfile } from '../types';
 import { TrophiesShowcase, TrophyAdminModal } from './TrophiesShowcase';
+import { calculatePlayerStatsFromMatches } from '../lib/playerStats';
 
 interface PlayerProfileProps {
   playerName: string;
@@ -15,6 +16,7 @@ interface PlayerProfileProps {
 
 export default function PlayerProfile({ playerName, currentUser, currentLang, translations, onBack, onNavigate }: PlayerProfileProps) {
   const [player, setPlayer] = useState<Player | null>(null);
+  const [matches, setMatches] = useState<Match[]>([]);
   const [docId, setDocId] = useState<string | null>(null);
   const [teamLogo, setTeamLogo] = useState<string>('');
   const [countryLogo, setCountryLogo] = useState<string>('');
@@ -26,6 +28,17 @@ export default function PlayerProfile({ playerName, currentUser, currentLang, tr
   const [likesUsers, setLikesUsers] = useState<any[]>([]);
   const [dislikesUsers, setDislikesUsers] = useState<any[]>([]);
   const [loadingVoters, setLoadingVoters] = useState(false);
+
+  useEffect(() => {
+    const unsubMatches = onSnapshot(collection(db, 'matches'), (snap) => {
+      const list: Match[] = [];
+      snap.forEach((d) => {
+        list.push({ id: d.id, ...d.data() } as Match);
+      });
+      setMatches(list);
+    });
+    return () => unsubMatches();
+  }, []);
 
   useEffect(() => {
     const q = query(collection(db, "players"), where("pname", "==", playerName));
@@ -136,9 +149,13 @@ export default function PlayerProfile({ playerName, currentUser, currentLang, tr
 
   var total = totalVotes;
 
-  const matchesCount = player?.poyn || 0;
-  const playerGoals = player?.goals || 0;
-  const ratioVal = matchesCount > 0 ? (playerGoals / matchesCount).toFixed(2) : '0.00';
+  // Calculate player performance strictly from matches
+  const matchStats = player ? calculatePlayerStatsFromMatches(player, matches) : null;
+  const matchesCount = matchStats ? matchStats.mac : (player?.poyn || 0);
+  const playerGoals = matchStats ? matchStats.goals : (player?.goals || 0);
+  const playerAssists = matchStats ? matchStats.asistsay : (player?.asistsay || 0);
+  const ratioVal = matchStats ? matchStats.gol_mac.toFixed(2) : (matchesCount > 0 ? (playerGoals / matchesCount).toFixed(2) : '0.00');
+  const ratingVal = matchStats ? matchStats.ratingoyFormatted : (player?.ratingoy || '0.0');
 
   return (
     <div className="space-y-6">
@@ -242,20 +259,53 @@ export default function PlayerProfile({ playerName, currentUser, currentLang, tr
             <button onClick={() => handleCastVote('dislike')} className="w-12 h-12 rounded-full border border-gray-200 bg-white text-base shadow-sm shrink-0 hover:scale-105 active:scale-95 transition-transform">👎</button>
           </div>
 
-          {/* Stats matrix grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 md:gap-4 select-text">
-            {[
-              { val: matchesCount, desc: t.mac },
-              { val: playerGoals, desc: t.gol },
-              { val: player.asistsay || 0, desc: t.asist },
-              { val: ratioVal, desc: t.go },
-              { val: player.ratingoy || '0.0', desc: t.rat }
-            ].map((stat, idx) => (
-              <div key={idx} className="bg-brand-card rounded-2xl p-4 text-center border-b-4 border-gray-200 hover:border-b-brand-maroon focus:border-b-brand-maroon transition-colors shadow-sm">
-                <span className="text-xl md:text-2xl font-black text-brand-maroon block leading-none">{stat.val}</span>
-                <span className="text-[9px] font-black text-gray-400 block tracking-wider uppercase mt-1.5">{stat.desc}</span>
+          {/* Stats matrix grid - strictly derived from matches */}
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 md:gap-4 select-text">
+              {[
+                { val: matchesCount, desc: t.mac },
+                { val: playerGoals, desc: t.gol },
+                { val: playerAssists, desc: t.asist },
+                { val: ratioVal, desc: t.go },
+                { val: ratingVal, desc: t.rat }
+              ].map((stat, idx) => (
+                <div key={idx} className="bg-brand-card rounded-2xl p-4 text-center border-b-4 border-gray-200 hover:border-b-brand-maroon focus:border-b-brand-maroon transition-colors shadow-sm">
+                  <span className="text-xl md:text-2xl font-black text-brand-maroon block leading-none">{stat.val}</span>
+                  <span className="text-[9px] font-black text-gray-400 block tracking-wider uppercase mt-1.5">{stat.desc}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Match Disciplinary & MVP Row */}
+            {matchStats && (
+              <div className="space-y-2">
+                <div className="grid grid-cols-4 gap-2 md:gap-3 select-text">
+                  <div className="bg-brand-card rounded-xl p-2.5 text-center border border-amber-300 shadow-sm flex flex-col items-center justify-center">
+                    <span className="text-base md:text-lg font-black text-brand-dark block leading-none">🏆 {matchStats.mvp}</span>
+                    <span className="text-[8px] md:text-[9px] font-black text-gray-500 block uppercase mt-1">MVP</span>
+                  </div>
+                  <div className="bg-brand-card rounded-xl p-2.5 text-center border border-yellow-300 shadow-sm flex flex-col items-center justify-center">
+                    <span className="text-base md:text-lg font-black text-yellow-700 block leading-none">🟨 {matchStats.sari_kart}</span>
+                    <span className="text-[8px] md:text-[9px] font-black text-gray-500 block uppercase mt-1">Sarı Kart</span>
+                  </div>
+                  <div className="bg-brand-card rounded-xl p-2.5 text-center border border-emerald-300 shadow-sm flex flex-col items-center justify-center">
+                    <span className="text-base md:text-lg font-black text-emerald-700 block leading-none">🟩 {matchStats.yesil_kart}</span>
+                    <span className="text-[8px] md:text-[9px] font-black text-gray-500 block uppercase mt-1">Yeşil Kart</span>
+                  </div>
+                  <div className="bg-brand-card rounded-xl p-2.5 text-center border border-red-300 shadow-sm flex flex-col items-center justify-center">
+                    <span className="text-base md:text-lg font-black text-red-600 block leading-none">🟥 {matchStats.kirmizi_kart}</span>
+                    <span className="text-[8px] md:text-[9px] font-black text-gray-500 block uppercase mt-1">Kırmızı Kart</span>
+                  </div>
+                </div>
+
+                {matchStats.ownGoals > 0 && (
+                  <div className="bg-red-50 text-red-800 text-xs font-black p-2 rounded-xl border border-red-300 text-center flex items-center justify-center gap-2 shadow-xs">
+                    <span className="text-sm">🥅</span>
+                    <span>Kendi Kalesine Gol: {matchStats.ownGoals}</span>
+                  </div>
+                )}
               </div>
-            ))}
+            )}
           </div>
 
           {/* Player Wiki bio section */}
