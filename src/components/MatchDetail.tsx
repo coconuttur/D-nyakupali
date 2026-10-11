@@ -13,7 +13,7 @@ interface MatchDetailProps {
   onNavigate: (view: any) => void;
 }
 
-type TabType = 'goal' | 'period' | 'card' | 'sub' | 'date' | 'mvp' | 'quick' | 'loan';
+type TabType = 'goal' | 'period' | 'card' | 'sub' | 'incident' | 'date' | 'mvp' | 'quick' | 'loan';
 
 export default function MatchDetail({ matchId, currentUser, currentLang, translations, onBack, onNavigate }: MatchDetailProps) {
   const [match, setMatch] = useState<Match | null>(null);
@@ -57,6 +57,11 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
   const [selectedSubOut, setSelectedSubOut] = useState<string>('');
   const [selectedSubIn, setSelectedSubIn] = useState<string>('');
   const [subMinute, setSubMinute] = useState<string>('');
+
+  // Özel Olay (Gol İptali, VAR, Penaltı Kaçtı vb.) States
+  const [incidentText, setIncidentText] = useState<string>('');
+  const [incidentMinute, setIncidentMinute] = useState<string>('');
+  const [selectedIncidentTeam, setSelectedIncidentTeam] = useState<'team1' | 'team2' | 'general'>('general');
 
   const [matchDateText, setMatchDateText] = useState('');
   const [matchDatejavText, setMatchDatejavText] = useState('');
@@ -529,6 +534,34 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
     alert('Oyuncu değişikliği başarıyla kaydedildi!');
   };
 
+  const handleAddIncident = async () => {
+    if (!incidentText.trim()) {
+      alert('Lütfen olay açıklamasını yazınız! (Örn: Gol İptali, VAR İncelemesi, Penaltı Kaçtı)');
+      return;
+    }
+    if (!incidentMinute.trim()) {
+      alert('Lütfen dakika giriniz!');
+      return;
+    }
+
+    let min = incidentMinute.trim();
+    if (!min.endsWith("'")) min += "'";
+
+    const newEvt: MatchTimelineEvent = {
+      id: 'evt_' + Date.now(),
+      type: 'incident',
+      team: selectedIncidentTeam === 'general' ? undefined : selectedIncidentTeam,
+      text: incidentText.trim(),
+      minute: min
+    };
+
+    const updated = [...(match?.timeline || []), newEvt];
+    await handleSaveTimeline(updated);
+    setIncidentText('');
+    setIncidentMinute('');
+    alert('Maç olayı başarıyla kaydedildi!');
+  };
+
   const handleUpdateDate = async () => {
     if (!docId) return;
     const javVal = parseInt(matchDatejavText);
@@ -795,6 +828,55 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                                       <span className="truncate">{evt.subOut}</span>
                                     </div>
                                   )}
+                                </div>
+                              </div>
+                            ) : <div />}
+                          </div>
+                        );
+                      }
+
+                      if (evt.type === 'incident') {
+                        const isT1 = evt.team === 'team1';
+                        const isT2 = evt.team === 'team2';
+                        const isGeneral = !isT1 && !isT2;
+
+                        if (isGeneral) {
+                          return (
+                            <div key={i} className="flex justify-center select-text py-1">
+                              <span className="bg-amber-100 text-amber-900 border border-amber-300 text-xs font-black py-1.5 px-4 rounded-full shadow-xs flex items-center gap-1.5 uppercase">
+                                <span className="font-extrabold text-[10px] bg-amber-200 px-1.5 py-0.2 rounded-full">{evt.minute}</span>
+                                <span>⚠️ {evt.text}</span>
+                              </span>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div key={i} className="grid grid-cols-[1fr_70px_1fr] items-center gap-4 py-2 select-text">
+                            {/* Left Col (T1) */}
+                            {isT1 ? (
+                              <div className="flex items-center gap-2.5 justify-end">
+                                <div className="text-right space-y-0.5">
+                                  <span className="text-xs md:text-sm font-black text-amber-900 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-lg inline-block truncate max-w-44">
+                                    ⚠️ {evt.text}
+                                  </span>
+                                </div>
+                              </div>
+                            ) : <div />}
+
+                            {/* Center Min block */}
+                            <div className="flex flex-col items-center justify-center p-1 bg-amber-50 rounded-xl border border-amber-300 shadow-sm shrink-0">
+                              <span className="text-xs font-black text-amber-900">{evt.minute}</span>
+                              <span className="text-[8px] font-bold text-amber-700 uppercase tracking-tighter">OLAY</span>
+                            </div>
+
+                            {/* Right Col (T2) */}
+                            {isT2 ? (
+                              <div className="flex items-center gap-2.5 justify-start">
+                                <div className="text-left space-y-0.5">
+                                  <span className="text-xs md:text-sm font-black text-amber-900 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-lg inline-block truncate max-w-44">
+                                    ⚠️ {evt.text}
+                                  </span>
                                 </div>
                               </div>
                             ) : <div />}
@@ -1320,13 +1402,13 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
 
             {/* Admin sub-tabs */}
             <div className="flex gap-1 border-b border-gray-300 pb-2 mb-4 overflow-x-auto">
-              {(['goal', 'period', 'card', 'sub', 'date', 'mvp', 'loan'] as TabType[]).map((tab) => (
+              {(['goal', 'period', 'card', 'sub', 'incident', 'date', 'mvp', 'loan'] as TabType[]).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveAdminTab(tab)}
                   className={`py-1.5 px-3 rounded text-[9px] font-black uppercase tracking-wider shrink-0 ${activeAdminTab === tab ? 'bg-brand-maroon text-brand-gold' : 'bg-white border border-gray-300 text-gray-500'}`}
                 >
-                  {tab === 'goal' ? '⚽ Gol GİR' : tab === 'period' ? '⏱ Def/Tur' : tab === 'card' ? '🟨 Kart GİR' : tab === 'sub' ? '🔄 Değişiklik GİR' : tab === 'date' ? '📅 Tarih' : tab === 'mvp' ? '🏆 MVP' : '🔄 Kiralık Ekle'}
+                  {tab === 'goal' ? '⚽ Gol GİR' : tab === 'period' ? '⏱ Devre/Tur' : tab === 'card' ? '🟨 Kart GİR' : tab === 'sub' ? '🔄 Değişiklik GİR' : tab === 'incident' ? '⚠️ Olay/İptal GİR' : tab === 'date' ? '📅 Tarih' : tab === 'mvp' ? '🏆 MVP' : '🔄 Kiralık Ekle'}
                 </button>
               ))}
             </div>
@@ -1536,6 +1618,87 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
               </div>
             )}
 
+            {/* Dakikada Özel Olay (Gol İptali, VAR vb.) Ekleme Formu */}
+            {activeAdminTab === 'incident' && (
+              <div className="space-y-4">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-black text-gray-500 uppercase">Taraf / Takım Seçimi</label>
+                  <div className="grid grid-cols-3 gap-2 bg-white/50 p-1.5 rounded-xl border border-gray-200">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedIncidentTeam('team1')}
+                      className={`py-1.5 rounded-lg font-black text-[10px] truncate border-2 ${selectedIncidentTeam === 'team1' ? 'border-brand-maroon bg-white text-brand-maroon' : 'border-transparent text-gray-500'}`}
+                    >
+                      {team1Name}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedIncidentTeam('general')}
+                      className={`py-1.5 rounded-lg font-black text-[10px] truncate border-2 ${selectedIncidentTeam === 'general' ? 'border-brand-maroon bg-white text-brand-maroon' : 'border-transparent text-gray-500'}`}
+                    >
+                      Genel / Ortak
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedIncidentTeam('team2')}
+                      className={`py-1.5 rounded-lg font-black text-[10px] truncate border-2 ${selectedIncidentTeam === 'team2' ? 'border-brand-maroon bg-white text-brand-maroon' : 'border-transparent text-gray-500'}`}
+                    >
+                      {team2Name}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-black text-gray-500 uppercase">⏱ Olay Dakikası</label>
+                  <input
+                    type="text"
+                    placeholder="Örn: 34 veya 45+2"
+                    value={incidentMinute}
+                    onChange={(e) => setIncidentMinute(e.target.value)}
+                    className="w-full bg-white border border-gray-300 rounded p-2 text-xs font-bold"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-black text-gray-500 uppercase">⚠️ Olay Açıklaması / Detayı</label>
+                  <input
+                    type="text"
+                    placeholder="Örn: Gol İptal Edildi (Ofsayt / VAR) veya Penaltı Kaçtı"
+                    value={incidentText}
+                    onChange={(e) => setIncidentText(e.target.value)}
+                    className="w-full bg-white border border-gray-300 rounded p-2 text-xs font-bold"
+                  />
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {[
+                      'Gol İptal Edildi (VAR)',
+                      'Gol İptal Edildi (Ofsayt)',
+                      'Gol İptal Edildi (Faul)',
+                      'Penaltı Kaçtı',
+                      'Direkten Döndü',
+                      'VAR Kontrolü'
+                    ].map((sample) => (
+                      <button
+                        key={sample}
+                        type="button"
+                        onClick={() => setIncidentText(sample)}
+                        className="text-[9px] font-bold bg-white hover:bg-gray-100 text-gray-700 px-2 py-0.5 rounded border border-gray-300 cursor-pointer"
+                      >
+                        {sample}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleAddIncident}
+                  className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-black rounded-lg text-xs tracking-wider uppercase shadow cursor-pointer transition-colors"
+                >
+                  ⚠️ MAÇ OLAYINI KAYDET
+                </button>
+              </div>
+            )}
+
             {activeAdminTab === 'date' && (
               <div className="space-y-4">
                 <div className="flex flex-col gap-1">
@@ -1731,6 +1894,8 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                       if (e.subIn) parts.push(`▲ Giren: ${e.subIn}`);
                       if (e.subOut) parts.push(`▼ Çıkan: ${e.subOut}`);
                       desc = `🔄 [${e.minute}] ${parts.join(' | ') || 'Değişiklik'}`;
+                    } else if (e.type === 'incident') {
+                      desc = `⚠️ [${e.minute}] ${e.text}`;
                     } else if (e.type === 'period') {
                       desc = `⏱️ [${e.minute}] ${e.text}`;
                     }

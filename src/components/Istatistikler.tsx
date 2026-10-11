@@ -18,6 +18,8 @@ interface IstatistiklerProps {
 export type StatType = 
   | 'goals' 
   | 'asistsay' 
+  | 'ga'
+  | 'ga_mac'
   | 'kendi_kalesine'
   | 'gol_mac' 
   | 'mac' 
@@ -84,6 +86,8 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
   const labels: Record<string, string> = {
     goals: `${t.gol} ${t.kral}`,
     asistsay: `${t.asist} ${t.kral}`,
+    ga: 'G+A (Gol + Asist)',
+    ga_mac: 'Maç Başına G+A',
     kendi_kalesine: 'Kendi Kalesine Gol',
     gol_mac: 'Gol / Maç Oranı',
     mac: 'Oynanan Maç',
@@ -120,29 +124,40 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
 
   // Computes player statistics strictly from the matches collection in real-time
   const getSortedPlayers = () => {
-    const list: any[] = players.map((p) => {
-      const stats = calculatePlayerStatsFromMatches(p, matches);
-      const totalKupa = getTotalTrophies(p.kupalar);
-      return {
-        ...p,
-        // All performance metrics strictly derived from matches data
-        goals: stats.goals,
-        ownGoals: stats.ownGoals,
-        asistsay: stats.asistsay,
-        mac: stats.mac,
-        poyn: stats.mac,
-        gol_mac: stats.gol_mac,
-        ratingoy: stats.ratingoy,
-        ratingoyFormatted: stats.ratingoyFormatted,
-        mvp: stats.mvp,
-        sari_kart: stats.sari_kart,
-        kirmizi_kart: stats.kirmizi_kart,
-        yesil_kart: stats.yesil_kart,
-        totalCards: stats.totalCards,
-        gen: Number(p.gen) || 0,
-        totalKupa
-      };
-    });
+    const list: any[] = players
+      // firebasede oyuncu notactive : true ise istatistikler listesinden kaldir
+      .filter((p) => p.notactive !== true)
+      .map((p) => {
+        const stats = calculatePlayerStatsFromMatches(p, matches);
+        const totalKupa = getTotalTrophies(p.kupalar);
+        // bir oyuncu noclub : true ise takimsiz olarak görünsün ama listede kalsin
+        const isNoClub = p.noclub === true;
+        const effectiveTeam = isNoClub ? 'Takımsız' : p.pteam;
+
+        return {
+          ...p,
+          pteam: effectiveTeam,
+          isNoClub,
+          // All performance metrics strictly derived from matches data
+          goals: stats.goals,
+          ownGoals: stats.ownGoals,
+          asistsay: stats.asistsay,
+          ga: stats.ga,
+          ga_mac: stats.ga_mac,
+          mac: stats.mac,
+          poyn: stats.mac,
+          gol_mac: stats.gol_mac,
+          ratingoy: stats.ratingoy,
+          ratingoyFormatted: stats.ratingoyFormatted,
+          mvp: stats.mvp,
+          sari_kart: stats.sari_kart,
+          kirmizi_kart: stats.kirmizi_kart,
+          yesil_kart: stats.yesil_kart,
+          totalCards: stats.totalCards,
+          gen: Number(p.gen) || 0,
+          totalKupa
+        };
+      });
 
     return list.sort((a, b) => {
       if (activeStat === 'kupa') {
@@ -154,7 +169,9 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
 
       // Tie-breaker 1: Goals
       if (b.goals !== a.goals) return b.goals - a.goals;
-      // Tie-breaker 2: Matches
+      // Tie-breaker 2: Assists
+      if (b.asistsay !== a.asistsay) return b.asistsay - a.asistsay;
+      // Tie-breaker 3: Matches
       return b.mac - a.mac;
     });
   };
@@ -162,16 +179,19 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
   const getTeamStats = () => {
     const teamsMap: Record<string, { totalGen: number; totalGoals: number; count: number }> = {};
     
-    // Calculate player goals strictly from matches
+    // Calculate player goals strictly from matches (excluding notactive players)
+    const activePlayers = players.filter((p) => p.notactive !== true);
     const playerStatsMap = new Map<string, number>();
-    players.forEach((p) => {
+    activePlayers.forEach((p) => {
       const stats = calculatePlayerStatsFromMatches(p, matches);
       playerStatsMap.set(p.pname, stats.goals);
     });
 
-    players.forEach((p) => {
+    activePlayers.forEach((p) => {
+      // Do not count noclub (Takımsız) players into club T-GEN / Club rankings
+      if (p.noclub === true) return;
       const teamName = (p.pteam || '').trim();
-      if (!teamName) return;
+      if (!teamName || teamName.toLowerCase() === 'takımsız' || teamName.toLowerCase() === 'takimsiz') return;
       if (!teamsMap[teamName]) {
         teamsMap[teamName] = { totalGen: 0, totalGoals: 0, count: 0 };
       }
@@ -216,6 +236,8 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
   const tabConfigs: { id: StatType; label: string; icon: string }[] = [
     { id: 'goals', label: `${t.gol} ${t.kral}`, icon: '⚽' },
     { id: 'asistsay', label: `${t.asist} ${t.kral}`, icon: '👟' },
+    { id: 'ga', label: 'G+A Lideri', icon: '🔥' },
+    { id: 'ga_mac', label: 'G+A / Maç', icon: '⚡' },
     { id: 'kendi_kalesine', label: '🥅 Kendi Kalesine', icon: '' },
     { id: 'gol_mac', label: 'Gol / Maç', icon: '🎯' },
     { id: 'mac', label: 'Maç Sayısı', icon: '🏃' },
@@ -687,7 +709,10 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
       ) : (
         <div className="max-w-2xl mx-auto space-y-4 animate-fade-in select-text">
           {sortedList.slice(0, 50).map((p, idx) => {
-            const logo = teamLogos[p.pteam] || 'https://via.placeholder.com/32?text=?';
+            const isNoClub = p.isNoClub || p.pteam === 'Takımsız';
+            const logo = isNoClub
+              ? 'https://via.placeholder.com/32?text=%E2%9A%BD'
+              : (teamLogos[p.pteam] || 'https://via.placeholder.com/32?text=?');
 
             // Value to display in large typography
             let displayVal: string | number = 0;
@@ -701,6 +726,14 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
               case 'asistsay':
                 displayVal = p.asistsay;
                 subInfo = `${p.mac} Maç • ${p.goals} Gol`;
+                break;
+              case 'ga':
+                displayVal = p.ga;
+                subInfo = `${p.goals} Gol + ${p.asistsay} Asist • ${p.mac} Maç (${p.ga_mac.toFixed(2)} / Maç)`;
+                break;
+              case 'ga_mac':
+                displayVal = p.ga_mac.toFixed(2);
+                subInfo = `${p.ga} (G+A) / ${p.mac} Maç • ${p.goals} Gol, ${p.asistsay} Asist`;
                 break;
               case 'gol_mac':
                 displayVal = p.gol_mac.toFixed(2);
@@ -749,19 +782,28 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
                   {idx + 1}.
                 </div>
 
-                <img 
-                  src={logo} 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onNavigate({ type: 'team-detail', teamName: p.pteam });
-                  }}
-                  className="w-8 h-8 rounded-full border-2 border-brand-maroon bg-white object-cover shrink-0 cursor-pointer mr-3 shadow-inner hover:scale-105 transition-transform" 
-                  alt="team" 
-                  title={p.pteam}
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = 'https://via.placeholder.com/32?text=?';
-                  }}
-                />
+                {isNoClub ? (
+                  <div 
+                    className="w-8 h-8 rounded-full border-2 border-gray-400 bg-gray-100 flex items-center justify-center text-xs shrink-0 mr-3 shadow-inner"
+                    title="Takımsız Oyuncu"
+                  >
+                    ⚽
+                  </div>
+                ) : (
+                  <img 
+                    src={logo} 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onNavigate({ type: 'team-detail', teamName: p.pteam });
+                    }}
+                    className="w-8 h-8 rounded-full border-2 border-brand-maroon bg-white object-cover shrink-0 cursor-pointer mr-3 shadow-inner hover:scale-105 transition-transform" 
+                    alt="team" 
+                    title={p.pteam}
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = 'https://via.placeholder.com/32?text=?';
+                    }}
+                  />
+                )}
 
                 <img 
                   src={p.foto} 
@@ -777,17 +819,28 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
                     <h4 className="font-extrabold text-sm md:text-base text-brand-dark uppercase truncate">
                       {p.pname}
                     </h4>
+                    {isNoClub && (
+                      <span className="text-[9px] font-black text-gray-700 bg-gray-200 border border-gray-300 px-1.5 py-0.2 rounded uppercase">
+                        Takımsız
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 mt-0.5">
                     <span 
                       onClick={(e) => {
-                        e.stopPropagation();
-                        onNavigate({ type: 'team-detail', teamName: p.pteam });
+                        if (!isNoClub) {
+                          e.stopPropagation();
+                          onNavigate({ type: 'team-detail', teamName: p.pteam });
+                        }
                       }}
-                      className="text-[10px] md:text-xs font-bold text-gray-500 truncate uppercase hover:text-brand-maroon cursor-pointer"
+                      className={`text-[10px] md:text-xs font-bold truncate uppercase ${
+                        isNoClub 
+                          ? 'text-gray-400 italic' 
+                          : 'text-gray-500 hover:text-brand-maroon cursor-pointer'
+                      }`}
                     >
-                      {p.pteam}
+                      {isNoClub ? 'Takımsız' : p.pteam}
                     </span>
                     {subInfo && (
                       <span className="text-[9px] md:text-[10px] font-semibold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded truncate">

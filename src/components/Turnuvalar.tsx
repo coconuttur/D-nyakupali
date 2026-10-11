@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Team, UserProfile } from '../types';
+import { Team, UserProfile, Match } from '../types';
 import WorldCup from './WorldCup';
 
 interface TurnuvalarProps {
@@ -20,6 +20,7 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
   const [belSeason, setBelSeason] = useState<4 | 5>(5);
   const [beclSeason, setBeclSeason] = useState<4 | 5>(5);
   const [teams, setTeams] = useState<Team[]>([]);
+  const [matches, setMatches] = useState<Match[]>([]);
   const [bracketData, setBracketData] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
@@ -41,9 +42,19 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
       }
     });
 
+    // 3. Fetch Matches
+    const unsubMatches = onSnapshot(collection(db, 'matches'), (snap) => {
+      const mList: Match[] = [];
+      snap.forEach((d) => {
+        mList.push({ id: d.id, ...d.data() } as Match);
+      });
+      setMatches(mList);
+    });
+
     return () => {
       unsubTeams();
       unsubBrackets();
+      unsubMatches();
     };
   }, []);
 
@@ -200,6 +211,93 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
     );
   };
 
+  // Helper to render tournament matches below bracket or group
+  const renderTournamentMatches = (cupFilter: 'wpc' | 'bcl' | 'bel' | 'becl') => {
+    const cupMatches = matches.filter((m) => {
+      const cat = (m.category || '').toUpperCase().trim();
+      const hStr = String(m.hafta || '').toUpperCase().trim();
+      if (cupFilter === 'wpc') {
+        return cat.includes('WPC') || cat.includes('WORLD PEACE') || cat.includes('TURNUVA') || hStr.includes('WPC');
+      }
+      if (cupFilter === 'bcl') {
+        return cat.includes('BCL') || cat.includes('UCL') || cat.includes('CHAMPIONS') || hStr.includes('BCL') || hStr.includes('UCL');
+      }
+      if (cupFilter === 'bel') {
+        return cat.includes('BEL') || cat.includes('UEL') || cat.includes('EUROPA') || hStr.includes('BEL') || hStr.includes('UEL');
+      }
+      if (cupFilter === 'becl') {
+        return cat.includes('BECL') || cat.includes('UECL') || cat.includes('CONFERENCE') || hStr.includes('BECL') || hStr.includes('UECL');
+      }
+      return false;
+    });
+
+    // Sort by datejav descending
+    cupMatches.sort((a, b) => (Number(b.datejav) || 0) - (Number(a.datejav) || 0));
+
+    if (cupMatches.length === 0) {
+      return (
+        <div className="text-center py-6 text-gray-500 font-bold text-xs bg-white/50 rounded-2xl border border-gray-200 mt-6 max-w-2xl mx-auto">
+          Bu turnuvaya ait henüz oynanmış veya planlanmış maç kaydı bulunmuyor.
+        </div>
+      );
+    }
+
+    return (
+      <div className="mt-8 max-w-2xl mx-auto space-y-4">
+        <div className="flex items-center justify-between border-b-2 border-brand-maroon pb-2 px-1">
+          <h4 className="font-black text-xs md:text-sm text-brand-maroon uppercase tracking-wider flex items-center gap-2">
+            <span>⚽</span>
+            <span>{cupFilter.toUpperCase()} TURNUVA MAÇLARI ({cupMatches.length})</span>
+          </h4>
+          <span className="text-[10px] font-bold text-gray-400">Detay için maça tıkla</span>
+        </div>
+
+        <div className="space-y-3">
+          {cupMatches.map((m, idx) => {
+            const docId = m.id || `${m.team1}-vs-${m.team2}-${m.datejav}`;
+            return (
+              <div
+                key={idx}
+                onClick={() => onNavigate({ type: 'match-detail', matchId: docId })}
+                className="bg-white rounded-2xl border-b-4 border-brand-maroon p-4 shadow-sm hover:shadow-md hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-between gap-3"
+              >
+                {/* Team 1 */}
+                <div className="flex-1 flex items-center justify-end gap-2.5 text-right min-w-0">
+                  <span className="font-black text-xs md:text-sm text-brand-dark truncate">{m.team1}</span>
+                  <img
+                    src={teamLogos[m.team1] || 'https://via.placeholder.com/32?text=?'}
+                    className="w-7 h-7 md:w-8 md:h-8 rounded-full object-cover border border-gray-200 bg-white shrink-0"
+                    alt={m.team1}
+                  />
+                </div>
+
+                {/* Score */}
+                <div className="flex flex-col items-center shrink-0 min-w-[70px]">
+                  <div className="px-3 py-1 bg-brand-dark text-brand-gold rounded-xl font-black text-xs md:text-sm text-center border border-brand-gold">
+                    {m.played ? `${m.score1} - ${m.score2}` : 'VS'}
+                  </div>
+                  <span className="text-[8px] md:text-[9px] font-bold text-gray-400 mt-0.5 truncate max-w-[90px]">
+                    {m.date || 'Tarih Belirsiz'}
+                  </span>
+                </div>
+
+                {/* Team 2 */}
+                <div className="flex-1 flex items-center justify-start gap-2.5 text-left min-w-0">
+                  <img
+                    src={teamLogos[m.team2] || 'https://via.placeholder.com/32?text=?'}
+                    className="w-7 h-7 md:w-8 md:h-8 rounded-full object-cover border border-gray-200 bg-white shrink-0"
+                    alt={m.team2}
+                  />
+                  <span className="font-black text-xs md:text-sm text-brand-dark truncate">{m.team2}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       {/* Tab Selectors */}
@@ -234,9 +332,12 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
           )}
 
           {activeCup === 'wpc' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-4">
-              {renderWpcGroup('A')}
-              {renderWpcGroup('B')}
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-4">
+                {renderWpcGroup('A')}
+                {renderWpcGroup('B')}
+              </div>
+              {renderTournamentMatches('wpc')}
             </div>
           )}
 
@@ -257,6 +358,7 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
                 </button>
               </div>
               {renderKoBracket('bcl', bclSeason)}
+              {renderTournamentMatches('bcl')}
             </div>
           )}
 
@@ -277,6 +379,7 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
                 </button>
               </div>
               {renderKoBracket('bel', belSeason)}
+              {renderTournamentMatches('bel')}
             </div>
           )}
 
@@ -297,6 +400,7 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
                 </button>
               </div>
               {renderKoBracket('becl', beclSeason)}
+              {renderTournamentMatches('becl')}
             </div>
           )}
         </div>

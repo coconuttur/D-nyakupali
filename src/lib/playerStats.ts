@@ -52,6 +52,8 @@ export interface ComputedPlayerStats {
   goals: number;
   ownGoals: number;
   asistsay: number;
+  ga: number;
+  ga_mac: number;
   mac: number;
   poyn: number;
   gol_mac: number;
@@ -74,6 +76,8 @@ export function calculatePlayerStatsFromMatches(player: Player, matches: Match[]
       goals: 0,
       ownGoals: 0,
       asistsay: 0,
+      ga: 0,
+      ga_mac: 0,
       mac: 0,
       poyn: 0,
       gol_mac: 0,
@@ -202,11 +206,15 @@ export function calculatePlayerStatsFromMatches(player: Player, matches: Match[]
 
   const avgRating = ratedMatchCount > 0 ? Number((totalRating / ratedMatchCount).toFixed(2)) : 0;
   const ratio = matchesPlayed > 0 ? Number((goals / matchesPlayed).toFixed(2)) : 0;
+  const ga = goals + assists;
+  const gaRatio = matchesPlayed > 0 ? Number((ga / matchesPlayed).toFixed(2)) : 0;
 
   return {
     goals,
     ownGoals,
     asistsay: assists,
+    ga,
+    ga_mac: gaRatio,
     mac: matchesPlayed,
     poyn: matchesPlayed,
     gol_mac: ratio,
@@ -373,8 +381,14 @@ export function calculateOwnGoalSummary(
     const matchedP = players.find(
       (p) => normalizePlayerName(p.pname) === normalizePlayerName(pName)
     );
+    // If player is not active, do not include in player rankings
+    if (matchedP && matchedP.notactive === true) {
+      continue;
+    }
+
+    const isNoClub = matchedP ? matchedP.noclub === true : false;
     const currentTeam = matchedP
-      ? (matchedP.kiralik && matchedP.kiralikTakim ? matchedP.kiralikTakim : matchedP.pteam)
+      ? (isNoClub ? 'Takımsız' : ((matchedP.kiralik && matchedP.kiralikTakim) ? matchedP.kiralikTakim : matchedP.pteam))
       : '';
     const photo =
       matchedP?.foto ||
@@ -386,7 +400,11 @@ export function calculateOwnGoalSummary(
     // Construct team description text:
     let scoredTeamsText = '';
     const mainScoredTeam = scoredTeams[0] || currentTeam;
-    if (scoredTeams.length > 0 && currentTeam && !scoredTeams.some(st => normalizePlayerName(st) === normalizePlayerName(currentTeam))) {
+    if (isNoClub && scoredTeams.length > 0) {
+      scoredTeamsText = `${scoredTeams.join(', ')} Formasıyla (Şu an: Takımsız)`;
+    } else if (isNoClub) {
+      scoredTeamsText = 'Takımsız';
+    } else if (scoredTeams.length > 0 && currentTeam && !scoredTeams.some(st => normalizePlayerName(st) === normalizePlayerName(currentTeam))) {
       // Player scored own goal for a team different from their current team!
       scoredTeamsText = `${scoredTeams.join(', ')} Formasıyla (Şu an: ${currentTeam})`;
     } else if (scoredTeams.length > 0) {
@@ -397,7 +415,7 @@ export function calculateOwnGoalSummary(
 
     allPlayers.push({
       name: pName,
-      team: mainScoredTeam,
+      team: isNoClub ? '' : mainScoredTeam,
       currentTeam,
       scoredTeamsText,
       photo,

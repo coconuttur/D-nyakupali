@@ -120,10 +120,25 @@ export default function Haftalar({ currentLang, translations, onNavigate, teamLo
       const list: Match[] = [];
       snap.forEach(doc => {
         const m = doc.data() as Match;
-        // Verify that this is a regular league match (week is numeric)
+        // Verify that this is a regular league match (week is numeric and not a tournament/cup match)
         const weekNum = Number(m.hafta);
-        // Ensure m.isWorldCup is not true
-        if (m.hafta && !isNaN(weekNum) && !(m as any).isWorldCup) {
+        const cat = (m.category || '').toUpperCase().trim();
+        const isTournamentMatch = (
+          (m as any).isWorldCup ||
+          cat.includes('UCL') ||
+          cat.includes('UEL') ||
+          cat.includes('UECL') ||
+          cat.includes('TURNUVA') ||
+          cat.includes('WORLD PEACE') ||
+          cat.includes('WPC') ||
+          cat.includes('KUPA') ||
+          cat.includes('BCL') ||
+          cat.includes('BEL') ||
+          cat.includes('BECL') ||
+          (m.ligm === false && cat !== 'LİG MAÇI' && cat !== '')
+        );
+
+        if (m.hafta && !isNaN(weekNum) && !isTournamentMatch) {
           list.push(m);
         }
       });

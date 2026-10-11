@@ -79,11 +79,13 @@ export interface Player {
   kupalar?: Record<string, number>;
   kiralik?: boolean;
   kiralikTakim?: string;
+  notactive?: boolean;
+  noclub?: boolean;
 }
 
 export interface MatchTimelineEvent {
   id: string;
-  type: 'goal' | 'period' | 'card' | 'sub';
+  type: 'goal' | 'period' | 'card' | 'sub' | 'incident';
   team?: 'team1' | 'team2';
   scorer?: string;
   assist?: string;

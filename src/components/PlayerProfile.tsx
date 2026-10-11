@@ -197,13 +197,20 @@ export default function PlayerProfile({ playerName, currentUser, currentLang, tr
               <h1 className="text-3xl md:text-4xl font-black text-brand-maroon tracking-tight leading-none uppercase">{player.pname}</h1>
               
               <div className="flex flex-col gap-2 items-center md:items-start">
-                <div 
-                  onClick={() => onNavigate({ type: 'team-detail', teamName: player.pteam })}
-                  className="flex items-center gap-3 bg-white py-1.5 px-4 rounded-full border border-gray-150 shadow-sm shrink-0 cursor-pointer hover:scale-103 transition-transform"
-                >
-                  {teamLogo && <img src={teamLogo} className="w-8 h-8 rounded-full bg-white object-cover" alt="team" />}
-                  <span className="text-xs font-black text-brand-dark uppercase tracking-wider">{player.pteam}</span>
-                </div>
+                {player.noclub ? (
+                  <div className="flex items-center gap-2 bg-gray-100 py-1.5 px-4 rounded-full border border-gray-300 shadow-sm shrink-0">
+                    <span className="text-xs">⚽</span>
+                    <span className="text-xs font-black text-gray-700 uppercase tracking-wider">Takımsız</span>
+                  </div>
+                ) : (
+                  <div 
+                    onClick={() => onNavigate({ type: 'team-detail', teamName: player.pteam })}
+                    className="flex items-center gap-3 bg-white py-1.5 px-4 rounded-full border border-gray-150 shadow-sm shrink-0 cursor-pointer hover:scale-103 transition-transform"
+                  >
+                    {teamLogo && <img src={teamLogo} className="w-8 h-8 rounded-full bg-white object-cover" alt="team" />}
+                    <span className="text-xs font-black text-brand-dark uppercase tracking-wider">{player.pteam}</span>
+                  </div>
+                )}
 
                 {(player.kiralik || player.kiralikTakim) && (
                   <div 
