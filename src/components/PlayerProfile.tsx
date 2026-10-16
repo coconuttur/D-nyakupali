@@ -20,6 +20,7 @@ export default function PlayerProfile({ playerName, currentUser, currentLang, tr
   const [docId, setDocId] = useState<string | null>(null);
   const [teamLogo, setTeamLogo] = useState<string>('');
   const [countryLogo, setCountryLogo] = useState<string>('');
+  const [teamLogos, setTeamLogos] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [trophyModalOpen, setTrophyModalOpen] = useState(false);
 
@@ -37,7 +38,20 @@ export default function PlayerProfile({ playerName, currentUser, currentLang, tr
       });
       setMatches(list);
     });
-    return () => unsubMatches();
+    const unsubTeams = onSnapshot(collection(db, 'teams'), (snap) => {
+      const dict: Record<string, string> = {};
+      snap.forEach((d) => {
+        const data = d.data();
+        const name = data.name || '';
+        dict[name] = data.logo || '';
+        dict[d.id] = data.logo || '';
+      });
+      setTeamLogos(dict);
+    });
+    return () => {
+      unsubMatches();
+      unsubTeams();
+    };
   }, []);
 
   useEffect(() => {
@@ -313,6 +327,174 @@ export default function PlayerProfile({ playerName, currentUser, currentLang, tr
                 )}
               </div>
             )}
+          </div>
+
+          {/* Matches played by this player with rating on the right (Like in Team Profile) */}
+          <div>
+            <h2 className="text-lg font-black text-brand-dark mb-4 uppercase tracking-wider relative flex items-center gap-2">
+              <span className="w-6 h-1 bg-brand-maroon rounded-full shrink-0" />
+              <span>Oynadığı Maçlar & Reytingler</span>
+            </h2>
+
+            {(() => {
+              const pNameLower = playerName.toLowerCase().trim();
+              const playerPlayedMatches = matches.filter(m => {
+                if (!m.played) return false;
+                const pLineup = m.lineup?.[playerName] || Object.entries(m.lineup || {}).find(([k]) => k.toLowerCase().trim() === pNameLower)?.[1];
+                const hasLineup = pLineup && (pLineup.played !== false || (pLineup.rating !== undefined && Number(pLineup.rating) > 0));
+                const hasTimeline = (m.timeline || []).some((e: any) => 
+                  e.scorer?.toLowerCase().trim() === pNameLower ||
+                  e.player?.toLowerCase().trim() === pNameLower ||
+                  e.subIn?.toLowerCase().trim() === pNameLower ||
+                  e.subOut?.toLowerCase().trim() === pNameLower
+                );
+                const isMvp = (m.mvp || '').toLowerCase().trim() === pNameLower;
+                return hasLineup || hasTimeline || isMvp;
+              }).sort((a, b) => (Number(b.datejav) || 0) - (Number(a.datejav) || 0));
+
+              if (playerPlayedMatches.length === 0) {
+                return (
+                  <span className="text-gray-400 font-bold block p-4 bg-brand-card rounded-2xl">
+                    Bu oyuncunun henüz kayıtlı bir maçı bulunmamaktadır.
+                  </span>
+                );
+              }
+
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {playerPlayedMatches.map((m, idx) => {
+                    const pLineup = m.lineup?.[playerName] || Object.entries(m.lineup || {}).find(([k]) => k.toLowerCase().trim() === pNameLower)?.[1];
+                    let matchRating: number | null = null;
+                    if (pLineup && pLineup.rating !== undefined && !isNaN(Number(pLineup.rating)) && Number(pLineup.rating) > 0) {
+                      matchRating = Number(pLineup.rating);
+                    } else if ((m.mvp || '').toLowerCase().trim() === pNameLower && m.rating) {
+                      matchRating = Number(m.rating) || null;
+                    }
+
+                    const isMvp = (m.mvp || '').toLowerCase().trim() === pNameLower;
+                    const pGoals = (m.timeline || []).filter(e => e.type === 'goal' && !e.isKK && (e.scorer || '').toLowerCase().trim() === pNameLower).length;
+                    const pAssists = (m.timeline || []).filter(e => e.type === 'goal' && (e.assist || '').toLowerCase().trim() === pNameLower).length;
+                    const pCards = (m.timeline || []).filter(e => e.type === 'card' && (e.player || '').toLowerCase().trim() === pNameLower);
+                    const pSubIn = (m.timeline || []).find(e => e.type === 'sub' && (e.subIn || '').toLowerCase().trim() === pNameLower);
+                    const pSubOut = (m.timeline || []).find(e => e.type === 'sub' && (e.subOut || '').toLowerCase().trim() === pNameLower);
+                    const pKK = (m.timeline || []).filter(e => e.type === 'goal' && e.isKK && (e.scorer || '').toLowerCase().trim() === pNameLower).length;
+
+                    let ratingColor = 'bg-gray-200 border-gray-300 text-gray-700';
+                    if (matchRating !== null) {
+                      if (matchRating >= 7.5) {
+                        ratingColor = 'bg-green-600 border-green-500 text-white';
+                      } else if (matchRating >= 6.0) {
+                        ratingColor = 'bg-amber-500 border-amber-400 text-black';
+                      } else {
+                        ratingColor = 'bg-red-600 border-red-500 text-white';
+                      }
+                    }
+
+                    return (
+                      <div 
+                        key={m.id || idx}
+                        onClick={() => onNavigate({ type: 'match-detail', matchId: `${m.team1}-vs-${m.team2}-${m.datejav}` })}
+                        className="bg-brand-card p-4 md:p-5 rounded-2xl border-l-8 border-brand-maroon shadow-sm cursor-pointer hover:scale-101 hover:-translate-y-0.5 transition-all text-center select-text flex flex-col justify-between gap-3 relative"
+                      >
+                        {/* Header: Date & Info */}
+                        <div className="flex items-center justify-between text-[10px] font-black text-brand-maroon uppercase tracking-wider">
+                          <span>📅 {m.date || 'Tarih Belirtilmemiş'} {m.hafta ? `• ${m.hafta}. Hafta` : ''}</span>
+                          {isMvp && (
+                            <span className="bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.2 rounded-full text-[9px] font-black">
+                              🏆 MVP
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Middle: Teams, Score and Rating on the right */}
+                        <div className="flex justify-between items-center gap-2">
+                          {/* Team 1 */}
+                          <div className="flex flex-col items-center flex-1 min-w-0">
+                            <img 
+                              src={teamLogos[m.team1] || 'https://via.placeholder.com/50'} 
+                              className="w-10 h-10 rounded-full border bg-white object-cover shadow-sm shrink-0" 
+                              alt={m.team1} 
+                            />
+                            <span className="text-xs font-extrabold mt-1 text-brand-dark block truncate w-full text-center">{m.team1}</span>
+                          </div>
+
+                          {/* Score */}
+                          <div className="flex flex-col items-center shrink-0">
+                            <span className="py-1 px-3.5 bg-brand-dark text-brand-gold font-black text-base rounded-xl border border-brand-gold shadow-inner shrink-0">
+                              {m.score1} - {m.score2}
+                            </span>
+                            {m.iyScore && (
+                              <span className="text-[8px] font-bold text-gray-500 mt-0.5">İY: {m.iyScore}</span>
+                            )}
+                          </div>
+
+                          {/* Team 2 */}
+                          <div className="flex flex-col items-center flex-1 min-w-0">
+                            <img 
+                              src={teamLogos[m.team2] || 'https://via.placeholder.com/50'} 
+                              className="w-10 h-10 rounded-full border bg-white object-cover shadow-sm shrink-0" 
+                              alt={m.team2} 
+                            />
+                            <span className="text-xs font-extrabold mt-1 text-brand-dark block truncate w-full text-center">{m.team2}</span>
+                          </div>
+
+                          {/* Player Rating Box on the right */}
+                          <div className="flex flex-col items-center justify-center shrink-0 pl-2 border-l border-brand-maroon/15 min-w-16">
+                            <span className="text-[7px] font-black text-gray-400 uppercase tracking-widest block mb-0.5">REYTİNG</span>
+                            {matchRating !== null ? (
+                              <div className={`px-2.5 py-1 rounded-xl font-black text-xs md:text-sm border shadow-xs flex items-center gap-1 ${ratingColor}`}>
+                                <span>⭐</span>
+                                <span>{matchRating.toFixed(1)}</span>
+                              </div>
+                            ) : (
+                              <div className="px-2 py-0.5 bg-gray-200 text-gray-600 rounded-lg text-[10px] font-black border border-gray-300">
+                                Oynadı
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Player event badges in this match */}
+                        {(pGoals > 0 || pAssists > 0 || pCards.length > 0 || pSubIn || pSubOut || pKK > 0) && (
+                          <div className="flex items-center justify-center gap-1.5 flex-wrap pt-1 border-t border-brand-maroon/10">
+                            {pGoals > 0 && (
+                              <span className="text-[8px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300 px-1.5 py-0.2 rounded">
+                                ⚽ {pGoals} Gol
+                              </span>
+                            )}
+                            {pAssists > 0 && (
+                              <span className="text-[8px] font-black bg-blue-100 text-blue-900 border border-blue-300 px-1.5 py-0.2 rounded">
+                                👟 {pAssists} Asist
+                              </span>
+                            )}
+                            {pCards.map((c, cIdx) => (
+                              <span key={cIdx} className="text-[8px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.2 rounded">
+                                {c.cardColor === 'Sarı' ? '🟨' : c.cardColor === 'Yeşil' ? '🟩' : '🟥'} {c.minute}
+                              </span>
+                            ))}
+                            {pSubIn && (
+                              <span className="text-[8px] font-black bg-green-100 text-green-900 border border-green-300 px-1.5 py-0.2 rounded">
+                                ▲ {pSubIn.minute}
+                              </span>
+                            )}
+                            {pSubOut && (
+                              <span className="text-[8px] font-black bg-red-100 text-red-900 border border-red-300 px-1.5 py-0.2 rounded">
+                                ▼ {pSubOut.minute}
+                              </span>
+                            )}
+                            {pKK > 0 && (
+                              <span className="text-[8px] font-black bg-red-600 text-white px-1.5 py-0.2 rounded">
+                                🥅 {pKK} K.K.
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Player Wiki bio section */}

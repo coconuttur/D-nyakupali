@@ -76,6 +76,41 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
   const [lineupPosition, setLineupPosition] = useState<'DEF' | 'MD' | 'FW'>('DEF');
   const [lineupRating, setLineupRating] = useState<string>('6.0');
   const [lineupPlayed, setLineupPlayed] = useState<boolean>(true);
+  const [lineupTeam, setLineupTeam] = useState<'team1' | 'team2'>('team1');
+
+  const resolvePlayerMatchTeam = (pname: string, info?: any): 'team1' | 'team2' => {
+    if (info?.team === 'team1' || info?.team === 'team2') return info.team;
+    if (info?.team === team1Name) return 'team1';
+    if (info?.team === team2Name) return 'team2';
+    
+    const pNameLower = pname.toLowerCase().trim();
+    // Check timeline events
+    const tlEvt = (match?.timeline || []).find((e: any) => 
+      (e.scorer?.toLowerCase().trim() === pNameLower || 
+       e.player?.toLowerCase().trim() === pNameLower || 
+       e.subIn?.toLowerCase().trim() === pNameLower || 
+       e.subOut?.toLowerCase().trim() === pNameLower) && (e.team === 'team1' || e.team === 'team2')
+    );
+    if (tlEvt?.team) return tlEvt.team;
+
+    // Check current team or kiralik
+    const t1Found = team1Players.some(p => p.pname.toLowerCase().trim() === pNameLower);
+    if (t1Found) return 'team1';
+    const t2Found = team2Players.some(p => p.pname.toLowerCase().trim() === pNameLower);
+    if (t2Found) return 'team2';
+
+    const globalP = allGlobalPlayers.find(p => p.pname.toLowerCase().trim() === pNameLower);
+    if (globalP) {
+      const pt = (globalP.pteam || '').toLowerCase().trim();
+      const kt = (globalP.kiralikTakim || '').toLowerCase().trim();
+      const t1Lower = team1Name.toLowerCase().trim();
+      const t2Lower = team2Name.toLowerCase().trim();
+      if (pt === t1Lower || kt === t1Lower) return 'team1';
+      if (pt === t2Lower || kt === t2Lower) return 'team2';
+    }
+
+    return activeLineupTeam;
+  };
 
   useEffect(() => {
     if (selectedLineupPlayer && match) {
@@ -83,12 +118,14 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
       const pInfo = lineup[selectedLineupPlayer];
       if (pInfo) {
         setLineupPosition(pInfo.position || 'DEF');
-        setLineupRating(pInfo.rating ? String(pInfo.rating) : '6.0');
+        setLineupRating(pInfo.rating !== undefined ? String(pInfo.rating) : '6.0');
         setLineupPlayed(pInfo.played !== false);
+        setLineupTeam(resolvePlayerMatchTeam(selectedLineupPlayer, pInfo));
       } else {
         setLineupPosition('DEF');
         setLineupRating('6.0');
         setLineupPlayed(true);
+        setLineupTeam(resolvePlayerMatchTeam(selectedLineupPlayer));
       }
     }
   }, [selectedLineupPlayer, match]);
@@ -101,7 +138,8 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
         [selectedLineupPlayer]: {
           position: lineupPosition,
           rating: Number(lineupRating) || 0,
-          played: lineupPlayed
+          played: lineupPlayed,
+          team: lineupTeam
         }
       };
       await updateDoc(doc(db, 'matches', docId), {
@@ -939,11 +977,19 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
             {(() => {
               const lineup = match?.lineup || {};
               const activeList = Object.entries(lineup)
-                .map(([pname, info]: any) => ({ pname, ...info }))
-                .filter((p: any) => p.played && p.position);
+                .map(([pname, info]: any) => {
+                  const matchTeam = resolvePlayerMatchTeam(pname, info);
+                  return {
+                    pname,
+                    ...info,
+                    position: info.position || 'MD',
+                    matchTeam
+                  };
+                })
+                .filter((p: any) => p.played !== false || Number(p.rating) > 0);
 
-              const t1Active = activeList.filter((p: any) => p.team === 'team1' || team1Players.some((dbP) => dbP.pname.toLowerCase().trim() === p.pname.toLowerCase().trim()));
-              const t2Active = activeList.filter((p: any) => p.team === 'team2' || (team2Players.some((dbP) => dbP.pname.toLowerCase().trim() === p.pname.toLowerCase().trim()) && !t1Active.some((t1P: any) => t1P.pname.toLowerCase().trim() === p.pname.toLowerCase().trim())));
+              const t1Active = activeList.filter((p: any) => p.matchTeam === 'team1');
+              const t2Active = activeList.filter((p: any) => p.matchTeam === 'team2');
 
               const t1DEF = t1Active.filter((p: any) => p.position === 'DEF');
               const t1MD  = t1Active.filter((p: any) => p.position === 'MD');
@@ -1161,19 +1207,35 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                     {/* Grid of Players */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-60 overflow-y-auto pr-1 select-text">
                       {(() => {
-                        const base = activeLineupTeam === 'team1' ? team1Players : team2Players;
-                        const added = [...base];
-                        Object.keys(lineup).forEach(pName => {
-                          if (!added.some(p => p.pname.toLowerCase().trim() === pName.toLowerCase().trim())) {
-                            const pInfo = lineup[pName];
-                            if (pInfo && (pInfo.team === activeLineupTeam || (activeLineupTeam === 'team1' ? t1Active : t2Active).some((a: any) => a.pname.toLowerCase().trim() === pName.toLowerCase().trim()))) {
-                              const globalP = allGlobalPlayers.find(p => p.pname.toLowerCase().trim() === pName.toLowerCase().trim());
-                              if (globalP) added.push(globalP);
-                              else added.push({ pname: pName, pteam: activeLineupTeam === 'team1' ? match.team1 : match.team2, foto: '', goals: 0 });
-                            }
+                        const result: Player[] = [];
+                        const addedNames = new Set<string>();
+
+                        // 1. All players in lineup assigned to activeLineupTeam for this match
+                        Object.entries(lineup).forEach(([pName, pInfo]: any) => {
+                          const matchTeam = resolvePlayerMatchTeam(pName, pInfo);
+                          if (matchTeam === activeLineupTeam) {
+                            const globalP = allGlobalPlayers.find(p => p.pname.toLowerCase().trim() === pName.toLowerCase().trim());
+                            result.push(globalP || { pname: pName, pteam: activeLineupTeam === 'team1' ? match.team1 : match.team2, foto: '', goals: 0 });
+                            addedNames.add(pName.toLowerCase().trim());
                           }
                         });
-                        return added;
+
+                        // 2. Current team players who have not been assigned to the opponent in this match
+                        const baseTeamPlayers = activeLineupTeam === 'team1' ? team1Players : team2Players;
+                        baseTeamPlayers.forEach(p => {
+                          const pNameLower = p.pname.toLowerCase().trim();
+                          if (!addedNames.has(pNameLower)) {
+                            const pInfo = lineup[p.pname] || Object.entries(lineup).find(([k]) => k.toLowerCase().trim() === pNameLower)?.[1];
+                            if (pInfo) {
+                              const otherMatchTeam = resolvePlayerMatchTeam(p.pname, pInfo);
+                              if (otherMatchTeam !== activeLineupTeam) return;
+                            }
+                            result.push(p);
+                            addedNames.add(pNameLower);
+                          }
+                        });
+
+                        return result;
                       })().map((player) => {
                         const playerLineup = lineup[player.pname];
                         const hasLineup = !!playerLineup;
@@ -1295,6 +1357,15 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                               className="w-full bg-brand-cream border border-gray-200 rounded-lg p-2 font-bold text-xs"
                             >
                               <option value="">-- Oyuncu Seçin --</option>
+                              {Object.keys(match?.lineup || {}).length > 0 && (
+                                <optgroup label="📋 Bu Maçın Kadrosundaki Oyuncular">
+                                  {Object.keys(match?.lineup || {}).map((pName) => (
+                                    <option key={`lineup-${pName}`} value={pName}>
+                                      {pName} ({match?.lineup?.[pName]?.rating ? `⭐ ${match?.lineup?.[pName]?.rating}` : ''} - {resolvePlayerMatchTeam(pName, match?.lineup?.[pName]) === 'team2' ? match.team2 : match.team1})
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              )}
                               <optgroup label={`${match.team1} (🏠)`}>
                                 {team1Players.map((p) => (
                                   <option key={p.pname} value={p.pname}>{p.pname}</option>
@@ -1305,11 +1376,46 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                                   <option key={p.pname} value={p.pname}>{p.pname}</option>
                                 ))}
                               </optgroup>
+                              <optgroup label="Tüm Diğer Oyuncular (Eski / Transfer / Takımsız)">
+                                {allGlobalPlayers
+                                  .filter(p => !team1Players.some(t1 => t1.pname === p.pname) && !team2Players.some(t2 => t2.pname === p.pname) && !Object.keys(match?.lineup || {}).includes(p.pname))
+                                  .map(p => (
+                                    <option key={p.pname} value={p.pname}>{p.pname} ({p.pteam || 'Takımsız'})</option>
+                                  ))
+                                }
+                              </optgroup>
                             </select>
                           </div>
 
                           {selectedLineupPlayer && (
                             <div className="space-y-4">
+                              <div className="flex flex-col gap-1.5">
+                                <label className="text-[9px] font-black text-gray-400 uppercase">Bu Maçtaki Takımı (Maçlık Takımda Kalma)</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setLineupTeam('team1')}
+                                    className={`py-2 px-2 rounded-lg font-black text-xs uppercase tracking-wider transition-colors cursor-pointer border ${
+                                      lineupTeam === 'team1' 
+                                        ? 'bg-brand-maroon text-brand-gold border-black shadow-sm' 
+                                        : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                                    }`}
+                                  >
+                                    🏠 {match.team1} (T1)
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setLineupTeam('team2')}
+                                    className={`py-2 px-2 rounded-lg font-black text-xs uppercase tracking-wider transition-colors cursor-pointer border ${
+                                      lineupTeam === 'team2' 
+                                        ? 'bg-brand-maroon text-brand-gold border-black shadow-sm' 
+                                        : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                                    }`}
+                                  >
+                                    🚀 {match.team2} (T2)
+                                  </button>
+                                </div>
+                              </div>
                               <div className="flex flex-col gap-1.5">
                                 <label className="text-[9px] font-black text-gray-400 uppercase">Pozisyon</label>
                                 <div className="grid grid-cols-3 gap-2">

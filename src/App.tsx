@@ -21,6 +21,7 @@ import UserProfileView from './components/UserProfile';
 import { TrophyDetailView } from './components/TrophyDetailView';
 import { AllTrophiesView } from './components/AllTrophiesView';
 import { AlbumView } from './components/AlbumView';
+import { forfeitBobblicaAllMatches } from './lib/bobblicaForfeit';
 
 // Simple direct translations dictionary context
 const TRANSLATIONS = {
@@ -257,6 +258,21 @@ export default function App() {
       setTeamLogos(dict);
     });
   }, []);
+
+  // 3. Automatically ensure Bobblica matches are forfeited 6-0, played stats are scrubbed, and averaj is excluded
+  useEffect(() => {
+    if (!user) return;
+    const hasRan = sessionStorage.getItem('bobblica_auto_forfeited_v3');
+    if (hasRan) return;
+
+    forfeitBobblicaAllMatches(db)
+      .then(() => {
+        sessionStorage.setItem('bobblica_auto_forfeited_v3', 'true');
+      })
+      .catch((err) => {
+        console.warn('Auto Bobblica forfeit error:', err);
+      });
+  }, [user]);
 
   // Auth triggers
   const handleAuthSubmit = async () => {

@@ -90,13 +90,21 @@ export async function recalculateStandings() {
       const isWpc = cleanCat === 'TURNUVA';
       const isLeague = !isWpc && cleanCat !== 'UCL' && cleanCat !== 'UEL' && cleanCat !== 'UECL';
 
+      const isT1Bob = t1Display.toLowerCase().trim() === 'bobblica' || t1.toLowerCase().trim() === 'bobblica' || t1.toLowerCase().trim() === 'hiyar city';
+      const isT2Bob = t2Display.toLowerCase().trim() === 'bobblica' || t2.toLowerCase().trim() === 'bobblica' || t2.toLowerCase().trim() === 'hiyar city';
+      const isBobblicaLoss = (isT1Bob && score2 > score1) || (isT2Bob && score1 > score2);
+
       if (isLeague) {
         teamData[t1].played += 1;
         teamData[t2].played += 1;
-        teamData[t1].atilan += score1;
-        teamData[t1].yenilen += score2;
-        teamData[t2].atilan += score2;
-        teamData[t2].yenilen += score1;
+
+        // Bobblica yenilgilerinde sadece puan/galibiyet alınsın, averaj (atılan ve yenilen gol) eklenmesin
+        if (!isBobblicaLoss) {
+          teamData[t1].atilan += score1;
+          teamData[t1].yenilen += score2;
+          teamData[t2].atilan += score2;
+          teamData[t2].yenilen += score1;
+        }
 
         if (score1 > score2) {
           teamData[t1].wins += 1;
@@ -113,10 +121,12 @@ export async function recalculateStandings() {
           teamData[t2].points += 1;
         }
       } else if (isWpc) {
-        teamData[t1].kgatilan += score1;
-        teamData[t1].kgyenilen += score2;
-        teamData[t2].kgatilan += score2;
-        teamData[t2].kgyenilen += score1;
+        if (!isBobblicaLoss) {
+          teamData[t1].kgatilan += score1;
+          teamData[t1].kgyenilen += score2;
+          teamData[t2].kgatilan += score2;
+          teamData[t2].kgyenilen += score1;
+        }
 
         if (score1 > score2) {
           teamData[t1].kgw += 1;
