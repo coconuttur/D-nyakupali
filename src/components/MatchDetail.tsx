@@ -33,6 +33,16 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
   const [adminModalOpen, setAdminModalOpen] = useState(false);
   const [activeAdminTab, setActiveAdminTab] = useState<TabType>('goal');
 
+  // In-app Toast Notification state (replaces intrusive window.alert popups)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast(curr => curr?.message === message ? null : curr);
+    }, 3500);
+  };
+
   // Kiralık Oyuncu Ekleme States
   const [selectedLoanTeam, setSelectedLoanTeam] = useState<'team1' | 'team2'>('team1');
   const [selectedLoanPlayerName, setSelectedLoanPlayerName] = useState<string>('');
@@ -131,7 +141,8 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
   }, [selectedLineupPlayer, match]);
 
   const handleSaveLineupPlayer = async () => {
-    if (!docId || !selectedLineupPlayer) return;
+    const targetDocId = docId || matchId;
+    if (!targetDocId || !selectedLineupPlayer) return;
     try {
       const updatedLineup = {
         ...(match?.lineup || {}),
@@ -142,34 +153,35 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
           team: lineupTeam
         }
       };
-      await updateDoc(doc(db, 'matches', docId), {
+      await setDoc(doc(db, 'matches', targetDocId), {
         lineup: updatedLineup
-      });
+      }, { merge: true });
       await recalculatePlayerRatings();
-      alert('Oyuncu kadro ve rating bilgisi başarıyla kaydedildi!');
+      showToast('Oyuncu kadro ve rating bilgisi başarıyla kaydedildi!', 'success');
     } catch (err) {
       console.error(err);
-      alert('Kadro kaydedilirken hata oluştu.');
+      showToast('Kadro kaydedilirken hata oluştu.', 'error');
     }
   };
 
   const handleRemoveLineupPlayer = async (pname: string) => {
-    if (!docId) return;
+    const targetDocId = docId || matchId;
+    if (!targetDocId) return;
     if (!confirm(`${pname} isimli oyuncuyu kadrodan çıkarmak istediğinize emin misiniz?`)) return;
     try {
       const updatedLineup = { ...(match?.lineup || {}) };
       delete updatedLineup[pname];
-      await updateDoc(doc(db, 'matches', docId), {
+      await setDoc(doc(db, 'matches', targetDocId), {
         lineup: updatedLineup
-      });
+      }, { merge: true });
       await recalculatePlayerRatings();
-      alert('Oyuncu kadrodan çıkarıldı!');
+      showToast('Oyuncu kadrodan çıkarıldı!', 'info');
       if (selectedLineupPlayer === pname) {
         setSelectedLineupPlayer('');
       }
     } catch (err) {
       console.error(err);
-      alert('Oyuncu çıkarılırken hata oluştu.');
+      showToast('Oyuncu çıkarılırken hata oluştu.', 'error');
     }
   };
 
@@ -178,33 +190,34 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
   const [quickIyInputString, setQuickIyInputString] = useState('');
 
   const handleQuickSubmit = async () => {
-    if (!docId) return;
+    const targetDocId = docId || matchId;
+    if (!targetDocId) return;
     const parts = quickInputString.split('-');
     if (parts.length !== 2) {
-      alert('Lütfen skoru "5-2" formatında giriniz!');
+      showToast('Lütfen skoru "5-2" formatında giriniz!', 'error');
       return;
     }
     const s1 = parts[0].trim();
     const s2 = parts[1].trim();
     if (isNaN(Number(s1)) || isNaN(Number(s2))) {
-      alert('Lütfen geçerli sayılar giriniz!');
+      showToast('Lütfen geçerli sayılar giriniz!', 'error');
       return;
     }
 
     try {
-      await updateDoc(doc(db, 'matches', docId), {
+      await setDoc(doc(db, 'matches', targetDocId), {
         score1: s1,
         score2: s2,
         iyScore: quickIyInputString.trim() || null,
         played: true
-      });
+      }, { merge: true });
       await recalculateStandings();
-      alert('Maç skoru başarıyla güncellendi ve puan durumları güncellendi!');
+      showToast('Maç skoru başarıyla güncellendi!', 'success');
       setQuickInputString('');
       setQuickIyInputString('');
     } catch (e) {
       console.error(e);
-      alert('Skor güncellenirken hata oluştu.');
+      showToast('Skor güncellenirken hata oluştu.', 'error');
     }
   };
 
@@ -384,13 +397,31 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
     const unsubscribe = onSnapshot(q, (snap) => {
       let found: Match | null = null;
       let fId: string | null = null;
+
+      // First check by direct docId
       snap.forEach((docSnap) => {
-        const m = docSnap.data() as Match;
-        if (m.team1 === team1Name && m.team2 === team2Name && Number(m.datejav) === Number(currentMatchDatejav)) {
-          found = m;
+        if (docSnap.id === matchId) {
+          found = docSnap.data() as Match;
           fId = docSnap.id;
         }
       });
+
+      // Second check by team names and datejav
+      if (!found) {
+        snap.forEach((docSnap) => {
+          const m = docSnap.data() as Match;
+          const mt1 = (m.team1 || '').toLowerCase().trim();
+          const mt2 = (m.team2 || '').toLowerCase().trim();
+          const t1L = team1Name.toLowerCase().trim();
+          const t2L = team2Name.toLowerCase().trim();
+          if (mt1 && mt2 && t1L && t2L && mt1 === t1L && mt2 === t2L) {
+            if (!currentMatchDatejav || Number(m.datejav) === Number(currentMatchDatejav)) {
+              found = m;
+              fId = docSnap.id;
+            }
+          }
+        });
+      }
 
       if (found) {
         setMatch(found);
@@ -400,12 +431,14 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
         setMatchCategory((found as any).category || '');
         setSelectedMvp((found as Match).mvp || '');
         setMvpRating((found as Match).rating || '');
+      } else {
+        setDocId(matchId);
       }
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, [team1Name, team2Name, currentMatchDatejav]);
+  }, [matchId, team1Name, team2Name, currentMatchDatejav]);
 
   const t = translations[currentLang];
 
@@ -424,35 +457,90 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
     return [...match.timeline].sort((a, b) => parseMinute(a.minute) - parseMinute(b.minute));
   };
 
-  const handleSaveTimeline = async (events: MatchTimelineEvent[]) => {
-    if (!docId) return;
+  const handleSaveTimeline = async (events: MatchTimelineEvent[], customLineup?: Record<string, any>) => {
+    const targetDocId = docId || matchId;
+    if (!targetDocId) {
+      showToast('Hata: Maç kimliği bulunamadı.', 'error');
+      return;
+    }
 
     let calScore1 = 0;
     let calScore2 = 0;
+    let hasGoalEvents = false;
     events.forEach(evt => {
       if (evt.type === 'goal') {
+        hasGoalEvents = true;
         if (evt.team === 'team1') calScore1++;
         else if (evt.team === 'team2') calScore2++;
       }
     });
 
-    try {
-      await updateDoc(doc(db, 'matches', docId), {
-        timeline: events,
-        score1: String(calScore1),
-        score2: String(calScore2),
-        played: events.some(evt => evt.type === 'goal' || evt.type === 'period' || evt.type === 'card' || evt.type === 'sub')
+    // Strip ALL undefined fields from events so Firestore never throws "Unsupported field value: undefined"
+    const sanitizedEvents = events.map(evt => {
+      const clean: any = {};
+      Object.keys(evt).forEach(k => {
+        const val = (evt as any)[k];
+        if (val !== undefined && val !== null) {
+          clean[k] = val;
+        }
       });
-      await recalculateStandings();
-    } catch (e) {
-      console.error(e);
-      alert('Kaydedilemedi.');
+      return clean;
+    });
+
+    const updatePayload: any = {
+      timeline: sanitizedEvents,
+      played: true
+    };
+
+    // If there are goals in timeline, use calculated scores; otherwise preserve existing match scores
+    if (hasGoalEvents) {
+      updatePayload.score1 = String(calScore1);
+      updatePayload.score2 = String(calScore2);
+    } else if (match?.score1 !== undefined && match?.score2 !== undefined) {
+      updatePayload.score1 = String(match.score1);
+      updatePayload.score2 = String(match.score2);
+    }
+
+    if (customLineup) {
+      const sanitizedLineup: Record<string, any> = {};
+      Object.entries(customLineup).forEach(([pName, pData]: [string, any]) => {
+        if (!pName || typeof pData !== 'object' || pData === null) return;
+        const cleanPlayer: any = {};
+        Object.keys(pData).forEach(k => {
+          if (pData[k] !== undefined && pData[k] !== null) {
+            cleanPlayer[k] = pData[k];
+          }
+        });
+        sanitizedLineup[pName] = cleanPlayer;
+      });
+      updatePayload.lineup = sanitizedLineup;
+    }
+
+    // Preserve and ensure core match data on first save
+    if (match?.team1 || team1Name) updatePayload.team1 = match?.team1 || team1Name;
+    if (match?.team2 || team2Name) updatePayload.team2 = match?.team2 || team2Name;
+    if (match?.datejav || currentMatchDatejav) updatePayload.datejav = match?.datejav || currentMatchDatejav || Date.now();
+    if (match?.date || matchDateText) updatePayload.date = match?.date || matchDateText || '---';
+    if (match?.category || matchCategory) updatePayload.category = match?.category || matchCategory || 'LİG MAÇI';
+
+    try {
+      await setDoc(doc(db, 'matches', targetDocId), updatePayload, { merge: true });
+      setDocId(targetDocId);
+      try {
+        await recalculateStandings();
+      } catch (stErr) {
+        console.warn('recalculateStandings notice:', stErr);
+      }
+    } catch (e: any) {
+      console.error("handleSaveTimeline error:", e);
+      showToast(`Kaydedilemedi: ${e?.message || 'Bilinmeyen hata'}`, 'error');
+      throw e;
     }
   };
 
   const handleAddGoal = async () => {
     if (!selectedScorer || !goalMinute.trim()) {
-      alert('Oyuncu ve dakika alanları boş bırakılamaz!');
+      showToast('Oyuncu ve dakika alanları boş bırakılamaz!', 'error');
       return;
     }
 
@@ -489,13 +577,18 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
     };
 
     const updated = [...(match?.timeline || []), newEvt];
-    await handleSaveTimeline(updated);
-    setGoalMinute('');
+    try {
+      await handleSaveTimeline(updated);
+      setGoalMinute('');
+      showToast('Gol başarıyla kaydedildi!', 'success');
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const handleAddPeriod = async () => {
     if (!periodText.trim()) {
-      alert('Lütfen başlık giriniz!');
+      showToast('Lütfen başlık giriniz!', 'error');
       return;
     }
     let min = periodMinute.trim();
@@ -509,13 +602,18 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
     };
 
     const updated = [...(match?.timeline || []), newEvt];
-    await handleSaveTimeline(updated);
-    setPeriodText('');
+    try {
+      await handleSaveTimeline(updated);
+      setPeriodText('');
+      showToast('Devre/Tur kaydedildi!', 'success');
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const handleAddCard = async () => {
     if (!selectedCardPlayer || !cardMinute.trim()) {
-      alert('Oyuncu ve dakika alanları boş bırakılamaz!');
+      showToast('Oyuncu ve dakika alanları boş bırakılamaz!', 'error');
       return;
     }
     let min = cardMinute.trim();
@@ -531,8 +629,13 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
     };
 
     const updated = [...(match?.timeline || []), newEvt];
-    await handleSaveTimeline(updated);
-    setCardMinute('');
+    try {
+      await handleSaveTimeline(updated);
+      setCardMinute('');
+      showToast('Kart başarıyla kaydedildi!', 'success');
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const handleAddSub = async () => {
@@ -540,101 +643,140 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
     const subInTrimmed = selectedSubIn.trim();
 
     if (!subOutTrimmed && !subInTrimmed) {
-      alert('Lütfen çıkan veya giren en az bir oyuncu seçiniz!');
-      return;
-    }
-    if (!subMinute.trim()) {
-      alert('Lütfen dakika giriniz!');
+      showToast('Lütfen çıkan veya giren en az bir oyuncu seçiniz!', 'error');
       return;
     }
     if (subOutTrimmed && subInTrimmed && subOutTrimmed.toLowerCase() === subInTrimmed.toLowerCase()) {
-      alert('Giren ve çıkan oyuncu aynı kişi olamaz!');
+      showToast('Giren ve çıkan oyuncu aynı kişi olamaz!', 'error');
       return;
     }
 
     let min = subMinute.trim();
-    if (!min.endsWith("'")) min += "'";
+    if (!min) {
+      min = "45'";
+    } else if (!min.endsWith("'")) {
+      min += "'";
+    }
 
-    const newEvt: MatchTimelineEvent = {
+    const newEvt: any = {
       id: 'evt_' + Date.now(),
       type: 'sub',
       team: selectedSubTeam,
-      subOut: subOutTrimmed || undefined,
-      subIn: subInTrimmed || undefined,
       minute: min
     };
+    if (subOutTrimmed) {
+      newEvt.subOut = subOutTrimmed;
+    }
+    if (subInTrimmed) {
+      newEvt.subIn = subInTrimmed;
+    }
 
     const updated = [...(match?.timeline || []), newEvt];
-    await handleSaveTimeline(updated);
-    setSubMinute('');
-    setSelectedSubOut('');
-    setSelectedSubIn('');
-    alert('Oyuncu değişikliği başarıyla kaydedildi!');
+
+    // Ensure subbed players are recorded in match lineup
+    const updatedLineup = { ...(match?.lineup || {}) };
+    if (subInTrimmed) {
+      const existing = updatedLineup[subInTrimmed] || {};
+      updatedLineup[subInTrimmed] = {
+        position: existing.position || 'MD',
+        rating: existing.rating !== undefined ? existing.rating : 6.0,
+        played: true,
+        team: existing.team || selectedSubTeam
+      };
+    }
+    if (subOutTrimmed && !updatedLineup[subOutTrimmed]) {
+      updatedLineup[subOutTrimmed] = {
+        position: 'MD',
+        rating: 6.0,
+        played: true,
+        team: selectedSubTeam
+      };
+    }
+
+    try {
+      await handleSaveTimeline(updated, updatedLineup);
+      setSubMinute('');
+      setSelectedSubOut('');
+      setSelectedSubIn('');
+      showToast('Oyuncu değişikliği başarıyla kaydedildi!', 'success');
+    } catch (err: any) {
+      console.error("handleAddSub error:", err);
+    }
   };
 
   const handleAddIncident = async () => {
     if (!incidentText.trim()) {
-      alert('Lütfen olay açıklamasını yazınız! (Örn: Gol İptali, VAR İncelemesi, Penaltı Kaçtı)');
-      return;
-    }
-    if (!incidentMinute.trim()) {
-      alert('Lütfen dakika giriniz!');
+      showToast('Lütfen olay açıklamasını yazınız! (Örn: Gol İptali, VAR İncelemesi, Penaltı Kaçtı)', 'error');
       return;
     }
 
     let min = incidentMinute.trim();
-    if (!min.endsWith("'")) min += "'";
+    if (!min) {
+      min = "-";
+    } else if (!min.endsWith("'")) {
+      min += "'";
+    }
 
-    const newEvt: MatchTimelineEvent = {
+    const newEvt: any = {
       id: 'evt_' + Date.now(),
       type: 'incident',
-      team: selectedIncidentTeam === 'general' ? undefined : selectedIncidentTeam,
       text: incidentText.trim(),
       minute: min
     };
+    if (selectedIncidentTeam !== 'general') {
+      newEvt.team = selectedIncidentTeam;
+    }
 
     const updated = [...(match?.timeline || []), newEvt];
-    await handleSaveTimeline(updated);
-    setIncidentText('');
-    setIncidentMinute('');
-    alert('Maç olayı başarıyla kaydedildi!');
+    try {
+      await handleSaveTimeline(updated);
+      setIncidentText('');
+      setIncidentMinute('');
+      showToast('Maç olayı başarıyla kaydedildi!', 'success');
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const handleUpdateDate = async () => {
-    if (!docId) return;
+    const targetDocId = docId || matchId;
+    if (!targetDocId) return;
     const javVal = parseInt(matchDatejavText);
     if (!matchDateText || isNaN(javVal)) {
-      alert('Lütfen geçerli tarih ve Datejav değeri girin.');
+      showToast('Lütfen geçerli tarih ve Datejav değeri girin.', 'error');
       return;
     }
 
     try {
-      await updateDoc(doc(db, 'matches', docId), {
+      await setDoc(doc(db, 'matches', targetDocId), {
         date: matchDateText.trim(),
         datejav: javVal,
         category: matchCategory.trim()
-      });
+      }, { merge: true });
       await recalculateStandings();
-      alert('Tarih ve kategori güncellendi! Standings yeniden hesaplandı.');
+      showToast('Tarih ve kategori güncellendi!', 'success');
       // Update screen representation
       onBack();
     } catch (e) {
       console.error(e);
+      showToast('Tarih güncellenirken hata oluştu.', 'error');
     }
   };
 
   const handleUpdateMvp = async () => {
-    if (!docId) return;
+    const targetDocId = docId || matchId;
+    if (!targetDocId) return;
     try {
-      await updateDoc(doc(db, 'matches', docId), {
+      await setDoc(doc(db, 'matches', targetDocId), {
         mvp: selectedMvp,
         rating: mvpRating.trim() || '0.0',
         played: true
-      });
+      }, { merge: true });
       await recalculateStandings();
-      alert('MVP güncellendi ve puan durumları yeniden hesaplandı!');
+      showToast('MVP başarıyla güncellendi!', 'success');
     } catch (e) {
       console.error(e);
+      showToast('MVP güncellenirken hata oluştu.', 'error');
     }
   };
 
@@ -677,7 +819,29 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* Toast Notification Container */}
+      {toast && (
+        <div 
+          className={`fixed top-4 right-4 z-[9999] max-w-sm px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 border text-xs font-black transition-all ${
+            toast.type === 'error'
+              ? 'bg-rose-50 border-rose-500 text-rose-800'
+              : toast.type === 'info'
+              ? 'bg-sky-50 border-sky-500 text-sky-800'
+              : 'bg-emerald-50 border-emerald-500 text-emerald-800'
+          }`}
+        >
+          <span className="text-base">{toast.type === 'error' ? '⚠️' : toast.type === 'info' ? 'ℹ️' : '✅'}</span>
+          <span className="flex-1 leading-snug">{toast.message}</span>
+          <button 
+            type="button" 
+            onClick={() => setToast(null)}
+            className="text-gray-400 hover:text-gray-700 ml-1 font-bold text-sm cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       <div className="bg-brand-card p-4 rounded-b-2xl flex items-center justify-between border-b-4 border-brand-maroon shadow-md relative shrink-0">
         <button 
           onClick={onBack}
@@ -1506,6 +1670,21 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
             <button onClick={() => setAdminModalOpen(false)} className="absolute top-4 right-4 text-xl font-bold text-brand-maroon">✕</button>
             <h3 className="text-brand-maroon font-black text-base text-center uppercase tracking-wide border-b-2 border-brand-maroon pb-2 mb-4">Maç Olayı Yönetimi</h3>
 
+            {toast && (
+              <div 
+                className={`mb-4 p-2.5 rounded-lg border text-xs font-bold flex items-center justify-between animate-fade-in ${
+                  toast.type === 'error'
+                    ? 'bg-rose-50 border-rose-300 text-rose-800'
+                    : toast.type === 'info'
+                    ? 'bg-sky-50 border-sky-300 text-sky-800'
+                    : 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                }`}
+              >
+                <span>{toast.type === 'error' ? '⚠️' : '✅'} {toast.message}</span>
+                <button type="button" onClick={() => setToast(null)} className="text-gray-400 hover:text-black font-bold ml-2">✕</button>
+              </div>
+            )}
+
             {/* Admin sub-tabs */}
             <div className="flex gap-1 border-b border-gray-300 pb-2 mb-4 overflow-x-auto">
               {(['goal', 'period', 'card', 'sub', 'incident', 'date', 'mvp', 'loan'] as TabType[]).map((tab) => (
@@ -1670,11 +1849,59 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                     className="w-full bg-white border border-rose-200 focus:border-rose-500 rounded p-2 text-xs font-bold text-gray-800"
                   >
                     <option value="">-- Çıkan Oyuncu Yok / Seçilmedi --</option>
-                    {(selectedSubTeam === 'team1' ? team1Players : team2Players).map((p, idx) => (
-                      <option key={idx} value={p.pname}>
-                        {p.pname} ({p.pteam === (selectedSubTeam === 'team1' ? team1Name : team2Name) ? 'Asil' : 'Kiralık'})
-                      </option>
-                    ))}
+                    {(() => {
+                      const teamNameCurrent = selectedSubTeam === 'team1' ? team1Name : team2Name;
+                      const basePlayers = selectedSubTeam === 'team1' ? team1Players : team2Players;
+                      const lineupPlayers = Object.entries(match?.lineup || {})
+                        .filter(([pName, info]: any) => resolvePlayerMatchTeam(pName, info) === selectedSubTeam)
+                        .map(([pname]) => pname);
+
+                      const seen = new Set<string>();
+                      const teamOptions: { name: string; tag: string }[] = [];
+
+                      lineupPlayers.forEach(pName => {
+                        if (!seen.has(pName.toLowerCase().trim())) {
+                          seen.add(pName.toLowerCase().trim());
+                          teamOptions.push({ name: pName, tag: 'Maç Kadrosu' });
+                        }
+                      });
+
+                      basePlayers.forEach(p => {
+                        if (!seen.has(p.pname.toLowerCase().trim())) {
+                          seen.add(p.pname.toLowerCase().trim());
+                          teamOptions.push({ name: p.pname, tag: p.pteam === teamNameCurrent ? 'Asil' : 'Kiralık' });
+                        }
+                      });
+
+                      const otherOptions: { name: string; tag: string }[] = [];
+                      allGlobalPlayers.forEach(p => {
+                        if (!seen.has(p.pname.toLowerCase().trim())) {
+                          seen.add(p.pname.toLowerCase().trim());
+                          otherOptions.push({ name: p.pname, tag: p.pteam || 'Takımsız' });
+                        }
+                      });
+
+                      return (
+                        <>
+                          <optgroup label={`${teamNameCurrent} Kadrosu`}>
+                            {teamOptions.map((opt, idx) => (
+                              <option key={`out-t-${idx}`} value={opt.name}>
+                                {opt.name} ({opt.tag})
+                              </option>
+                            ))}
+                          </optgroup>
+                          {otherOptions.length > 0 && (
+                            <optgroup label="Tüm Diğer Oyuncular (Transfer / Takımsız)">
+                              {otherOptions.map((opt, idx) => (
+                                <option key={`out-o-${idx}`} value={opt.name}>
+                                  {opt.name} ({opt.tag})
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                        </>
+                      );
+                    })()}
                   </select>
                 </div>
 
@@ -1690,11 +1917,59 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                     className="w-full bg-white border border-emerald-200 focus:border-emerald-500 rounded p-2 text-xs font-bold text-gray-800"
                   >
                     <option value="">-- Giren Oyuncu Yok / Seçilmedi --</option>
-                    {(selectedSubTeam === 'team1' ? team1Players : team2Players).map((p, idx) => (
-                      <option key={idx} value={p.pname}>
-                        {p.pname} ({p.pteam === (selectedSubTeam === 'team1' ? team1Name : team2Name) ? 'Asil' : 'Kiralık'})
-                      </option>
-                    ))}
+                    {(() => {
+                      const teamNameCurrent = selectedSubTeam === 'team1' ? team1Name : team2Name;
+                      const basePlayers = selectedSubTeam === 'team1' ? team1Players : team2Players;
+                      const lineupPlayers = Object.entries(match?.lineup || {})
+                        .filter(([pName, info]: any) => resolvePlayerMatchTeam(pName, info) === selectedSubTeam)
+                        .map(([pname]) => pname);
+
+                      const seen = new Set<string>();
+                      const teamOptions: { name: string; tag: string }[] = [];
+
+                      lineupPlayers.forEach(pName => {
+                        if (!seen.has(pName.toLowerCase().trim())) {
+                          seen.add(pName.toLowerCase().trim());
+                          teamOptions.push({ name: pName, tag: 'Maç Kadrosu' });
+                        }
+                      });
+
+                      basePlayers.forEach(p => {
+                        if (!seen.has(p.pname.toLowerCase().trim())) {
+                          seen.add(p.pname.toLowerCase().trim());
+                          teamOptions.push({ name: p.pname, tag: p.pteam === teamNameCurrent ? 'Asil' : 'Kiralık' });
+                        }
+                      });
+
+                      const otherOptions: { name: string; tag: string }[] = [];
+                      allGlobalPlayers.forEach(p => {
+                        if (!seen.has(p.pname.toLowerCase().trim())) {
+                          seen.add(p.pname.toLowerCase().trim());
+                          otherOptions.push({ name: p.pname, tag: p.pteam || 'Takımsız' });
+                        }
+                      });
+
+                      return (
+                        <>
+                          <optgroup label={`${teamNameCurrent} Kadrosu`}>
+                            {teamOptions.map((opt, idx) => (
+                              <option key={`in-t-${idx}`} value={opt.name}>
+                                {opt.name} ({opt.tag})
+                              </option>
+                            ))}
+                          </optgroup>
+                          {otherOptions.length > 0 && (
+                            <optgroup label="Tüm Diğer Oyuncular (Transfer / Takımsız)">
+                              {otherOptions.map((opt, idx) => (
+                                <option key={`in-o-${idx}`} value={opt.name}>
+                                  {opt.name} ({opt.tag})
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                        </>
+                      );
+                    })()}
                   </select>
                 </div>
 
@@ -1914,7 +2189,7 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                     const pName = (customLoanName.trim() || selectedLoanPlayerName).trim();
                     
                     if (!pName) {
-                      alert('Lütfen kiralık eklenecek bir oyuncu seçin veya ismini yazın!');
+                      showToast('Lütfen kiralık eklenecek bir oyuncu seçin veya ismini yazın!', 'error');
                       return;
                     }
 
@@ -1941,7 +2216,7 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                         });
                       }
 
-                      alert(`${pName} oyuncusu ${targetTeamName} kadrosuna kiralık eklendi!`);
+                      showToast(`${pName} oyuncusu ${targetTeamName} kadrosuna kiralık eklendi!`, 'success');
                       
                       // Refresh players snapshot
                       const updatedSnap = await getDocs(collection(db, "players"));
@@ -1971,7 +2246,7 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
                       setActiveAdminTab('goal');
                     } catch (err) {
                       console.error(err);
-                      alert('Kiralık oyuncu eklenirken bir hata oluştu.');
+                      showToast('Kiralık oyuncu eklenirken bir hata oluştu.', 'error');
                     }
                   }}
                   className="w-full py-2.5 bg-brand-maroon text-white font-black rounded-lg text-xs tracking-wider uppercase shadow hover:bg-red-900 transition-colors cursor-pointer"
