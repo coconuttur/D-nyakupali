@@ -24,7 +24,8 @@ import {
   saveStoredBracketData,
   normalizeCupKey,
   getTournamentInfo,
-  mergeTournamentMatches
+  mergeTournamentMatches,
+  normalizeTeamName
 } from '../lib/tournamentMatches';
 import { calculateMatchScore, getMatchMultiplier } from '../lib/elo';
 
@@ -32,6 +33,81 @@ import { calculateMatchScore, getMatchMultiplier } from '../lib/elo';
 const getStoredMatches = getStoredTournamentMatches;
 const saveStoredMatch = saveStoredTournamentMatch;
 const removeStoredMatch = removeStoredTournamentMatch;
+
+export const isSameTeam = (t1?: string, t2?: string): boolean => {
+  if (!t1 || !t2) return false;
+  const s1 = normalizeTeamName(t1).toLowerCase().trim();
+  const s2 = normalizeTeamName(t2).toLowerCase().trim();
+  return s1 === s2;
+};
+
+export const isMatchBetweenTeams = (m?: Match | null, teamA?: string, teamB?: string): boolean => {
+  if (!m || !teamA || !teamB) return false;
+  return (
+    (isSameTeam(m.team1, teamA) && isSameTeam(m.team2, teamB)) ||
+    (isSameTeam(m.team1, teamB) && isSameTeam(m.team2, teamA))
+  );
+};
+
+export const getWinnerOfMatch = (m?: Match | null): string => {
+  if (!m || !m.played) return '';
+  const s1 = Number(m.score1) || 0;
+  const s2 = Number(m.score2) || 0;
+  if (s1 > s2) return m.team1;
+  if (s2 > s1) return m.team2;
+  if ((m as any).penaltyWinner) return (m as any).penaltyWinner;
+  return m.team1;
+};
+
+export const resolveMatchRound = (
+  m: Match,
+  cupFilter: 'bcl' | 'bel' | 'becl' | 'wpc',
+  activeSeason: number = 5,
+  bracketData: Record<string, string> = {}
+): { roundKey: 'semi1' | 'semi2' | 'final' | string; roundTitle: string } => {
+  const r = String((m as any).round || '').toLowerCase().trim();
+  const h = String(m.hafta || '').toLowerCase().trim();
+
+  if (r === 'semi1' || h.includes('yarı final 1') || h.includes('semi 1') || h === 'yf1') {
+    return { roundKey: 'semi1', roundTitle: '⚔️ Yarı Final 1' };
+  }
+  if (r === 'semi2' || h.includes('yarı final 2') || h.includes('semi 2') || h === 'yf2') {
+    return { roundKey: 'semi2', roundTitle: '⚔️ Yarı Final 2' };
+  }
+  if (r === 'final' || h.includes('büyük final') || (h === 'final' && !h.includes('yarı') && !h.includes('semi'))) {
+    return { roundKey: 'final', roundTitle: '🏆 Büyük Final' };
+  }
+
+  // Bracket slot matching
+  const cup = normalizeCupKey(m.category, m.hafta) || cupFilter;
+  if (cup !== 'wpc') {
+    const s = Number((m as any).season) || activeSeason || 5;
+    const p = `${cup}${s}`;
+
+    const s1T1 = bracketData[`${p}s1`];
+    const s1T2 = bracketData[`${p}s2`];
+    if (s1T1 && s1T2 && isMatchBetweenTeams(m, s1T1, s1T2)) {
+      return { roundKey: 'semi1', roundTitle: '⚔️ Yarı Final 1' };
+    }
+
+    const s2T1 = bracketData[`${p}s3`];
+    const s2T2 = bracketData[`${p}s4`];
+    if (s2T1 && s2T2 && isMatchBetweenTeams(m, s2T1, s2T2)) {
+      return { roundKey: 'semi2', roundTitle: '⚔️ Yarı Final 2' };
+    }
+
+    const finT1 = bracketData[`${p}s5`];
+    const finT2 = bracketData[`${p}s6`];
+    if (finT1 && finT2 && isMatchBetweenTeams(m, finT1, finT2)) {
+      return { roundKey: 'final', roundTitle: '🏆 Büyük Final' };
+    }
+  }
+
+  return { 
+    roundKey: (m as any).round || 'semi1', 
+    roundTitle: (m as any).roundLabel || m.hafta || (m as any).round || 'Turnuva Maçı' 
+  };
+};
 
 export default function Turnuvalar({ currentLang, translations, onNavigate, teamLogos, currentUser }: TurnuvalarProps) {
   const [activeCup, setActiveCup] = useState<CupType>('wpc');
@@ -167,6 +243,124 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
   const allTournamentMatches = useMemo(() => {
     return mergeTournamentMatches(matches);
   }, [matches]);
+
+  // Synchronize bracket progression automatically whenever matches update
+  useEffect(() => {
+    const cups: ('bcl' | 'bel' | 'becl')[] = ['bcl', 'bel', 'becl'];
+    const seasons: (4 | 5)[] = [4, 5];
+    const pendingUpdates: Record<string, string> = {};
+    const matchesToUpdate: Match[] = [];
+
+    cups.forEach((cup) => {
+      seasons.forEach((season) => {
+        const p = `${cup}${season}`;
+        const sMatches = allTournamentMatches.filter(m => {
+          const cat = String(m.category || '').toUpperCase();
+          const hStr = String(m.hafta || '').toUpperCase();
+          const mSeason = Number((m as any).season);
+          const matchesCup = 
+            (cup === 'bcl' && (cat.includes('BCL') || cat.includes('UCL') || hStr.includes('BCL') || hStr.includes('UCL'))) ||
+            (cup === 'bel' && (cat.includes('BEL') || cat.includes('UEL') || hStr.includes('BEL') || hStr.includes('UEL'))) ||
+            (cup === 'becl' && (cat.includes('BECL') || cat.includes('UECL') || hStr.includes('BECL') || hStr.includes('UECL')));
+          if (!matchesCup) return false;
+          return mSeason ? mSeason === season : season === 5;
+        });
+
+        if (sMatches.length === 0) return;
+
+        const s1SlotT1 = bracketData[`${p}s1`];
+        const s1SlotT2 = bracketData[`${p}s2`];
+        const s2SlotT1 = bracketData[`${p}s3`];
+        const s2SlotT2 = bracketData[`${p}s4`];
+
+        // Find Semi 1 match
+        const s1Match = sMatches.find(m => {
+          const r = String((m as any).round || '').toLowerCase();
+          const h = String(m.hafta || '').toLowerCase();
+          if (r === 'semi1' || h.includes('yarı final 1') || h.includes('semi 1') || h === 'yf1') return true;
+          if (s1SlotT1 && s1SlotT2 && isMatchBetweenTeams(m, s1SlotT1, s1SlotT2) && r !== 'semi2' && r !== 'final' && !h.includes('yarı final 2') && !h.includes('büyük final')) return true;
+          return false;
+        });
+
+        // Find Semi 2 match
+        const s2Match = sMatches.find(m => {
+          const r = String((m as any).round || '').toLowerCase();
+          const h = String(m.hafta || '').toLowerCase();
+          if (r === 'semi2' || h.includes('yarı final 2') || h.includes('semi 2') || h === 'yf2') return true;
+          if (s2SlotT1 && s2SlotT2 && isMatchBetweenTeams(m, s2SlotT1, s2SlotT2) && r !== 'semi1' && r !== 'final' && !h.includes('yarı final 1') && !h.includes('büyük final')) return true;
+          return false;
+        });
+
+        let w1 = '';
+        if (s1Match) {
+          if ((s1Match as any).round !== 'semi1') {
+            matchesToUpdate.push({ ...s1Match, round: 'semi1', hafta: 'Yarı Final 1' });
+          }
+          if (!bracketData[`${p}s1`] && s1Match.team1) pendingUpdates[`${p}s1`] = s1Match.team1;
+          if (!bracketData[`${p}s2`] && s1Match.team2) pendingUpdates[`${p}s2`] = s1Match.team2;
+          if (s1Match.played) {
+            w1 = getWinnerOfMatch(s1Match);
+            if (w1 && bracketData[`${p}s5`] !== w1) {
+              pendingUpdates[`${p}s5`] = w1;
+            }
+          }
+        }
+
+        let w2 = '';
+        if (s2Match) {
+          if ((s2Match as any).round !== 'semi2') {
+            matchesToUpdate.push({ ...s2Match, round: 'semi2', hafta: 'Yarı Final 2' });
+          }
+          if (!bracketData[`${p}s3`] && s2Match.team1) pendingUpdates[`${p}s3`] = s2Match.team1;
+          if (!bracketData[`${p}s4`] && s2Match.team2) pendingUpdates[`${p}s4`] = s2Match.team2;
+          if (s2Match.played) {
+            w2 = getWinnerOfMatch(s2Match);
+            if (w2 && bracketData[`${p}s6`] !== w2) {
+              pendingUpdates[`${p}s6`] = w2;
+            }
+          }
+        }
+
+        const finT1 = w1 || bracketData[`${p}s5`] || pendingUpdates[`${p}s5`];
+        const finT2 = w2 || bracketData[`${p}s6`] || pendingUpdates[`${p}s6`];
+
+        const fMatch = sMatches.find(m => {
+          const r = String((m as any).round || '').toLowerCase();
+          const h = String(m.hafta || '').toLowerCase();
+          if (r === 'final' || h.includes('büyük final') || (h === 'final' && !h.includes('yarı') && !h.includes('semi'))) return true;
+          if (finT1 && finT2 && isMatchBetweenTeams(m, finT1, finT2) && r !== 'semi1' && r !== 'semi2' && !h.includes('yarı') && !h.includes('semi')) return true;
+          return false;
+        });
+
+        if (fMatch) {
+          if ((fMatch as any).round !== 'final') {
+            matchesToUpdate.push({ ...fMatch, round: 'final', hafta: 'Büyük Final' });
+          }
+          if (fMatch.played) {
+            const champ = getWinnerOfMatch(fMatch);
+            if (champ && bracketData[`${p}s7`] !== champ) {
+              pendingUpdates[`${p}s7`] = champ;
+            }
+          }
+        }
+      });
+    });
+
+    if (Object.keys(pendingUpdates).length > 0) {
+      setBracketData(prev => ({ ...prev, ...pendingUpdates }));
+      saveStoredBracketData(pendingUpdates);
+      setDoc(doc(db, 'brackets', 'data'), pendingUpdates, { merge: true }).catch(() => {});
+    }
+
+    if (matchesToUpdate.length > 0) {
+      matchesToUpdate.forEach(um => {
+        saveStoredTournamentMatch(um);
+        if (um.id) {
+          setDoc(doc(db, 'matches', um.id), um, { merge: true }).catch(() => {});
+        }
+      });
+    }
+  }, [allTournamentMatches]);
 
   // Helper to open Add Match modal with optional pre-filled teams
   const handleOpenAddMatch = (
@@ -339,24 +533,36 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
     defaultT1?: string,
     defaultT2?: string
   ) => {
+    // If existingMatch not provided, attempt to locate existing match by round or teams
+    let foundMatch = existingMatch;
+    if (!foundMatch) {
+      const sMatches = getCupSeasonMatches(cupTag, season as any);
+      foundMatch = sMatches.find(m => {
+        const r = String((m as any).round || '').toLowerCase();
+        if (roundKey && r === roundKey) return true;
+        if (defaultT1 && defaultT2 && isMatchBetweenTeams(m, defaultT1, defaultT2)) return true;
+        return false;
+      });
+    }
+
     setQsCupTag(cupTag);
     setQsSeason(season);
     setQsRoundKey(roundKey);
     setQsRoundTitle(roundTitle);
-    setQsMatch(existingMatch || null);
+    setQsMatch(foundMatch || null);
 
-    const t1 = existingMatch?.team1 || defaultT1 || (teams[0]?.name || 'Takım 1');
-    const t2 = existingMatch?.team2 || defaultT2 || (teams[1]?.name || 'Takım 2');
+    const t1 = foundMatch?.team1 || defaultT1 || (teams[0]?.name || 'Takım 1');
+    const t2 = foundMatch?.team2 || defaultT2 || (teams[1]?.name || 'Takım 2');
     setQsTeam1(t1);
     setQsTeam2(t2);
 
-    setQsScore1(existingMatch ? String(existingMatch.score1 ?? '0') : '0');
-    setQsScore2(existingMatch ? String(existingMatch.score2 ?? '0') : '0');
-    setQsPlayed(existingMatch ? Boolean(existingMatch.played) : true);
-    setQsPenaltyWinner((existingMatch as any)?.penaltyWinner || '');
+    setQsScore1(foundMatch ? String(foundMatch.score1 ?? '0') : '0');
+    setQsScore2(foundMatch ? String(foundMatch.score2 ?? '0') : '0');
+    setQsPlayed(foundMatch ? Boolean(foundMatch.played) : true);
+    setQsPenaltyWinner((foundMatch as any)?.penaltyWinner || '');
 
     const todayStr = new Date().toLocaleDateString('tr-TR');
-    setQsDate(existingMatch?.date || todayStr);
+    setQsDate(foundMatch?.date || todayStr);
     setQuickScoreModalOpen(true);
   };
 
@@ -369,8 +575,16 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
     setSavingQuickScore(true);
     try {
       const now = Date.now();
+      // Locate existing match to avoid creating duplicate match records
+      const existingMatch = qsMatch || matches.find(m => 
+        (qsMatch?.id && m.id === qsMatch.id) ||
+        (isMatchBetweenTeams(m, qsTeam1, qsTeam2) &&
+         Number((m as any).season) === Number(qsSeason) &&
+         String(m.category || '').toUpperCase().includes(qsCupTag.toUpperCase()))
+      );
+
       const canonicalSlotId = qsCupTag !== 'wpc' && qsRoundKey ? `${qsCupTag}_${qsSeason}_${qsRoundKey}` : '';
-      const docId = qsMatch?.id || canonicalSlotId || `${qsTeam1}-vs-${qsTeam2}-${now}`;
+      const docId = existingMatch?.id || canonicalSlotId || `${qsTeam1}-vs-${qsTeam2}-${now}`;
       const categoryTag = qsCupTag === 'wpc' ? 'TURNUVA' : qsCupTag.toUpperCase();
 
       let roundLabel = qsRoundTitle;
@@ -402,10 +616,10 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
         score2: String(qsScore2),
         played: qsPlayed,
         date: qsDate.trim() || new Date().toLocaleDateString('tr-TR'),
-        datejav: qsMatch?.datejav || now,
+        datejav: existingMatch?.datejav || now,
         ligm: false,
-        timeline: qsMatch?.timeline || [],
-        lineup: qsMatch?.lineup || {},
+        timeline: existingMatch?.timeline || [],
+        lineup: existingMatch?.lineup || {},
         penaltyWinner: qsPenaltyWinner || undefined
       };
 
@@ -416,9 +630,13 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
           (m as any).round === qsRoundKey &&
           Number((m as any).season) === Number(qsSeason) &&
           String(m.category || '').toUpperCase().includes(qsCupTag.toUpperCase())
+        ) || (
+          isMatchBetweenTeams(m, qsTeam1, qsTeam2) &&
+          Number((m as any).season) === Number(qsSeason) &&
+          String(m.category || '').toUpperCase().includes(qsCupTag.toUpperCase())
         ));
         if (idx >= 0) {
-          next[idx] = { ...next[idx], ...matchPayload };
+          next[idx] = { ...next[idx], ...matchPayload, id: next[idx].id || docId };
         } else {
           next.push(matchPayload);
         }
@@ -435,18 +653,24 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
           bUpdates[`${p}s2`] = qsTeam2;
           if (qsPlayed && winner) {
             bUpdates[`${p}s5`] = winner; // Advances to Finalist 1!
+          } else if (!qsPlayed) {
+            bUpdates[`${p}s5`] = '';
           }
         } else if (qsRoundKey === 'semi2') {
           bUpdates[`${p}s3`] = qsTeam1;
           bUpdates[`${p}s4`] = qsTeam2;
           if (qsPlayed && winner) {
             bUpdates[`${p}s6`] = winner; // Advances to Finalist 2!
+          } else if (!qsPlayed) {
+            bUpdates[`${p}s6`] = '';
           }
         } else if (qsRoundKey === 'final') {
           bUpdates[`${p}s5`] = qsTeam1;
           bUpdates[`${p}s6`] = qsTeam2;
           if (qsPlayed && winner) {
             bUpdates[`${p}s7`] = winner; // Champion crowned!
+          } else if (!qsPlayed) {
+            bUpdates[`${p}s7`] = '';
           }
         }
 
@@ -745,21 +969,38 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
     // 1. If an actual match exists in tournament matches, render rich interactive card
     if (match) {
       const isPlayed = match.played;
-      const s1 = Number(match.score1) || 0;
-      const s2 = Number(match.score2) || 0;
-      const t1Win = isPlayed && s1 > s2;
-      const t2Win = isPlayed && s2 > s1;
       const matchDocId = match.id || `${match.team1}-vs-${match.team2}-${match.datejav}`;
 
+      // Respect bracket slot team ordering if available, otherwise match ordering
+      let displayT1 = bracketData[slotAKey] || match.team1;
+      let displayT2 = bracketData[slotBKey] || match.team2;
+      let scoreT1 = match.score1;
+      let scoreT2 = match.score2;
+
+      if (isSameTeam(match.team1, displayT2) && isSameTeam(match.team2, displayT1)) {
+        scoreT1 = match.score2;
+        scoreT2 = match.score1;
+      } else if (!isSameTeam(match.team1, displayT1) && !isSameTeam(match.team2, displayT2)) {
+        displayT1 = match.team1;
+        displayT2 = match.team2;
+        scoreT1 = match.score1;
+        scoreT2 = match.score2;
+      }
+
+      const s1Num = Number(scoreT1) || 0;
+      const s2Num = Number(scoreT2) || 0;
+      let t1Win = isPlayed && s1Num > s2Num;
+      let t2Win = isPlayed && s2Num > s1Num;
+      if (isPlayed && s1Num === s2Num && (match as any).penaltyWinner) {
+        t1Win = isSameTeam((match as any).penaltyWinner, displayT1);
+        t2Win = isSameTeam((match as any).penaltyWinner, displayT2);
+      }
+
       const { multiplier: cupMult } = getMatchMultiplier(match.category || cupTag);
-      const res1 = calculateMatchScore(s1, s2);
-      const res2 = calculateMatchScore(s2, s1);
+      const res1 = calculateMatchScore(s1Num, s2Num);
+      const res2 = calculateMatchScore(s2Num, s1Num);
       const delta1 = Number((res1.baseScore * cupMult).toFixed(2));
       const delta2 = Number((res2.baseScore * cupMult).toFixed(2));
-
-      // Check if bracketData overrides unplayed matches
-      const displayT1 = (!isPlayed && bracketData[slotAKey]) ? bracketData[slotAKey] : match.team1;
-      const displayT2 = (!isPlayed && bracketData[slotBKey]) ? bracketData[slotBKey] : match.team2;
 
       return (
         <div 
@@ -786,7 +1027,7 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
               <span className="text-xs font-black truncate">{displayT1}</span>
             </div>
             <span className={`text-xs px-2 py-0.5 rounded font-black shrink-0 ${t1Win ? 'bg-brand-maroon text-brand-gold' : 'bg-gray-100 text-gray-700'}`}>
-              {isPlayed ? match.score1 : '-'}
+              {isPlayed ? scoreT1 : '-'}
             </span>
           </div>
 
@@ -801,7 +1042,7 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
               <span className="text-xs font-black truncate">{displayT2}</span>
             </div>
             <span className={`text-xs px-2 py-0.5 rounded font-black shrink-0 ${t2Win ? 'bg-brand-maroon text-brand-gold' : 'bg-gray-100 text-gray-700'}`}>
-              {isPlayed ? match.score2 : '-'}
+              {isPlayed ? scoreT2 : '-'}
             </span>
           </div>
 
@@ -860,17 +1101,6 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
         </div>
       );
     }
-
-    // Helper to calculate winner of match
-    const getWinnerOfMatch = (m?: Match): string => {
-      if (!m || !m.played) return '';
-      const s1 = Number(m.score1) || 0;
-      const s2 = Number(m.score2) || 0;
-      if (s1 > s2) return m.team1;
-      if (s2 > s1) return m.team2;
-      if ((m as any).penaltyWinner) return (m as any).penaltyWinner;
-      return m.team1;
-    };
 
     // 2. Final Round logic (automatic finalist propagation)
     if (roundKey === 'final') {
@@ -1133,68 +1363,99 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
     const p = `${tag}${season}`;
     const seasonMatches = getCupSeasonMatches(tag, season);
 
-    // Prioritized match finder: strictly isolates each round and prevents semi matches from qualifying as final
+    // Prioritized match finder: matches canonical ID, explicit round, hafta text, or bracket slot teams
     const findRoundMatch = (rKey: 'semi1' | 'semi2' | 'final', semi1Ref?: Match, semi2Ref?: Match) => {
-      const candidates = seasonMatches.filter(m => {
+      let slotTeamA = '';
+      let slotTeamB = '';
+      if (rKey === 'semi1') {
+        slotTeamA = bracketData[`${p}s1`] || '';
+        slotTeamB = bracketData[`${p}s2`] || '';
+      } else if (rKey === 'semi2') {
+        slotTeamA = bracketData[`${p}s3`] || '';
+        slotTeamB = bracketData[`${p}s4`] || '';
+      } else if (rKey === 'final') {
+        slotTeamA = (semi1Ref && semi1Ref.played ? getWinnerOfMatch(semi1Ref) : '') || bracketData[`${p}s5`] || '';
+        slotTeamB = (semi2Ref && semi2Ref.played ? getWinnerOfMatch(semi2Ref) : '') || bracketData[`${p}s6`] || '';
+      }
+
+      const scoredMatches: { match: Match; priority: number }[] = [];
+
+      for (const m of seasonMatches) {
         const mRound = String((m as any).round || '').toLowerCase().trim();
         const mHafta = String(m.hafta || '').toLowerCase().trim();
+        const mId = String(m.id || '').toLowerCase().trim();
 
+        // 1. Check if strictly excluded from this round
         if (rKey === 'semi1') {
-          if (mRound === 'semi2' || mRound === 'final') return false;
-          if (mHafta.includes('yarı final 2') || mHafta.includes('semi 2') || mHafta.includes('büyük final')) return false;
-          return mRound === 'semi1' || mHafta.includes('yarı final 1') || mHafta.includes('semi 1');
+          if (mRound === 'semi2' || mRound === 'final') continue;
+          if (mHafta.includes('yarı final 2') || mHafta.includes('semi 2') || mHafta.includes('büyük final')) continue;
+        } else if (rKey === 'semi2') {
+          if (mRound === 'semi1' || mRound === 'final') continue;
+          if (mHafta.includes('yarı final 1') || mHafta.includes('semi 1') || mHafta.includes('büyük final')) continue;
+        } else if (rKey === 'final') {
+          if (mRound === 'semi1' || mRound === 'semi2') continue;
+          if (mHafta.includes('yarı') || mHafta.includes('semi')) continue;
+          if (semi1Ref && (m.id === semi1Ref.id || isMatchBetweenTeams(m, semi1Ref.team1, semi1Ref.team2))) continue;
+          if (semi2Ref && (m.id === semi2Ref.id || isMatchBetweenTeams(m, semi2Ref.team1, semi2Ref.team2))) continue;
         }
 
-        if (rKey === 'semi2') {
-          if (mRound === 'semi1' || mRound === 'final') return false;
-          if (mHafta.includes('yarı final 1') || mHafta.includes('semi 1') || mHafta.includes('büyük final')) return false;
-          return mRound === 'semi2' || mHafta.includes('yarı final 2') || mHafta.includes('semi 2');
+        // 2. Score priority
+        const canonicalId = `${tag}_${season}_${rKey}`.toLowerCase();
+        if (mId === canonicalId) {
+          scoredMatches.push({ match: m, priority: 100 });
+          continue;
         }
 
-        if (rKey === 'final') {
-          // Strictly knockout final: CANNOT be semi1 or semi2!
-          if (mRound === 'semi1' || mRound === 'semi2') return false;
-          if (mHafta.includes('yarı') || mHafta.includes('semi')) return false;
-          // In a knockout tournament, the Final cannot have the exact two teams from a single semi-final
-          if (semi1Ref && ((m.team1 === semi1Ref.team1 && m.team2 === semi1Ref.team2) || (m.team1 === semi1Ref.team2 && m.team2 === semi1Ref.team1))) {
-            return false;
-          }
-          if (semi2Ref && ((m.team1 === semi2Ref.team1 && m.team2 === semi2Ref.team2) || (m.team1 === semi2Ref.team2 && m.team2 === semi2Ref.team1))) {
-            return false;
-          }
-          return mRound === 'final' || mHafta.includes('büyük final') || mHafta === 'final';
+        if (mRound === rKey) {
+          scoredMatches.push({ match: m, priority: 90 });
+          continue;
         }
 
-        return false;
+        if (rKey === 'semi1' && (mHafta.includes('yarı final 1') || mHafta.includes('semi 1') || mHafta === 'yf1')) {
+          scoredMatches.push({ match: m, priority: 80 });
+          continue;
+        }
+
+        if (rKey === 'semi2' && (mHafta.includes('yarı final 2') || mHafta.includes('semi 2') || mHafta === 'yf2')) {
+          scoredMatches.push({ match: m, priority: 80 });
+          continue;
+        }
+
+        if (rKey === 'final' && (mHafta.includes('büyük final') || mHafta === 'final')) {
+          scoredMatches.push({ match: m, priority: 80 });
+          continue;
+        }
+
+        // 3. Match by teams in bracket slot
+        if (slotTeamA && slotTeamB && isMatchBetweenTeams(m, slotTeamA, slotTeamB)) {
+          scoredMatches.push({ match: m, priority: 70 });
+          continue;
+        }
+      }
+
+      if (scoredMatches.length === 0) return undefined;
+
+      // Sort by priority desc, then played desc, then datejav desc
+      scoredMatches.sort((a, b) => {
+        if (b.priority !== a.priority) return b.priority - a.priority;
+        if (a.match.played && !b.match.played) return -1;
+        if (!a.match.played && b.match.played) return 1;
+        return (Number(b.match.datejav) || 0) - (Number(a.match.datejav) || 0);
       });
 
-      if (candidates.length === 0) return undefined;
-      candidates.sort((a, b) => {
-        if (a.played && !b.played) return -1;
-        if (!a.played && b.played) return 1;
-        return (Number(b.datejav) || 0) - (Number(a.datejav) || 0);
-      });
-      return candidates[0];
+      return scoredMatches[0].match;
     };
 
     const semi1Match = findRoundMatch('semi1');
     const semi2Match = findRoundMatch('semi2');
     const finalMatch = findRoundMatch('final', semi1Match, semi2Match);
 
-    const getWinnerOfMatch = (m?: Match): string => {
-      if (!m || !m.played) return '';
-      const s1 = Number(m.score1) || 0;
-      const s2 = Number(m.score2) || 0;
-      if (s1 > s2) return m.team1;
-      if (s2 > s1) return m.team2;
-      if ((m as any).penaltyWinner) return (m as any).penaltyWinner;
-      return m.team1;
-    };
-
-    // Determine Champion strictly when the final match is actually played
+    // Determine Champion strictly when the final match is actually played or stored in bracketData
     let championTeam = '';
     if (finalMatch && finalMatch.played) {
       championTeam = getWinnerOfMatch(finalMatch);
+    } else if (bracketData[`${p}s7`]) {
+      championTeam = bracketData[`${p}s7`];
     }
 
     const champLogo = championTeam ? (teamLogos[championTeam] || 'https://via.placeholder.com/48?text=?') : '';
@@ -1358,7 +1619,8 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
           <div className="space-y-3">
             {cupMatches.map((m, idx) => {
               const docId = m.id || `${m.team1}-vs-${m.team2}-${m.datejav}`;
-              const roundTag = (m as any).roundLabel || m.hafta || (m as any).round || 'Turnuva Maçı';
+              const roundInfo = resolveMatchRound(m, cupFilter, activeSeason, bracketData);
+              const roundTag = roundInfo.roundTitle;
               return (
                 <div
                   key={m.id || idx}
@@ -1405,7 +1667,7 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleOpenQuickScore(roundTag, (m as any).round || 'semi1', cupFilter, (m as any).season || activeSeason || 5, m, m.team1, m.team2);
+                          handleOpenQuickScore(roundInfo.roundTitle, roundInfo.roundKey, cupFilter, (m as any).season || activeSeason || 5, m, m.team1, m.team2);
                         }}
                         className="bg-brand-gold hover:bg-amber-400 text-brand-dark text-[8px] font-black uppercase px-2 py-0.5 rounded shadow-xs"
                       >

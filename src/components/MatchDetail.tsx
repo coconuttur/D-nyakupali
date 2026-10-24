@@ -3,7 +3,7 @@ import { doc, getDoc, updateDoc, setDoc, collection, onSnapshot, query, where, g
 import { db } from '../firebase';
 import { Match, MatchTimelineEvent, Player, Team, UserProfile } from '../types';
 import { recalculateStandings, recalculatePlayerRatings } from '../lib/standings';
-import { getStoredTournamentMatches, DEFAULT_TOURNAMENT_MATCHES, saveStoredTournamentMatch } from '../lib/tournamentMatches';
+import { getStoredTournamentMatches, DEFAULT_TOURNAMENT_MATCHES, saveStoredTournamentMatch, saveStoredBracketData, normalizeCupKey } from '../lib/tournamentMatches';
 
 interface MatchDetailProps {
   matchId: string; // "team1-vs-team2-datejav" representation or tournament id
@@ -621,6 +621,41 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
     try {
       await setDoc(doc(db, 'matches', targetDocId), updatePayload, { merge: true });
       setDocId(targetDocId);
+
+      // If it's a tournament match, synchronize locally and advance bracket if played
+      const fullMatch: Match = {
+        ...(match || {}),
+        ...updatePayload,
+        id: targetDocId
+      };
+      const cat = String(fullMatch.category || matchCategory || '').toUpperCase();
+      const hStr = String(fullMatch.hafta || '').toUpperCase();
+      const cupKey = normalizeCupKey(cat, hStr);
+      if (cupKey && cupKey !== 'wpc') {
+        saveStoredTournamentMatch(fullMatch);
+        const s = Number((fullMatch as any).season) || 5;
+        const r = String((fullMatch as any).round || '').toLowerCase();
+        const p = `${cupKey}${s}`;
+        const s1 = Number(fullMatch.score1) || 0;
+        const s2 = Number(fullMatch.score2) || 0;
+        let winner = '';
+        if (s1 > s2) winner = fullMatch.team1;
+        else if (s2 > s1) winner = fullMatch.team2;
+        else winner = (fullMatch as any).penaltyWinner || fullMatch.team1;
+
+        const bUpdates: Record<string, string> = {};
+        if (r === 'semi1' && winner) bUpdates[`${p}s5`] = winner;
+        else if (r === 'semi2' && winner) bUpdates[`${p}s6`] = winner;
+        else if (r === 'final' && winner) bUpdates[`${p}s7`] = winner;
+
+        if (Object.keys(bUpdates).length > 0) {
+          saveStoredBracketData(bUpdates);
+          setDoc(doc(db, 'brackets', 'data'), bUpdates, { merge: true }).catch(() => {});
+        }
+      } else if (cat.includes('WPC') || cat.includes('TURNUVA')) {
+        saveStoredTournamentMatch(fullMatch);
+      }
+
       try {
         await recalculateStandings();
       } catch (stErr) {
