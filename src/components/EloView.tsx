@@ -36,10 +36,22 @@ export default function EloView({
   const [h2hTeam2, setH2hTeam2] = useState<string>('');
   const [h2hSeed, setH2hSeed] = useState<number>(0);
 
-  // 1. Calculate historical ELO for all teams
+  // Listen for local tournament match updates to ensure instantaneous reactive ELO updates
+  const [tournamentVersion, setTournamentVersion] = useState<number>(0);
+  React.useEffect(() => {
+    const handleUpdate = () => setTournamentVersion((v) => v + 1);
+    window.addEventListener('tournament_matches_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('tournament_matches_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
+  }, []);
+
+  // 1. Calculate historical ELO for all teams (incorporates league and tournament brackets)
   const eloStatsMap = useMemo(() => {
     return calculateAllTeamsElo(teams, matches, teamLogos);
-  }, [teams, matches, teamLogos]);
+  }, [teams, matches, teamLogos, tournamentVersion]);
 
   // 2. Sort teams by current ELO descending
   const sortedEloTeams = useMemo(() => {
@@ -162,20 +174,20 @@ export default function EloView({
             🏆 Turnuva Çarpanları:
           </span>
           <div className="flex flex-wrap gap-1.5">
-            <span className="bg-blue-600/60 px-2 py-0.5 rounded-full border border-blue-400/40 text-blue-100 font-bold">
-              UCL: 1.75x
+            <span className="bg-blue-600/60 px-2.5 py-0.5 rounded-full border border-blue-400/40 text-blue-100 font-bold">
+              BCL / UCL: 1.75x
             </span>
-            <span className="bg-amber-600/60 px-2 py-0.5 rounded-full border border-amber-400/40 text-amber-100 font-bold">
-              UEL: 1.50x
+            <span className="bg-amber-600/60 px-2.5 py-0.5 rounded-full border border-amber-400/40 text-amber-100 font-bold">
+              BEL / UEL: 1.50x
             </span>
-            <span className="bg-emerald-600/60 px-2 py-0.5 rounded-full border border-emerald-400/40 text-emerald-100 font-bold">
-              UECL: 1.25x
+            <span className="bg-emerald-600/60 px-2.5 py-0.5 rounded-full border border-emerald-400/40 text-emerald-100 font-bold">
+              BECL / UECL: 1.25x
             </span>
-            <span className="bg-white/15 px-2 py-0.5 rounded-full border border-white/20 text-white font-bold">
+            <span className="bg-white/15 px-2.5 py-0.5 rounded-full border border-white/20 text-white font-bold">
               LİG: 1.00x
             </span>
-            <span className="bg-purple-600/60 px-2 py-0.5 rounded-full border border-purple-400/40 text-purple-100 font-bold">
-              TURNUVA: 0.50x
+            <span className="bg-purple-600/60 px-2.5 py-0.5 rounded-full border border-purple-400/40 text-purple-100 font-bold">
+              WPC / TURNUVA: 0.50x
             </span>
           </div>
         </div>

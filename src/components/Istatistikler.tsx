@@ -6,6 +6,7 @@ import { TROPHIES_LIST, TROPHY_MAP } from '../lib/trophies';
 import { TrophyDetailModal } from './TrophyDetailModal';
 import EloView from './EloView';
 import { calculatePlayerStatsFromMatches, calculateOwnGoalSummary, syncPlayerStatsToFirestore, buildPlayerAliasMap } from '../lib/playerStats';
+import { mergeTournamentMatches } from '../lib/tournamentMatches';
 
 interface IstatistiklerProps {
   currentLang: 'tr' | 'en' | 'pt';
@@ -70,15 +71,34 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
   }, []);
 
   useEffect(() => {
+    let latestFirestoreList: Match[] = [];
+
+    const updateMatches = (snapList: Match[]) => {
+      setMatches(mergeTournamentMatches(snapList));
+    };
+
     const unsubscribeMatches = onSnapshot(collection(db, 'matches'), (snap) => {
       const matchList: Match[] = [];
       snap.forEach((doc) => {
         const data = doc.data();
         matchList.push({ id: doc.id, ...data } as Match);
       });
-      setMatches(matchList);
+      latestFirestoreList = matchList;
+      updateMatches(matchList);
     });
-    return () => unsubscribeMatches();
+
+    const handleTournamentUpdate = () => {
+      updateMatches(latestFirestoreList);
+    };
+
+    window.addEventListener('tournament_matches_updated', handleTournamentUpdate);
+    window.addEventListener('storage', handleTournamentUpdate);
+
+    return () => {
+      unsubscribeMatches();
+      window.removeEventListener('tournament_matches_updated', handleTournamentUpdate);
+      window.removeEventListener('storage', handleTournamentUpdate);
+    };
   }, []);
 
   const t = translations[currentLang];

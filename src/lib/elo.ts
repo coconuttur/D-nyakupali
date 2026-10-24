@@ -1,5 +1,6 @@
 import { Match, Team } from '../types';
 import { getAllSeasonMatches } from './fixtureGenerator';
+import { mergeTournamentMatches } from './tournamentMatches';
 
 export interface EloMatchLog {
   matchId: string;
@@ -78,24 +79,24 @@ export interface SimulatedStanding {
 export const BASE_ELO = 1000;
 
 /**
- * Returns importance multiplier based on category
- * UCL: 1.75, UEL: 1.5, UECL: 1.25, TURNUVA / World Peace Cup: 0.5, LİG / Normal: 1.0
+ * Returns importance multiplier based on tournament / league category
+ * BCL (UCL): 1.75x, BEL (UEL): 1.50x, BECL (UECL): 1.25x, WPC / TURNUVA / World Cup: 0.50x, LİG / Normal: 1.00x
  */
 export function getMatchMultiplier(category?: string, isWorldCup?: boolean): { multiplier: number; label: string } {
   if (isWorldCup) {
-    return { multiplier: 0.5, label: 'TURNUVA (0.5x)' };
+    return { multiplier: 0.5, label: 'DÜNYA KUPASI (0.5x)' };
   }
   const cat = (category || '').toUpperCase().trim();
-  if (cat.includes('UCL') || cat.includes('CHAMPIONS')) {
-    return { multiplier: 1.75, label: 'UCL (1.75x)' };
+  if (cat === 'BCL' || cat.startsWith('BCL') || cat.includes('BCL') || cat.includes('UCL') || cat.includes('CHAMPIONS')) {
+    return { multiplier: 1.75, label: 'BCL (1.75x)' };
   }
-  if (cat.includes('UECL') || cat.includes('CONFERENCE')) {
-    return { multiplier: 1.25, label: 'UECL (1.25x)' };
+  if (cat === 'BEL' || cat.startsWith('BEL') || cat.includes('BEL') || cat.includes('UEL') || cat.includes('EUROPA')) {
+    return { multiplier: 1.5, label: 'BEL (1.5x)' };
   }
-  if (cat.includes('UEL') || cat.includes('EUROPA')) {
-    return { multiplier: 1.5, label: 'UEL (1.5x)' };
+  if (cat === 'BECL' || cat.startsWith('BECL') || cat.includes('BECL') || cat.includes('UECL') || cat.includes('CONFERENCE')) {
+    return { multiplier: 1.25, label: 'BECL (1.25x)' };
   }
-  if (cat.includes('TURNUVA') || cat.includes('CUP') || cat.includes('WORLD PEACE')) {
+  if (cat === 'WPC' || cat.startsWith('WPC') || cat.includes('WPC') || cat.includes('TURNUVA') || cat.includes('CUP') || cat.includes('WORLD PEACE')) {
     return { multiplier: 0.5, label: 'TURNUVA (0.5x)' };
   }
   return { multiplier: 1.0, label: 'LİG MAÇI (1.0x)' };
@@ -184,8 +185,11 @@ export function calculateAllTeamsElo(
     };
   });
 
+  // Incorporate all played matches from Firestore and tournament brackets
+  const allMatches = mergeTournamentMatches(matches);
+
   // Sort played matches chronologically if possible
-  const playedMatches = matches
+  const playedMatches = allMatches
     .filter((m) => m.played)
     .sort((a, b) => (Number(a.datejav) || 0) - (Number(b.datejav) || 0));
 
@@ -504,11 +508,20 @@ export function simulateLeagueSeason(
   // Incorporate full 22 weeks of league matches (including return fixtures for weeks 12-22)
   const fullSeasonMatches = getAllSeasonMatches(matches);
 
-  // Filter unplayed league matches
+  // Filter unplayed league matches (exclude tournament brackets and cups)
   const unplayedMatches = fullSeasonMatches.filter((m) => {
     if (m.played) return false;
     const cat = (m.category || '').toUpperCase().trim();
-    if (cat.includes('TURNUVA') || cat.includes('UCL') || cat.includes('UEL') || cat.includes('UECL')) {
+    if (
+      cat.includes('TURNUVA') ||
+      cat.includes('UCL') ||
+      cat.includes('UEL') ||
+      cat.includes('UECL') ||
+      cat.includes('BCL') ||
+      cat.includes('BEL') ||
+      cat.includes('BECL') ||
+      cat.includes('WPC')
+    ) {
       return false;
     }
     // Must have team names

@@ -15,266 +15,23 @@ interface TurnuvalarProps {
 
 type CupType = 'wpc' | 'bcl' | 'bel' | 'becl' | 'wc';
 
-// Default tournament matches for BCL (UCL), BEL (UEL), and BECL (UECL)
-const DEFAULT_TOURNAMENT_MATCHES: Match[] = [
-  // BCL (UCL) 4. Sezon
-  {
-    id: 'bcl_4_semi1',
-    team1: 'Holy Munchen',
-    team2: 'Pofuspor',
-    category: 'BCL',
-    season: 4 as any,
-    round: 'semi1',
-    hafta: 'Yarı Final 1',
-    score1: '1',
-    score2: '2',
-    played: true,
-    date: '20.06.2025',
-    datejav: 1750410000000,
-    ligm: false,
-    timeline: []
-  },
-  {
-    id: 'bcl_4_semi2',
-    team1: 'Döner FC',
-    team2: 'Leogard',
-    category: 'BCL',
-    season: 4 as any,
-    round: 'semi2',
-    hafta: 'Yarı Final 2',
-    score1: '3',
-    score2: '1',
-    played: true,
-    date: '21.06.2025',
-    datejav: 1750496400000,
-    ligm: false,
-    timeline: []
-  },
-  {
-    id: 'bcl_4_final',
-    team1: 'Pofuspor',
-    team2: 'Döner FC',
-    category: 'BCL',
-    season: 4 as any,
-    round: 'final',
-    hafta: 'Büyük Final',
-    score1: '2',
-    score2: '1',
-    played: true,
-    date: '28.06.2025',
-    datejav: 1751101200000,
-    ligm: false,
-    timeline: []
-  },
+import {
+  DEFAULT_TOURNAMENT_MATCHES,
+  getStoredTournamentMatches,
+  saveStoredTournamentMatch,
+  removeStoredTournamentMatch,
+  getStoredBracketData,
+  saveStoredBracketData,
+  normalizeCupKey,
+  getTournamentInfo,
+  mergeTournamentMatches
+} from '../lib/tournamentMatches';
+import { calculateMatchScore, getMatchMultiplier } from '../lib/elo';
 
-  // BECL (UECL) 4. Sezon
-  {
-    id: 'becl_4_semi1',
-    team1: 'Hendrix United',
-    team2: 'KFCelona',
-    category: 'BECL',
-    season: 4 as any,
-    round: 'semi1',
-    hafta: 'Yarı Final 1',
-    score1: '0',
-    score2: '2',
-    played: true,
-    date: '15.06.2025',
-    datejav: 1749978000000,
-    ligm: false,
-    timeline: []
-  },
-  {
-    id: 'becl_4_semi2',
-    team1: 'Xeilmes',
-    team2: 'Sp5der Jack',
-    category: 'BECL',
-    season: 4 as any,
-    round: 'semi2',
-    hafta: 'Yarı Final 2',
-    score1: '1',
-    score2: '3',
-    played: true,
-    date: '16.06.2025',
-    datejav: 1750064400000,
-    ligm: false,
-    timeline: []
-  },
-  {
-    id: 'becl_4_final',
-    team1: 'KFCelona',
-    team2: 'Sp5der Jack',
-    category: 'BECL',
-    season: 4 as any,
-    round: 'final',
-    hafta: 'Büyük Final',
-    score1: '1',
-    score2: '2',
-    played: true,
-    date: '22.06.2025',
-    datejav: 1750582800000,
-    ligm: false,
-    timeline: []
-  },
-
-  // BEL (UEL) 5. Sezon
-  {
-    id: 'bel_5_semi1',
-    team1: 'Xeilmes',
-    team2: 'Sp5der Jack',
-    category: 'BEL',
-    season: 5 as any,
-    round: 'semi1',
-    hafta: 'Yarı Final 1',
-    score1: '0',
-    score2: '0',
-    played: false,
-    date: '20.10.2026',
-    datejav: 1792486800000,
-    ligm: false,
-    timeline: []
-  },
-  {
-    id: 'bel_5_semi2',
-    team1: 'Realyon',
-    team2: 'DeathEagle',
-    category: 'BEL',
-    season: 5 as any,
-    round: 'semi2',
-    hafta: 'Yarı Final 2',
-    score1: '0',
-    score2: '0',
-    played: false,
-    date: '21.10.2026',
-    datejav: 1792573200000,
-    ligm: false,
-    timeline: []
-  },
-
-  // BECL (UECL) 5. Sezon
-  {
-    id: 'becl_5_semi1',
-    team1: 'Holy Munchen',
-    team2: 'Bobblica',
-    category: 'BECL',
-    season: 5 as any,
-    round: 'semi1',
-    hafta: 'Yarı Final 1',
-    score1: '0',
-    score2: '0',
-    played: false,
-    date: '22.10.2026',
-    datejav: 1792659600000,
-    ligm: false,
-    timeline: []
-  },
-  {
-    id: 'becl_5_semi2',
-    team1: 'New Hollands',
-    team2: 'Döner FC',
-    category: 'BECL',
-    season: 5 as any,
-    round: 'semi2',
-    hafta: 'Yarı Final 2',
-    score1: '0',
-    score2: '0',
-    played: false,
-    date: '23.10.2026',
-    datejav: 1792746000000,
-    ligm: false,
-    timeline: []
-  },
-
-  // BCL (UCL) 5. Sezon
-  {
-    id: 'bcl_5_semi1',
-    team1: 'Holy Munchen',
-    team2: 'Leogard',
-    category: 'BCL',
-    season: 5 as any,
-    round: 'semi1',
-    hafta: 'Yarı Final 1',
-    score1: '0',
-    score2: '0',
-    played: false,
-    date: '24.10.2026',
-    datejav: 1792832400000,
-    ligm: false,
-    timeline: []
-  },
-  {
-    id: 'bcl_5_semi2',
-    team1: 'Pofuspor',
-    team2: 'Döner FC',
-    category: 'BCL',
-    season: 5 as any,
-    round: 'semi2',
-    hafta: 'Yarı Final 2',
-    score1: '0',
-    score2: '0',
-    played: false,
-    date: '25.10.2026',
-    datejav: 1792918800000,
-    ligm: false,
-    timeline: []
-  }
-];
-
-// LocalStorage helpers to guarantee persistence even if Firestore is restricted or offline
-const LOCAL_MATCHES_KEY = 'bobblekolik_tournament_matches';
-const LOCAL_BRACKETS_KEY = 'bobblekolik_bracket_data';
-
-const getStoredMatches = (): Match[] => {
-  try {
-    const raw = localStorage.getItem(LOCAL_MATCHES_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    return [];
-  }
-};
-
-const saveStoredMatch = (match: Match) => {
-  try {
-    const current = getStoredMatches();
-    const idx = current.findIndex(m => m.id === match.id);
-    if (idx >= 0) {
-      current[idx] = match;
-    } else {
-      current.push(match);
-    }
-    localStorage.setItem(LOCAL_MATCHES_KEY, JSON.stringify(current));
-  } catch (e) {
-    console.error('Failed to save match to localStorage', e);
-  }
-};
-
-const removeStoredMatch = (matchId: string) => {
-  try {
-    const current = getStoredMatches().filter(m => m.id !== matchId);
-    localStorage.setItem(LOCAL_MATCHES_KEY, JSON.stringify(current));
-  } catch (e) {
-    console.error('Failed to remove match from localStorage', e);
-  }
-};
-
-const getStoredBracketData = (): Record<string, string> => {
-  try {
-    const raw = localStorage.getItem(LOCAL_BRACKETS_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch (e) {
-    return {};
-  }
-};
-
-const saveStoredBracketData = (updates: Record<string, string>) => {
-  try {
-    const current = getStoredBracketData();
-    const merged = { ...current, ...updates };
-    localStorage.setItem(LOCAL_BRACKETS_KEY, JSON.stringify(merged));
-  } catch (e) {
-    console.error('Failed to save bracket data to localStorage', e);
-  }
-};
+// Compatibility aliases
+const getStoredMatches = getStoredTournamentMatches;
+const saveStoredMatch = saveStoredTournamentMatch;
+const removeStoredMatch = removeStoredTournamentMatch;
 
 export default function Turnuvalar({ currentLang, translations, onNavigate, teamLogos, currentUser }: TurnuvalarProps) {
   const [activeCup, setActiveCup] = useState<CupType>('wpc');
@@ -393,71 +150,9 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
 
   const t = translations[currentLang];
 
-  // Helper to normalize cup identifier
-  const normalizeCupKey = (cat?: string, hStr?: string) => {
-    const c = String(cat || '').toUpperCase();
-    const h = String(hStr || '').toUpperCase();
-    if (c.includes('BCL') || c.includes('UCL') || c.includes('CHAMPIONS') || h.includes('BCL') || h.includes('UCL')) return 'bcl';
-    if (c.includes('BEL') || c.includes('UEL') || c.includes('EUROPA') || h.includes('BEL') || h.includes('UEL')) return 'bel';
-    if (c.includes('BECL') || c.includes('UECL') || c.includes('CONFERENCE') || h.includes('BECL') || h.includes('UECL')) return 'becl';
-    if (c.includes('WPC') || c.includes('WORLD PEACE') || c.includes('TURNUVA') || h.includes('WPC')) return 'wpc';
-    return '';
-  };
-
   // Merge default tournament matches with real matches from Firestore & local edits
-  // Real played matches COMPLETELY REPLACE default matches for that round/slot!
   const allTournamentMatches = useMemo(() => {
-    const realMatchMap = new Map<string, Match>();
-    const slotToRealMatch = new Map<string, Match>();
-
-    matches.forEach((m) => {
-      const docId = m.id || `${m.team1}-vs-${m.team2}-${m.datejav}`;
-      const normalizedMatch = { ...m, id: docId };
-      realMatchMap.set(docId, normalizedMatch);
-
-      const cup = normalizeCupKey(m.category, m.hafta);
-      const season = (m as any).season;
-      const round = (m as any).round;
-      if (cup && season && round) {
-        const slotKey = `${cup}_${season}_${round}`;
-        const existing = slotToRealMatch.get(slotKey);
-        // Prioritize played matches, then more recently updated matches
-        if (!existing || (!existing.played && normalizedMatch.played) || (Number(normalizedMatch.datejav) || 0) > (Number(existing.datejav) || 0)) {
-          slotToRealMatch.set(slotKey, normalizedMatch);
-        }
-      }
-    });
-
-    const resultMatches: Match[] = [];
-    const usedRealIds = new Set<string>();
-
-    DEFAULT_TOURNAMENT_MATCHES.forEach((defaultM) => {
-      const cup = normalizeCupKey(defaultM.category, defaultM.hafta);
-      const season = (defaultM as any).season;
-      const round = (defaultM as any).round;
-      const slotKey = `${cup}_${season}_${round}`;
-
-      const realByDocId = realMatchMap.get(defaultM.id);
-      const realBySlot = slotToRealMatch.get(slotKey);
-
-      if (realByDocId) {
-        resultMatches.push(realByDocId);
-        usedRealIds.add(realByDocId.id);
-      } else if (realBySlot) {
-        resultMatches.push(realBySlot);
-        usedRealIds.add(realBySlot.id);
-      } else {
-        resultMatches.push(defaultM);
-      }
-    });
-
-    realMatchMap.forEach((realM) => {
-      if (!usedRealIds.has(realM.id)) {
-        resultMatches.push(realM);
-      }
-    });
-
-    return resultMatches;
+    return mergeTournamentMatches(matches);
   }, [matches]);
 
   // Helper to open Add Match modal with optional pre-filled teams
@@ -920,6 +615,12 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
       const t2Win = isPlayed && s2 > s1;
       const matchDocId = match.id || `${match.team1}-vs-${match.team2}-${match.datejav}`;
 
+      const { multiplier: cupMult } = getMatchMultiplier(match.category || cupTag);
+      const res1 = calculateMatchScore(s1, s2);
+      const res2 = calculateMatchScore(s2, s1);
+      const delta1 = Number((res1.baseScore * cupMult).toFixed(2));
+      const delta2 = Number((res2.baseScore * cupMult).toFixed(2));
+
       return (
         <div 
           onClick={() => handleOpenQuickScore(roundTitle, roundKey, cupTag, season, match, match.team1, match.team2)}
@@ -963,6 +664,24 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
               {isPlayed ? match.score2 : '-'}
             </span>
           </div>
+
+          {/* ELO Result Pill */}
+          {isPlayed && (
+            <div className="flex items-center justify-between text-[8px] font-black px-2 py-1 rounded-lg bg-amber-50 border border-amber-300 text-amber-950">
+              <span className="flex items-center gap-1">
+                <span>⚡ ELO ({cupMult}x):</span>
+              </span>
+              <div className="flex items-center gap-1 font-mono">
+                <span className={delta1 > 0 ? 'text-emerald-700 font-extrabold' : delta1 < 0 ? 'text-rose-700 font-extrabold' : 'text-gray-600'}>
+                  {delta1 >= 0 ? `+${delta1}` : delta1}
+                </span>
+                <span className="text-gray-400">/</span>
+                <span className={delta2 > 0 ? 'text-emerald-700 font-extrabold' : delta2 < 0 ? 'text-rose-700 font-extrabold' : 'text-gray-600'}>
+                  {delta2 >= 0 ? `+${delta2}` : delta2}
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Action buttons */}
           <div className="text-[9px] border-t border-dashed border-gray-100 pt-1.5 flex justify-between items-center gap-1">
@@ -1341,6 +1060,41 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
             </div>
           </div>
         </div>
+
+        {/* Bracket ELO Katsayısı ve Kuralları Bilgi Kartı */}
+        {(() => {
+          const tInfo = getTournamentInfo(tag);
+          return (
+            <div className="mt-8 max-w-3xl mx-auto bg-gradient-to-r from-brand-maroon/5 via-brand-gold/15 to-brand-maroon/5 border-2 border-brand-gold/60 rounded-2xl p-4 shadow-sm select-text">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-brand-maroon text-brand-gold flex items-center justify-center text-lg font-black shrink-0 shadow-xs border border-brand-gold/40">
+                    ⚡
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 justify-center sm:justify-start">
+                      <span className="font-black text-xs md:text-sm text-brand-maroon uppercase">
+                        {tInfo.cupTitle} ELO Katsayısı:
+                      </span>
+                      <span className="bg-brand-maroon text-brand-gold font-black text-xs px-2.5 py-0.5 rounded-lg border border-brand-gold shadow-xs">
+                        {tInfo.multiplier}x
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-600 font-bold mt-0.5">
+                      Bu eleme ağacındaki (bracket) tüm maç sonuçları, <strong>{tInfo.multiplier}x çarpanla</strong> doğrudan takım ELO reytingine işlenir.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-center gap-1.5 shrink-0 text-[10px] font-black text-brand-dark bg-white/90 px-3 py-1.5 rounded-xl border border-gray-200 shadow-xs">
+                  <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-mono">🟢 G: +{(3 * tInfo.multiplier).toFixed(2)} (+fark)</span>
+                  <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded font-mono">🟡 B: +{(1 * tInfo.multiplier).toFixed(2)}</span>
+                  <span className="text-rose-700 bg-rose-50 px-2 py-0.5 rounded font-mono">🔴 M: -{(3 * tInfo.multiplier).toFixed(2)} (-fark)</span>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     );
   };
@@ -1422,6 +1176,18 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
                     <div className="px-3 py-1 bg-brand-dark text-brand-gold rounded-xl font-black text-xs md:text-sm text-center border border-brand-gold">
                       {m.played ? `${m.score1} - ${m.score2}` : 'VS'}
                     </div>
+                    {m.played && (() => {
+                      const { multiplier: mult } = getMatchMultiplier(m.category || cupFilter);
+                      const s1 = Number(m.score1) || 0;
+                      const s2 = Number(m.score2) || 0;
+                      const d1 = Number((calculateMatchScore(s1, s2).baseScore * mult).toFixed(2));
+                      const d2 = Number((calculateMatchScore(s2, s1).baseScore * mult).toFixed(2));
+                      return (
+                        <div className="text-[8px] font-black text-amber-900 bg-amber-50 border border-amber-300 px-1.5 py-0.5 rounded mt-1 font-mono text-center shadow-2xs">
+                          ⚡ ELO ({mult}x): {d1 >= 0 ? `+${d1}` : d1} / {d2 >= 0 ? `+${d2}` : d2}
+                        </div>
+                      );
+                    })()}
                     <span className="text-[8px] md:text-[9px] font-bold text-gray-400 mt-0.5 truncate max-w-[90px]">
                       {m.date || 'Tarih Belirsiz'}
                     </span>
@@ -1514,6 +1280,36 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
                 {renderWpcGroup('A')}
                 {renderWpcGroup('B')}
               </div>
+
+              {/* WPC ELO Katsayısı Bilgi Kartı */}
+              <div className="max-w-3xl mx-auto bg-gradient-to-r from-brand-maroon/5 via-brand-gold/15 to-brand-maroon/5 border-2 border-brand-gold/60 rounded-2xl p-4 shadow-sm select-text">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-brand-maroon text-brand-gold flex items-center justify-center text-lg font-black shrink-0 shadow-xs border border-brand-gold/40">
+                      ⚡
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 justify-center sm:justify-start">
+                        <span className="font-black text-xs md:text-sm text-brand-maroon uppercase">
+                          World Peace Cup ELO Katsayısı:
+                        </span>
+                        <span className="bg-brand-maroon text-brand-gold font-black text-xs px-2.5 py-0.5 rounded-lg border border-brand-gold shadow-xs">
+                          0.50x
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-gray-600 font-bold mt-0.5">
+                        World Peace Cup turnuva maçları, <strong>0.50x katsayısıyla</strong> doğrudan takım ELO reytingine işlenir.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-center gap-1.5 shrink-0 text-[10px] font-black text-brand-dark bg-white/90 px-3 py-1.5 rounded-xl border border-gray-200 shadow-xs">
+                    <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-mono">🟢 G: +1.65 (+fark)</span>
+                    <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded font-mono">🟡 B: +0.50</span>
+                    <span className="text-rose-700 bg-rose-50 px-2 py-0.5 rounded font-mono">🔴 M: -1.65 (-fark)</span>
+                  </div>
+                </div>
+              </div>
+
               {renderTournamentMatches('wpc')}
             </div>
           )}
@@ -1743,6 +1539,14 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
                 </div>
               )}
 
+              {/* ELO Notice */}
+              <div className="bg-amber-50 border border-amber-300 rounded-xl p-2.5 text-center flex items-center justify-center gap-2 text-xs font-black text-amber-900 shadow-2xs">
+                <span>⚡</span>
+                <span>
+                  Bu maç <strong>{modalCup.toUpperCase()}</strong> ({getMatchMultiplier(modalCup).multiplier}x) katsayısıyla takım ELO reytingine işlenecektir.
+                </span>
+              </div>
+
               {/* Kaydet Butonu */}
               <button
                 type="button"
@@ -1897,6 +1701,14 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
                   </div>
                 </div>
               )}
+
+              {/* ELO Notice */}
+              <div className="bg-amber-50 border border-amber-300 rounded-xl p-2.5 text-center flex items-center justify-center gap-2 text-xs font-black text-amber-900 shadow-2xs">
+                <span>⚡</span>
+                <span>
+                  Bu maç <strong>{qsCupTag.toUpperCase()}</strong> ({getMatchMultiplier(qsCupTag).multiplier}x) katsayısıyla takım ELO reytingine doğrudan işlenecektir.
+                </span>
+              </div>
 
               {/* Action Buttons */}
               <div className="space-y-2 pt-2">
