@@ -45,6 +45,7 @@ export default function Duellolar({
 
   // Search / Filter
   const [searchTerm, setSearchTerm] = useState('');
+  const [onlyPlayed, setOnlyPlayed] = useState(true);
 
   // Add duel form state
   const [player1Name, setPlayer1Name] = useState('');
@@ -277,16 +278,20 @@ export default function Duellolar({
     return list;
   }, [players, duels]);
 
-  // Filter standings based on search
+  // Filter standings based on search and played status (defaults to only players with played > 0)
   const filteredStandings = useMemo(() => {
-    if (!searchTerm.trim()) return standings;
+    let list = standings;
+    if (onlyPlayed) {
+      list = list.filter((s) => s.played > 0);
+    }
+    if (!searchTerm.trim()) return list;
     const term = searchTerm.toLowerCase().trim();
-    return standings.filter(
+    return list.filter(
       (s) =>
         s.playerName.toLowerCase().includes(term) ||
         s.playerTeam.toLowerCase().includes(term)
     );
-  }, [standings, searchTerm]);
+  }, [standings, searchTerm, onlyPlayed]);
 
   // Handle Save Duel Match (ADMIN ONLY)
   const handleSaveDuel = async (e: React.FormEvent) => {
@@ -466,6 +471,21 @@ export default function Duellolar({
     }
   };
 
+  // Smooth scroll handler for adding duels
+  const handleScrollToAddDuel = () => {
+    const el = document.getElementById('add-duel-section');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      const recent = document.getElementById('recent-duels-section');
+      if (recent) {
+        recent.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      }
+    }
+  };
+
   return (
     <div className="space-y-8 animate-fade-in max-w-5xl mx-auto pb-12">
       {/* Toast Notification */}
@@ -501,18 +521,27 @@ export default function Duellolar({
 
           <div className="shrink-0 flex items-center gap-3">
             {isAdmin ? (
-              <a
-                href="#add-duel-section"
-                className="bg-brand-gold hover:bg-white text-brand-dark px-5 py-3 rounded-2xl font-black text-xs md:text-sm uppercase tracking-wider transition-all shadow-md hover:scale-105 active:scale-95 flex items-center gap-2"
+              <button
+                type="button"
+                onClick={handleScrollToAddDuel}
+                className="bg-brand-gold hover:bg-white text-brand-dark px-5 py-3 rounded-2xl font-black text-xs md:text-sm uppercase tracking-wider transition-all shadow-md hover:scale-105 active:scale-95 flex items-center gap-2 cursor-pointer"
               >
                 <span>➕</span>
                 <span>Yeni Düello Ekle</span>
-              </a>
+              </button>
             ) : (
-              <span className="bg-black/40 text-brand-gold border border-brand-gold/40 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5">
-                <span>👁️</span>
-                <span>İzleyici Modu</span>
-              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const el = document.getElementById('recent-duels-section');
+                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+                className="bg-black/40 hover:bg-black/60 text-brand-gold border border-brand-gold/40 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                title="Son oynanan düelloları inceleyin"
+              >
+                <span>⚔️</span>
+                <span>Düello Maçları</span>
+              </button>
             )}
           </div>
         </div>
@@ -536,31 +565,50 @@ export default function Duellolar({
 
       {/* Standings Table Card */}
       <div className="bg-brand-card rounded-3xl overflow-hidden border-b-8 border-brand-maroon shadow-md">
-        {/* Table Controls (Search & Counter) */}
-        <div className="p-4 bg-brand-maroon/5 border-b border-brand-maroon/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        {/* Table Controls (Search, Only Played Toggle & Counter) */}
+        <div className="p-4 bg-brand-maroon/5 border-b border-brand-maroon/10 flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-brand-maroon font-black text-xs md:text-sm uppercase tracking-wide">
             <span>📋</span>
-            <span>DÜELLO PUAN DURUMU ({filteredStandings.length} Oyuncu)</span>
+            <span>
+              DÜELLO PUAN DURUMU ({filteredStandings.length} {onlyPlayed ? 'Maç Yapan Oyuncu' : 'Oyuncu'})
+            </span>
           </div>
 
-          <div className="relative w-full sm:w-64">
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Oyuncu veya takım ara..."
-              className="w-full bg-white border border-gray-300 rounded-xl px-3 py-1.5 pl-8 text-xs font-bold text-brand-dark focus:outline-none focus:border-brand-maroon"
-            />
-            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
-            {searchTerm && (
-              <button
-                type="button"
-                onClick={() => setSearchTerm('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-brand-maroon text-xs"
-              >
-                ✕
-              </button>
-            )}
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Toggle: Sadece Oynayanları Göster */}
+            <button
+              type="button"
+              onClick={() => setOnlyPlayed(!onlyPlayed)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 border cursor-pointer ${
+                onlyPlayed
+                  ? 'bg-brand-maroon text-brand-gold border-brand-maroon shadow-xs'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              }`}
+              title="Sadece maç yapmış oyuncuları göster / gizle"
+            >
+              <span>{onlyPlayed ? '✓' : '○'}</span>
+              <span>Sadece Oynayanlar ({standings.filter((s) => s.played > 0).length})</span>
+            </button>
+
+            <div className="relative w-full sm:w-60">
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Oyuncu veya takım ara..."
+                className="w-full bg-white border border-gray-300 rounded-xl px-3 py-1.5 pl-8 text-xs font-bold text-brand-dark focus:outline-none focus:border-brand-maroon"
+              />
+              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-brand-maroon text-xs"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -588,8 +636,33 @@ export default function Duellolar({
               <tbody>
                 {filteredStandings.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="py-8 text-center text-gray-500 font-bold text-xs">
-                      {searchTerm ? 'Aramanıza uygun oyuncu bulunamadı.' : 'Henüz hiç oyuncu kaydı bulunmuyor.'}
+                    <td colSpan={10} className="py-10 text-center text-gray-500 font-bold text-xs">
+                      {searchTerm ? (
+                        'Aramanıza uygun oyuncu bulunamadı.'
+                      ) : onlyPlayed ? (
+                        <div className="flex flex-col items-center justify-center gap-2 p-4">
+                          <span className="text-3xl">⚔️</span>
+                          <span className="font-black text-sm text-brand-maroon">
+                            Henüz maç yapmış oyuncu bulunmuyor.
+                          </span>
+                          <p className="text-gray-500 max-w-md text-xs">
+                            {isAdmin
+                              ? 'Aşağıdaki "Yeni Düello Maçı Ekle" formundan ilk dostluk maçını eklediğinizde puan durumu otomatik olarak oluşacaktır.'
+                              : 'Yöneticiler düello maçı eklediğinde puan tablosu burada listelenecektir.'}
+                          </p>
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={handleScrollToAddDuel}
+                              className="mt-2 bg-brand-gold text-brand-dark px-4 py-2 rounded-xl text-xs font-black shadow-xs hover:bg-white transition-all cursor-pointer"
+                            >
+                              ➕ İlk Düelloyu Ekle
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        'Henüz hiç oyuncu kaydı bulunmuyor.'
+                      )}
                     </td>
                   </tr>
                 ) : (
