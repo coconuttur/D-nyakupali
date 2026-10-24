@@ -81,6 +81,19 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
   const [qsPenaltyWinner, setQsPenaltyWinner] = useState<string>('');
   const [savingQuickScore, setSavingQuickScore] = useState<boolean>(false);
 
+  // Change Teams Modal state
+  const [changeTeamsModalOpen, setChangeTeamsModalOpen] = useState(false);
+  const [ctCupTag, setCtCupTag] = useState<'bcl' | 'bel' | 'becl' | 'wpc'>('bcl');
+  const [ctSeason, setCtSeason] = useState<number>(5);
+  const [ctRoundKey, setCtRoundKey] = useState<string>('semi1');
+  const [ctRoundTitle, setCtRoundTitle] = useState<string>('');
+  const [ctSlotAKey, setCtSlotAKey] = useState<string>('');
+  const [ctSlotBKey, setCtSlotBKey] = useState<string>('');
+  const [ctTeam1, setCtTeam1] = useState<string>('');
+  const [ctTeam2, setCtTeam2] = useState<string>('');
+  const [ctMatch, setCtMatch] = useState<Match | null>(null);
+  const [savingTeams, setSavingTeams] = useState<boolean>(false);
+
   useEffect(() => {
     // 0. Load locally saved bracket data
     const localBracket = getStoredBracketData();
@@ -470,6 +483,129 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
     }
   };
 
+  // Helper to open Change Teams modal
+  const handleOpenChangeTeams = (
+    roundTitle: string,
+    roundKey: 'semi1' | 'semi2' | 'final' | string,
+    cupTag: 'bcl' | 'bel' | 'becl' | 'wpc',
+    season: number,
+    slotAKey: string,
+    slotBKey: string,
+    existingMatch?: Match,
+    defaultT1?: string,
+    defaultT2?: string
+  ) => {
+    setCtCupTag(cupTag);
+    setCtSeason(season);
+    setCtRoundKey(roundKey);
+    setCtRoundTitle(roundTitle);
+    setCtSlotAKey(slotAKey);
+    setCtSlotBKey(slotBKey);
+    setCtMatch(existingMatch || null);
+
+    const initialT1 = bracketData[slotAKey] || existingMatch?.team1 || defaultT1 || (teams[0]?.name || '');
+    const initialT2 = bracketData[slotBKey] || existingMatch?.team2 || defaultT2 || (teams[1]?.name || '');
+    setCtTeam1(initialT1);
+    setCtTeam2(initialT2);
+    setChangeTeamsModalOpen(true);
+  };
+
+  // Helper to save changed teams to bracketData and match
+  const handleSaveChangeTeams = async () => {
+    if (!ctTeam1 || !ctTeam2) {
+      alert('Lütfen iki takımı da seçiniz!');
+      return;
+    }
+    if (ctTeam1 === ctTeam2) {
+      alert('İki takım aynı olamaz!');
+      return;
+    }
+    setSavingTeams(true);
+    try {
+      const now = Date.now();
+      const p = `${ctCupTag}${ctSeason}`;
+      const bUpdates: Record<string, string> = {};
+
+      if (ctSlotAKey) bUpdates[ctSlotAKey] = ctTeam1;
+      if (ctSlotBKey) bUpdates[ctSlotBKey] = ctTeam2;
+
+      // Update bracket progression seeds
+      if (ctRoundKey === 'semi1') {
+        bUpdates[`${p}s1`] = ctTeam1;
+        bUpdates[`${p}s2`] = ctTeam2;
+      } else if (ctRoundKey === 'semi2') {
+        bUpdates[`${p}s3`] = ctTeam1;
+        bUpdates[`${p}s4`] = ctTeam2;
+      } else if (ctRoundKey === 'final') {
+        bUpdates[`${p}s5`] = ctTeam1;
+        bUpdates[`${p}s6`] = ctTeam2;
+      }
+
+      setBracketData((prev) => ({ ...prev, ...bUpdates }));
+      saveStoredBracketData(bUpdates);
+
+      // Also update or create the match in that slot
+      const canonicalSlotId = ctCupTag !== 'wpc' && ctRoundKey ? `${ctCupTag}_${ctSeason}_${ctRoundKey}` : '';
+      const docId = ctMatch?.id || canonicalSlotId || `${ctTeam1}-vs-${ctTeam2}-${now}`;
+      const categoryTag = ctCupTag === 'wpc' ? 'TURNUVA' : ctCupTag.toUpperCase();
+
+      const updatedMatch: Match = {
+        id: docId,
+        team1: ctTeam1,
+        team2: ctTeam2,
+        category: categoryTag,
+        season: ctSeason as any,
+        round: ctRoundKey,
+        hafta: ctRoundTitle || ctRoundKey,
+        score1: ctMatch ? ctMatch.score1 : '0',
+        score2: ctMatch ? ctMatch.score2 : '0',
+        played: ctMatch ? ctMatch.played : false,
+        date: ctMatch?.date || new Date().toLocaleDateString('tr-TR'),
+        datejav: ctMatch?.datejav || now,
+        ligm: false,
+        timeline: ctMatch?.timeline || [],
+        lineup: ctMatch?.lineup || {}
+      };
+
+      // 1. Optimistic React update
+      setMatches((prev) => {
+        const next = [...prev];
+        const idx = next.findIndex(m => m.id === docId || (
+          (m as any).round === ctRoundKey &&
+          Number((m as any).season) === Number(ctSeason) &&
+          String(m.category || '').toUpperCase().includes(ctCupTag.toUpperCase())
+        ));
+        if (idx >= 0) {
+          next[idx] = { ...next[idx], ...updatedMatch };
+        } else {
+          next.push(updatedMatch);
+        }
+        return next;
+      });
+
+      // 2. Persist locally
+      saveStoredTournamentMatch(updatedMatch);
+
+      // 3. Persist to Firestore
+      try {
+        await setDoc(doc(db, 'matches', docId), updatedMatch, { merge: true });
+        if (Object.keys(bUpdates).length > 0) {
+          await setDoc(doc(db, 'brackets', 'data'), bUpdates, { merge: true });
+        }
+      } catch (fbErr) {
+        console.warn('Firestore write notice (saved locally):', fbErr);
+      }
+
+      setChangeTeamsModalOpen(false);
+      setToastMessage(`✅ Takımlar güncellendi: ${ctTeam1} vs ${ctTeam2}`);
+    } catch (err: any) {
+      console.error('Error saving teams:', err);
+      alert('Takımlar güncellenirken hata: ' + (err?.message || 'Bilinmeyen hata'));
+    } finally {
+      setSavingTeams(false);
+    }
+  };
+
   // Helper to filter matches by cup and season
   const getCupSeasonMatches = (cupFilter: 'wpc' | 'bcl' | 'bel' | 'becl', season?: 4 | 5) => {
     return allTournamentMatches.filter((m) => {
@@ -621,9 +757,13 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
       const delta1 = Number((res1.baseScore * cupMult).toFixed(2));
       const delta2 = Number((res2.baseScore * cupMult).toFixed(2));
 
+      // Check if bracketData overrides unplayed matches
+      const displayT1 = (!isPlayed && bracketData[slotAKey]) ? bracketData[slotAKey] : match.team1;
+      const displayT2 = (!isPlayed && bracketData[slotBKey]) ? bracketData[slotBKey] : match.team2;
+
       return (
         <div 
-          onClick={() => handleOpenQuickScore(roundTitle, roundKey, cupTag, season, match, match.team1, match.team2)}
+          onClick={() => handleOpenQuickScore(roundTitle, roundKey, cupTag, season, match, displayT1, displayT2)}
           className="bg-white rounded-2xl border-2 border-brand-maroon/30 hover:border-brand-maroon shadow-md hover:shadow-xl transition-all p-3.5 w-56 cursor-pointer group flex flex-col justify-between gap-2.5 relative select-text"
         >
           <div className="flex justify-between items-center border-b border-gray-100 pb-1 text-[9px] font-black uppercase tracking-wider text-brand-maroon">
@@ -639,11 +779,11 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
           <div className={`flex items-center justify-between gap-2 ${t1Win ? 'font-black text-brand-maroon' : 'text-gray-700'}`}>
             <div className="flex items-center gap-2 truncate">
               <img 
-                src={teamLogos[match.team1] || 'https://via.placeholder.com/28?text=?'} 
+                src={teamLogos[displayT1] || 'https://via.placeholder.com/28?text=?'} 
                 className="w-6 h-6 rounded-full object-cover border border-gray-200 bg-white shrink-0" 
-                alt={match.team1} 
+                alt={displayT1} 
               />
-              <span className="text-xs font-black truncate">{match.team1}</span>
+              <span className="text-xs font-black truncate">{displayT1}</span>
             </div>
             <span className={`text-xs px-2 py-0.5 rounded font-black shrink-0 ${t1Win ? 'bg-brand-maroon text-brand-gold' : 'bg-gray-100 text-gray-700'}`}>
               {isPlayed ? match.score1 : '-'}
@@ -654,11 +794,11 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
           <div className={`flex items-center justify-between gap-2 ${t2Win ? 'font-black text-brand-maroon' : 'text-gray-700'}`}>
             <div className="flex items-center gap-2 truncate">
               <img 
-                src={teamLogos[match.team2] || 'https://via.placeholder.com/28?text=?'} 
+                src={teamLogos[displayT2] || 'https://via.placeholder.com/28?text=?'} 
                 className="w-6 h-6 rounded-full object-cover border border-gray-200 bg-white shrink-0" 
-                alt={match.team2} 
+                alt={displayT2} 
               />
-              <span className="text-xs font-black truncate">{match.team2}</span>
+              <span className="text-xs font-black truncate">{displayT2}</span>
             </div>
             <span className={`text-xs px-2 py-0.5 rounded font-black shrink-0 ${t2Win ? 'bg-brand-maroon text-brand-gold' : 'bg-gray-100 text-gray-700'}`}>
               {isPlayed ? match.score2 : '-'}
@@ -689,7 +829,18 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                handleOpenQuickScore(roundTitle, roundKey, cupTag, season, match, match.team1, match.team2);
+                handleOpenChangeTeams(roundTitle, roundKey, cupTag, season, slotAKey, slotBKey, match, displayT1, displayT2);
+              }}
+              className="text-gray-600 hover:text-brand-maroon bg-gray-100 hover:bg-gray-200 px-2 py-0.5 rounded font-black text-[9px] transition-colors border border-gray-300"
+              title="Bu eşleşmedeki takımları değiştir"
+            >
+              🔄 Değiştir
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenQuickScore(roundTitle, roundKey, cupTag, season, match, displayT1, displayT2);
               }}
               className="bg-brand-gold hover:bg-amber-400 text-brand-dark px-2 py-0.5 rounded font-black text-[9px] uppercase transition-colors shadow-xs"
             >
@@ -754,17 +905,30 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
               </div>
             </div>
 
-            <button 
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleOpenQuickScore(roundTitle, 'final', cupTag, season, undefined, s1Winner, s2Winner);
-              }}
-              className="w-full mt-1 py-1.5 bg-brand-maroon hover:bg-black text-brand-gold text-[9px] font-black rounded-lg transition-colors cursor-pointer uppercase flex items-center justify-center gap-1 shadow-xs"
-            >
-              <span>⚡</span>
-              <span>Final Sonucu Gir</span>
-            </button>
+            <div className="flex items-center gap-1.5 mt-1">
+              <button 
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleOpenChangeTeams(roundTitle, 'final', cupTag, season, slotAKey, slotBKey, undefined, s1Winner, s2Winner);
+                }}
+                className="py-1 px-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-[9px] font-black rounded-lg transition-colors border border-gray-300"
+                title="Finalistleri Değiştir"
+              >
+                🔄 Değiştir
+              </button>
+              <button 
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleOpenQuickScore(roundTitle, 'final', cupTag, season, undefined, s1Winner, s2Winner);
+                }}
+                className="flex-1 py-1.5 bg-brand-maroon hover:bg-black text-brand-gold text-[9px] font-black rounded-lg transition-colors cursor-pointer uppercase flex items-center justify-center gap-1 shadow-xs"
+              >
+                <span>⚡</span>
+                <span>Final Sonucu Gir</span>
+              </button>
+            </div>
           </div>
         );
       } else if (s1Winner || s2Winner) {
@@ -797,8 +961,17 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
               </div>
             </div>
 
-            <div className="text-[9px] border-t border-dashed border-gray-100 pt-1 text-center font-bold text-gray-400">
-              Diğer yarı finalin tamamlanması bekleniyor
+            <div className="text-[9px] border-t border-dashed border-gray-100 pt-1 flex items-center justify-between gap-1">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleOpenChangeTeams(roundTitle, 'final', cupTag, season, slotAKey, slotBKey, undefined, s1Winner || '', s2Winner || '');
+                }}
+                className="py-1 px-2 bg-gray-100 hover:bg-brand-maroon hover:text-brand-gold text-gray-700 text-[9px] font-black rounded-lg transition-all w-full text-center"
+              >
+                🔄 Finalistleri Seç / Değiştir
+              </button>
             </div>
           </div>
         );
@@ -822,17 +995,30 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
                 <span className="truncate">Yarı Final 2 Galibi</span>
               </div>
             </div>
-            <button 
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleOpenQuickScore(roundTitle, 'final', cupTag, season);
-              }}
-              className="mt-0.5 py-1 px-2.5 bg-gray-100 hover:bg-brand-maroon hover:text-brand-gold text-gray-600 text-[9px] font-black rounded-lg uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1 mx-auto"
-            >
-              <span>⚡</span>
-              <span>Finali Belirle / Skor Gir</span>
-            </button>
+            <div className="flex items-center justify-center gap-1.5 mt-0.5">
+              <button 
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleOpenChangeTeams(roundTitle, 'final', cupTag, season, slotAKey, slotBKey);
+                }}
+                className="py-1 px-2 bg-gray-100 hover:bg-brand-maroon hover:text-brand-gold text-gray-700 text-[9px] font-black rounded-lg uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1"
+              >
+                <span>🔄</span>
+                <span>Takım Seç</span>
+              </button>
+              <button 
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleOpenQuickScore(roundTitle, 'final', cupTag, season);
+                }}
+                className="py-1 px-2.5 bg-brand-maroon hover:bg-black text-brand-gold text-[9px] font-black rounded-lg uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1"
+              >
+                <span>⚡</span>
+                <span>Skor Gir</span>
+              </button>
+            </div>
           </div>
         );
       }
@@ -879,14 +1065,24 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
             </div>
           </div>
 
-          <div className="text-[9px] border-t border-dashed border-gray-100 pt-1.5 flex justify-between items-center">
+          <div className="text-[9px] border-t border-dashed border-gray-100 pt-1.5 flex justify-between items-center gap-1">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenChangeTeams(roundTitle, roundKey, cupTag, season, slotAKey, slotBKey, undefined, defaultT1, defaultT2);
+              }}
+              className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded-lg font-black text-[9px] uppercase tracking-wider transition-colors border border-gray-300"
+            >
+              🔄 Değiştir
+            </button>
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 handleOpenQuickScore(roundTitle, roundKey, cupTag, season, undefined, defaultT1, defaultT2);
               }}
-              className="bg-brand-maroon hover:bg-black text-brand-gold px-2.5 py-1 rounded-lg font-black text-[9px] uppercase tracking-wider transition-colors shadow-xs flex items-center gap-1 mx-auto"
+              className="bg-brand-maroon hover:bg-black text-brand-gold px-2.5 py-1 rounded-lg font-black text-[9px] uppercase tracking-wider transition-colors shadow-xs flex items-center gap-1 ml-auto"
             >
               <span>⚡</span>
               <span>Sonuç Gir</span>
@@ -904,17 +1100,30 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
       >
         <span className="text-[10px] font-black text-gray-500 uppercase">{roundTitle}</span>
         <span className="text-[10px] text-gray-400 font-bold">Henüz maç eklenmedi</span>
-        <button 
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleOpenQuickScore(roundTitle, roundKey, cupTag, season);
-          }}
-          className="mt-1 py-1.5 px-3.5 bg-brand-maroon hover:bg-black text-brand-gold text-[9px] font-black rounded-xl uppercase tracking-wider transition-all cursor-pointer shadow flex items-center gap-1"
-        >
-          <span>⚡</span>
-          <span>Sonuç / Maç Gir</span>
-        </button>
+        <div className="flex items-center gap-1.5 mt-1">
+          <button 
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenChangeTeams(roundTitle, roundKey, cupTag, season, slotAKey, slotBKey);
+            }}
+            className="py-1 px-2.5 bg-gray-100 hover:bg-brand-maroon hover:text-brand-gold text-gray-700 text-[9px] font-black rounded-xl uppercase tracking-wider transition-all cursor-pointer border border-gray-300 flex items-center gap-1"
+          >
+            <span>🔄</span>
+            <span>Takım Seç</span>
+          </button>
+          <button 
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenQuickScore(roundTitle, roundKey, cupTag, season);
+            }}
+            className="py-1 px-2.5 bg-brand-maroon hover:bg-black text-brand-gold text-[9px] font-black rounded-xl uppercase tracking-wider transition-all cursor-pointer shadow flex items-center gap-1"
+          >
+            <span>⚡</span>
+            <span>Sonuç Gir</span>
+          </button>
+        </div>
       </div>
     );
   };
@@ -1612,9 +1821,27 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
                   />
                 </div>
 
-                <div className="flex flex-col items-center">
+                <div className="flex flex-col items-center gap-1.5 shrink-0 px-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const t1 = qsTeam1;
+                      const s1 = qsScore1;
+                      setQsTeam1(qsTeam2);
+                      setQsScore1(qsScore2);
+                      setQsTeam2(t1);
+                      setQsScore2(s1);
+                      if (qsPenaltyWinner) {
+                        setQsPenaltyWinner(qsPenaltyWinner === t1 ? qsTeam2 : t1);
+                      }
+                    }}
+                    title="Takımları Yer Değiştir"
+                    className="p-1.5 bg-gray-100 hover:bg-brand-maroon hover:text-brand-gold text-gray-700 rounded-full text-xs font-black transition-all cursor-pointer shadow-xs border border-gray-300 flex items-center justify-center"
+                  >
+                    ⇄
+                  </button>
                   <span className="text-sm font-black text-gray-400">VS</span>
-                  <span className="text-[9px] font-bold text-gray-400 mt-1">Skor</span>
+                  <span className="text-[9px] font-bold text-gray-400">Skor</span>
                 </div>
 
                 {/* Team 2 */}
@@ -1753,6 +1980,114 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
                   <span>Ayrıntılı Maç Detayına Git (Kadro, Goller, MVP) →</span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* CHANGE BRACKET TEAMS MODAL */}
+      {changeTeamsModalOpen && ReactDOM.createPortal(
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-xs z-[99999] flex items-center justify-center p-4">
+          <div className="bg-[#f2ede1] text-[#3d3d3d] w-full max-w-md rounded-3xl p-6 border-b-8 border-brand-maroon shadow-2xl relative select-text animate-fade-in max-h-[95vh] overflow-y-auto">
+            <button 
+              type="button"
+              onClick={() => setChangeTeamsModalOpen(false)} 
+              className="absolute top-4 right-4 text-xl font-bold text-brand-maroon cursor-pointer hover:opacity-75"
+            >
+              ✕
+            </button>
+
+            <div className="text-center border-b-2 border-brand-maroon pb-3 mb-4">
+              <span className="text-[10px] font-black uppercase tracking-widest text-brand-maroon block">
+                {ctCupTag.toUpperCase()} {ctSeason}. SEZON • {ctRoundTitle || ctRoundKey}
+              </span>
+              <h3 className="text-base font-black text-brand-dark uppercase tracking-wide mt-0.5">
+                🔄 Eşleşme Takımlarını Değiştir
+              </h3>
+              <p className="text-[11px] text-gray-600 font-bold mt-1">
+                Bu turdaki eşleşmeyi dilediğiniz takımlarla güncelleyebilir veya yerlerini değiştirebilirsiniz.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              {/* Team 1 Selection */}
+              <div className="bg-white rounded-2xl p-4 border border-gray-200 shadow-sm flex flex-col gap-2">
+                <label className="text-[10px] font-black text-brand-maroon uppercase flex items-center gap-1.5">
+                  <span>🏠 1. Takım (Ev Sahibi / Üst Slot)</span>
+                </label>
+                <div className="flex items-center gap-3">
+                  <img 
+                    src={teamLogos[ctTeam1] || 'https://via.placeholder.com/40?text=?'} 
+                    className="w-10 h-10 rounded-full object-cover border-2 border-brand-maroon bg-white shrink-0 shadow-xs"
+                    alt={ctTeam1}
+                  />
+                  <select
+                    value={ctTeam1}
+                    onChange={(e) => setCtTeam1(e.target.value)}
+                    className="flex-1 bg-white border border-gray-300 rounded-xl p-2 text-xs font-black text-brand-dark"
+                  >
+                    {teams.map(t => (
+                      <option key={t.name} value={t.name}>{t.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Swap Teams Button */}
+              <div className="flex justify-center -my-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const tmp = ctTeam1;
+                    setCtTeam1(ctTeam2);
+                    setCtTeam2(tmp);
+                  }}
+                  className="py-1.5 px-4 bg-brand-maroon text-brand-gold hover:bg-black rounded-full font-black text-xs uppercase tracking-wider transition-all shadow-md flex items-center gap-2 cursor-pointer border border-brand-gold/40"
+                >
+                  <span>⇄</span>
+                  <span>Takımları Yer Değiştir</span>
+                </button>
+              </div>
+
+              {/* Team 2 Selection */}
+              <div className="bg-white rounded-2xl p-4 border border-gray-200 shadow-sm flex flex-col gap-2">
+                <label className="text-[10px] font-black text-brand-maroon uppercase flex items-center gap-1.5">
+                  <span>🚀 2. Takım (Deplasman / Alt Slot)</span>
+                </label>
+                <div className="flex items-center gap-3">
+                  <img 
+                    src={teamLogos[ctTeam2] || 'https://via.placeholder.com/40?text=?'} 
+                    className="w-10 h-10 rounded-full object-cover border-2 border-brand-maroon bg-white shrink-0 shadow-xs"
+                    alt={ctTeam2}
+                  />
+                  <select
+                    value={ctTeam2}
+                    onChange={(e) => setCtTeam2(e.target.value)}
+                    className="flex-1 bg-white border border-gray-300 rounded-xl p-2 text-xs font-black text-brand-dark"
+                  >
+                    {teams.map(t => (
+                      <option key={t.name} value={t.name}>{t.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Info banner */}
+              <div className="bg-amber-50 border border-amber-300 rounded-xl p-2.5 text-center text-xs font-black text-amber-900 shadow-2xs">
+                💡 Seçilen takımlar bu tura atanır, turnuva ağacında gösterilir ve sonuç girildiğinde doğrudan ELO reytingine işlenir.
+              </div>
+
+              {/* Save Button */}
+              <button
+                type="button"
+                disabled={savingTeams}
+                onClick={handleSaveChangeTeams}
+                className="w-full py-3 bg-brand-maroon text-brand-gold hover:bg-black font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <span>💾</span>
+                <span>{savingTeams ? 'Kaydediliyor...' : 'Takımları Kaydet ve Ağacı Güncelle'}</span>
+              </button>
             </div>
           </div>
         </div>,

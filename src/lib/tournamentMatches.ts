@@ -59,7 +59,7 @@ export const DEFAULT_TOURNAMENT_MATCHES: Match[] = [
   {
     id: 'becl_4_semi1',
     team1: 'Hendrix United',
-    team2: 'KFCelona',
+    team2: 'KFCspor',
     category: 'BECL',
     season: 4 as any,
     round: 'semi1',
@@ -90,7 +90,7 @@ export const DEFAULT_TOURNAMENT_MATCHES: Match[] = [
   },
   {
     id: 'becl_4_final',
-    team1: 'KFCelona',
+    team1: 'KFCspor',
     team2: 'Sp5der Jack',
     category: 'BECL',
     season: 4 as any,
@@ -101,108 +101,6 @@ export const DEFAULT_TOURNAMENT_MATCHES: Match[] = [
     played: true,
     date: '22.06.2025',
     datejav: 1750582800000,
-    ligm: false,
-    timeline: []
-  },
-
-  // BEL (UEL) 5. Sezon
-  {
-    id: 'bel_5_semi1',
-    team1: 'Xeilmes',
-    team2: 'Sp5der Jack',
-    category: 'BEL',
-    season: 5 as any,
-    round: 'semi1',
-    hafta: 'Yarı Final 1',
-    score1: '0',
-    score2: '0',
-    played: false,
-    date: '20.10.2026',
-    datejav: 1792486800000,
-    ligm: false,
-    timeline: []
-  },
-  {
-    id: 'bel_5_semi2',
-    team1: 'Realyon',
-    team2: 'DeathEagle',
-    category: 'BEL',
-    season: 5 as any,
-    round: 'semi2',
-    hafta: 'Yarı Final 2',
-    score1: '0',
-    score2: '0',
-    played: false,
-    date: '21.10.2026',
-    datejav: 1792573200000,
-    ligm: false,
-    timeline: []
-  },
-
-  // BECL (UECL) 5. Sezon
-  {
-    id: 'becl_5_semi1',
-    team1: 'Holy Munchen',
-    team2: 'Bobblica',
-    category: 'BECL',
-    season: 5 as any,
-    round: 'semi1',
-    hafta: 'Yarı Final 1',
-    score1: '0',
-    score2: '0',
-    played: false,
-    date: '22.10.2026',
-    datejav: 1792659600000,
-    ligm: false,
-    timeline: []
-  },
-  {
-    id: 'becl_5_semi2',
-    team1: 'New Hollands',
-    team2: 'Döner FC',
-    category: 'BECL',
-    season: 5 as any,
-    round: 'semi2',
-    hafta: 'Yarı Final 2',
-    score1: '0',
-    score2: '0',
-    played: false,
-    date: '23.10.2026',
-    datejav: 1792746000000,
-    ligm: false,
-    timeline: []
-  },
-
-  // BCL (UCL) 5. Sezon
-  {
-    id: 'bcl_5_semi1',
-    team1: 'Holy Munchen',
-    team2: 'Leogard',
-    category: 'BCL',
-    season: 5 as any,
-    round: 'semi1',
-    hafta: 'Yarı Final 1',
-    score1: '0',
-    score2: '0',
-    played: false,
-    date: '24.10.2026',
-    datejav: 1792832400000,
-    ligm: false,
-    timeline: []
-  },
-  {
-    id: 'bcl_5_semi2',
-    team1: 'Pofuspor',
-    team2: 'Döner FC',
-    category: 'BCL',
-    season: 5 as any,
-    round: 'semi2',
-    hafta: 'Yarı Final 2',
-    score1: '0',
-    score2: '0',
-    played: false,
-    date: '25.10.2026',
-    datejav: 1792918800000,
     ligm: false,
     timeline: []
   }
@@ -217,17 +115,29 @@ export const getStoredTournamentMatches = (): Match[] => {
   }
 };
 
+export const normalizeTeamName = (raw?: string): string => {
+  if (!raw) return '';
+  const s = raw.trim();
+  if (s.toLowerCase() === 'kfcelona') return 'KFCspor';
+  return s;
+};
+
 export const saveStoredTournamentMatch = (match: Match) => {
   try {
     const current = getStoredTournamentMatches();
-    const idx = current.findIndex((m) => m.id === match.id);
+    const cleanMatch: Match = {
+      ...match,
+      team1: normalizeTeamName(match.team1),
+      team2: normalizeTeamName(match.team2)
+    };
+    const idx = current.findIndex((m) => m.id === cleanMatch.id);
     if (idx >= 0) {
-      current[idx] = match;
+      current[idx] = cleanMatch;
     } else {
-      current.push(match);
+      current.push(cleanMatch);
     }
     localStorage.setItem(LOCAL_TOURNAMENT_MATCHES_KEY, JSON.stringify(current));
-    window.dispatchEvent(new CustomEvent('tournament_matches_updated', { detail: match }));
+    window.dispatchEvent(new CustomEvent('tournament_matches_updated', { detail: cleanMatch }));
   } catch (e) {
     console.error('Failed to save tournament match to localStorage', e);
   }
@@ -255,7 +165,11 @@ export const getStoredBracketData = (): Record<string, string> => {
 export const saveStoredBracketData = (updates: Record<string, string>) => {
   try {
     const current = getStoredBracketData();
-    const merged = { ...current, ...updates };
+    const cleanUpdates: Record<string, string> = {};
+    Object.entries(updates).forEach(([k, v]) => {
+      cleanUpdates[k] = normalizeTeamName(v);
+    });
+    const merged = { ...current, ...cleanUpdates };
     localStorage.setItem(LOCAL_BRACKETS_KEY, JSON.stringify(merged));
   } catch (e) {
     console.error('Failed to save bracket data to localStorage', e);
@@ -283,13 +197,19 @@ export function mergeTournamentMatches(firestoreMatches: Match[]): Match[] {
   // 1. Load firestore matches first
   (firestoreMatches || []).forEach((m) => {
     const id = m.id || `${m.team1}-vs-${m.team2}-${m.datejav}`;
-    map.set(id, { ...m, id });
+    const cleanM: Match = {
+      ...m,
+      id,
+      team1: normalizeTeamName(m.team1),
+      team2: normalizeTeamName(m.team2)
+    };
+    map.set(id, cleanM);
 
-    const cup = normalizeCupKey(m.category, m.hafta);
-    const season = (m as any).season;
-    const round = (m as any).round;
+    const cup = normalizeCupKey(cleanM.category, cleanM.hafta);
+    const season = (cleanM as any).season;
+    const round = (cleanM as any).round;
     if (cup && season && round) {
-      slotToMatch.set(`${cup}_${season}_${round}`, { ...m, id });
+      slotToMatch.set(`${cup}_${season}_${round}`, cleanM);
     }
   });
 
@@ -297,14 +217,20 @@ export function mergeTournamentMatches(firestoreMatches: Match[]): Match[] {
   const localM = getStoredTournamentMatches();
   localM.forEach((lm) => {
     const id = lm.id || `${lm.team1}-vs-${lm.team2}-${lm.datejav}`;
+    const cleanLM: Match = {
+      ...lm,
+      id,
+      team1: normalizeTeamName(lm.team1),
+      team2: normalizeTeamName(lm.team2)
+    };
     const existing = map.get(id);
-    if (!existing || (!existing.played && lm.played) || (Number(lm.datejav) || 0) >= (Number(existing.datejav) || 0)) {
-      map.set(id, { ...lm, id });
-      const cup = normalizeCupKey(lm.category, lm.hafta);
-      const season = (lm as any).season;
-      const round = (lm as any).round;
+    if (!existing || (!existing.played && cleanLM.played) || (Number(cleanLM.datejav) || 0) >= (Number(existing.datejav) || 0)) {
+      map.set(id, cleanLM);
+      const cup = normalizeCupKey(cleanLM.category, cleanLM.hafta);
+      const season = (cleanLM as any).season;
+      const round = (cleanLM as any).round;
       if (cup && season && round) {
-        slotToMatch.set(`${cup}_${season}_${round}`, { ...lm, id });
+        slotToMatch.set(`${cup}_${season}_${round}`, cleanLM);
       }
     }
   });
@@ -320,9 +246,14 @@ export function mergeTournamentMatches(firestoreMatches: Match[]): Match[] {
     const hasBySlot = slotToMatch.has(slotKey);
 
     if (!hasById && !hasBySlot) {
-      map.set(dm.id, dm);
+      const cleanDM: Match = {
+        ...dm,
+        team1: normalizeTeamName(dm.team1),
+        team2: normalizeTeamName(dm.team2)
+      };
+      map.set(dm.id, cleanDM);
       if (slotKey) {
-        slotToMatch.set(slotKey, dm);
+        slotToMatch.set(slotKey, cleanDM);
       }
     }
   });

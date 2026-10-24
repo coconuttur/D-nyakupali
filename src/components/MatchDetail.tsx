@@ -3,9 +3,10 @@ import { doc, getDoc, updateDoc, setDoc, collection, onSnapshot, query, where, g
 import { db } from '../firebase';
 import { Match, MatchTimelineEvent, Player, Team, UserProfile } from '../types';
 import { recalculateStandings, recalculatePlayerRatings } from '../lib/standings';
+import { getStoredTournamentMatches, DEFAULT_TOURNAMENT_MATCHES, saveStoredTournamentMatch } from '../lib/tournamentMatches';
 
 interface MatchDetailProps {
-  matchId: string; // "team1-vs-team2-datejav" representation
+  matchId: string; // "team1-vs-team2-datejav" representation or tournament id
   initialMatch?: Match;
   currentUser: UserProfile | null;
   currentLang: 'tr' | 'en' | 'pt';
@@ -28,6 +29,43 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
   const [teamDocIdToNameMap, setTeamDocIdToNameMap] = useState<Record<string, string>>({});
   const [teamNameToDocIdMap, setTeamNameToDocIdMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(!initialMatch);
+
+  // Extract team names and datejav from state representation safely
+  const parseMatchId = () => {
+    let cleanId = matchId;
+    try {
+      cleanId = decodeURIComponent(matchId);
+    } catch {}
+
+    if (cleanId.includes("-vs-")) {
+      const parts = cleanId.split("-vs-");
+      const t1 = parts[0]?.trim() || initialMatch?.team1 || "";
+      const t2_date = parts[1]?.trim() || "";
+      const lastHyphen = t2_date.lastIndexOf("-");
+      const t2 = lastHyphen !== -1 ? t2_date.substring(0, lastHyphen).trim() : (t2_date || initialMatch?.team2 || "");
+      const datejavStr = lastHyphen !== -1 ? t2_date.substring(lastHyphen + 1).trim() : "";
+      return { 
+        t1: t1 || initialMatch?.team1 || "", 
+        t2: t2 || initialMatch?.team2 || "", 
+        datejav: parseInt(datejavStr) || initialMatch?.datejav || undefined, 
+        cleanId 
+      };
+    }
+
+    // Custom or Tournament slot id (e.g. "bcl_4_semi1", "becl_4_semi1", etc.)
+    const localMatches = getStoredTournamentMatches();
+    const tourMatch = initialMatch || localMatches.find(m => m.id === cleanId) || DEFAULT_TOURNAMENT_MATCHES.find(m => m.id === cleanId);
+    return {
+      t1: tourMatch?.team1 || initialMatch?.team1 || "",
+      t2: tourMatch?.team2 || initialMatch?.team2 || "",
+      datejav: tourMatch?.datejav || initialMatch?.datejav || undefined,
+      cleanId
+    };
+  };
+
+  const { t1: team1Name, t2: team2Name, datejav: currentMatchDatejav, cleanId: decodedMatchId } = parseMatchId();
+  const effectiveTeam1 = match?.team1 || initialMatch?.team1 || team1Name || '';
+  const effectiveTeam2 = match?.team2 || initialMatch?.team2 || team2Name || '';
 
   // Admin controls
   const [isAdmin, setIsAdmin] = useState(false);
@@ -89,10 +127,43 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
   const [lineupPlayed, setLineupPlayed] = useState<boolean>(true);
   const [lineupTeam, setLineupTeam] = useState<'team1' | 'team2'>('team1');
 
+  // Accurately determine whether a player belongs to Team 1 or Team 2 in this match
+  const getPlayerTeamLabel = (p: Player): string => {
+    const pNameLower = (p.pname || '').toLowerCase().trim();
+    const pTeamLower = (p.pteam || '').toLowerCase().trim();
+    const pKiralikLower = (p.kiralikTakim || '').toLowerCase().trim();
+    
+    const t1L = (effectiveTeam1 || '').toLowerCase().trim();
+    const t1Doc = (teamNameToDocIdMap[t1L] || t1L).toLowerCase().trim();
+    const t1Disp = (teamDocIdToNameMap[t1L] || effectiveTeam1).toLowerCase().trim();
+
+    const t2L = (effectiveTeam2 || '').toLowerCase().trim();
+    const t2Doc = (teamNameToDocIdMap[t2L] || t2L).toLowerCase().trim();
+    const t2Disp = (teamDocIdToNameMap[t2L] || effectiveTeam2).toLowerCase().trim();
+
+    // 1. Direct membership in team1Players / team2Players state
+    const inT1 = team1Players.some(tp => tp.pname.toLowerCase().trim() === pNameLower);
+    const inT2 = team2Players.some(tp => tp.pname.toLowerCase().trim() === pNameLower);
+
+    if (p.kiralik && pKiralikLower) {
+      if (t1L && (pKiralikLower === t1L || pKiralikLower === t1Doc || pKiralikLower === t1Disp)) return 'T1 🔄 Kiralık';
+      if (t2L && (pKiralikLower === t2L || pKiralikLower === t2Doc || pKiralikLower === t2Disp)) return 'T2 🔄 Kiralık';
+    }
+
+    if (inT1 || (t1L && (pTeamLower === t1L || pTeamLower === t1Doc || pTeamLower === t1Disp))) {
+      return p.kiralik || p.kiralikTakim ? 'T1 🔄 Kiralık' : 'T1';
+    }
+    if (inT2 || (t2L && (pTeamLower === t2L || pTeamLower === t2Doc || pTeamLower === t2Disp))) {
+      return p.kiralik || p.kiralikTakim ? 'T2 🔄 Kiralık' : 'T2';
+    }
+
+    return 'Diğer';
+  };
+
   const resolvePlayerMatchTeam = (pname: string, info?: any): 'team1' | 'team2' => {
     if (info?.team === 'team1' || info?.team === 'team2') return info.team;
-    if (info?.team === team1Name) return 'team1';
-    if (info?.team === team2Name) return 'team2';
+    if (effectiveTeam1 && info?.team === effectiveTeam1) return 'team1';
+    if (effectiveTeam2 && info?.team === effectiveTeam2) return 'team2';
     
     const pNameLower = pname.toLowerCase().trim();
     // Check timeline events
@@ -114,10 +185,10 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
     if (globalP) {
       const pt = (globalP.pteam || '').toLowerCase().trim();
       const kt = (globalP.kiralikTakim || '').toLowerCase().trim();
-      const t1Lower = team1Name.toLowerCase().trim();
-      const t2Lower = team2Name.toLowerCase().trim();
-      if (pt === t1Lower || kt === t1Lower) return 'team1';
-      if (pt === t2Lower || kt === t2Lower) return 'team2';
+      const t1Lower = (effectiveTeam1 || '').toLowerCase().trim();
+      const t2Lower = (effectiveTeam2 || '').toLowerCase().trim();
+      if (t1Lower && (pt === t1Lower || kt === t1Lower)) return 'team1';
+      if (t2Lower && (pt === t2Lower || kt === t2Lower)) return 'team2';
     }
 
     return activeLineupTeam;
@@ -228,29 +299,7 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
     }
   };
 
-  // Extract team names and datejav from state representation
-  const parseMatchId = () => {
-    let cleanId = matchId;
-    try {
-      cleanId = decodeURIComponent(matchId);
-    } catch {}
-    const parts = cleanId.split("-vs-");
-    const t1 = parts[0]?.trim() || initialMatch?.team1 || "";
-    const t2_date = parts[1]?.trim() || "";
-    const lastHyphen = t2_date.lastIndexOf("-");
-    const t2 = lastHyphen !== -1 ? t2_date.substring(0, lastHyphen).trim() : (t2_date || initialMatch?.team2 || "");
-    const datejavStr = lastHyphen !== -1 ? t2_date.substring(lastHyphen + 1).trim() : "";
-    return { 
-      t1: t1 || initialMatch?.team1 || "", 
-      t2: t2 || initialMatch?.team2 || "", 
-      datejav: parseInt(datejavStr) || initialMatch?.datejav || undefined, 
-      cleanId 
-    };
-  };
 
-  const { t1: team1Name, t2: team2Name, datejav: currentMatchDatejav, cleanId: decodedMatchId } = parseMatchId();
-  const effectiveTeam1 = match?.team1 || initialMatch?.team1 || team1Name;
-  const effectiveTeam2 = match?.team2 || initialMatch?.team2 || team2Name;
 
   // Check Admin Status
   useEffect(() => {
