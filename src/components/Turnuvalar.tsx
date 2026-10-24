@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, doc, getDoc } from 'firebase/firestore';
+import React, { useState, useEffect, useMemo } from 'react';
+import ReactDOM from 'react-dom';
+import { collection, onSnapshot, doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Team, UserProfile, Match } from '../types';
 import WorldCup from './WorldCup';
@@ -14,6 +15,267 @@ interface TurnuvalarProps {
 
 type CupType = 'wpc' | 'bcl' | 'bel' | 'becl' | 'wc';
 
+// Default tournament matches for BCL (UCL), BEL (UEL), and BECL (UECL)
+const DEFAULT_TOURNAMENT_MATCHES: Match[] = [
+  // BCL (UCL) 4. Sezon
+  {
+    id: 'bcl_4_semi1',
+    team1: 'Holy Munchen',
+    team2: 'Pofuspor',
+    category: 'BCL',
+    season: 4 as any,
+    round: 'semi1',
+    hafta: 'Yarı Final 1',
+    score1: '1',
+    score2: '2',
+    played: true,
+    date: '20.06.2025',
+    datejav: 1750410000000,
+    ligm: false,
+    timeline: []
+  },
+  {
+    id: 'bcl_4_semi2',
+    team1: 'Döner FC',
+    team2: 'Leogard',
+    category: 'BCL',
+    season: 4 as any,
+    round: 'semi2',
+    hafta: 'Yarı Final 2',
+    score1: '3',
+    score2: '1',
+    played: true,
+    date: '21.06.2025',
+    datejav: 1750496400000,
+    ligm: false,
+    timeline: []
+  },
+  {
+    id: 'bcl_4_final',
+    team1: 'Pofuspor',
+    team2: 'Döner FC',
+    category: 'BCL',
+    season: 4 as any,
+    round: 'final',
+    hafta: 'Büyük Final',
+    score1: '2',
+    score2: '1',
+    played: true,
+    date: '28.06.2025',
+    datejav: 1751101200000,
+    ligm: false,
+    timeline: []
+  },
+
+  // BECL (UECL) 4. Sezon
+  {
+    id: 'becl_4_semi1',
+    team1: 'Hendrix United',
+    team2: 'KFCelona',
+    category: 'BECL',
+    season: 4 as any,
+    round: 'semi1',
+    hafta: 'Yarı Final 1',
+    score1: '0',
+    score2: '2',
+    played: true,
+    date: '15.06.2025',
+    datejav: 1749978000000,
+    ligm: false,
+    timeline: []
+  },
+  {
+    id: 'becl_4_semi2',
+    team1: 'Xeilmes',
+    team2: 'Sp5der Jack',
+    category: 'BECL',
+    season: 4 as any,
+    round: 'semi2',
+    hafta: 'Yarı Final 2',
+    score1: '1',
+    score2: '3',
+    played: true,
+    date: '16.06.2025',
+    datejav: 1750064400000,
+    ligm: false,
+    timeline: []
+  },
+  {
+    id: 'becl_4_final',
+    team1: 'KFCelona',
+    team2: 'Sp5der Jack',
+    category: 'BECL',
+    season: 4 as any,
+    round: 'final',
+    hafta: 'Büyük Final',
+    score1: '1',
+    score2: '2',
+    played: true,
+    date: '22.06.2025',
+    datejav: 1750582800000,
+    ligm: false,
+    timeline: []
+  },
+
+  // BEL (UEL) 5. Sezon
+  {
+    id: 'bel_5_semi1',
+    team1: 'Xeilmes',
+    team2: 'Sp5der Jack',
+    category: 'BEL',
+    season: 5 as any,
+    round: 'semi1',
+    hafta: 'Yarı Final 1',
+    score1: '0',
+    score2: '0',
+    played: false,
+    date: '20.10.2026',
+    datejav: 1792486800000,
+    ligm: false,
+    timeline: []
+  },
+  {
+    id: 'bel_5_semi2',
+    team1: 'Realyon',
+    team2: 'DeathEagle',
+    category: 'BEL',
+    season: 5 as any,
+    round: 'semi2',
+    hafta: 'Yarı Final 2',
+    score1: '0',
+    score2: '0',
+    played: false,
+    date: '21.10.2026',
+    datejav: 1792573200000,
+    ligm: false,
+    timeline: []
+  },
+
+  // BECL (UECL) 5. Sezon
+  {
+    id: 'becl_5_semi1',
+    team1: 'Holy Munchen',
+    team2: 'Bobblica',
+    category: 'BECL',
+    season: 5 as any,
+    round: 'semi1',
+    hafta: 'Yarı Final 1',
+    score1: '0',
+    score2: '0',
+    played: false,
+    date: '22.10.2026',
+    datejav: 1792659600000,
+    ligm: false,
+    timeline: []
+  },
+  {
+    id: 'becl_5_semi2',
+    team1: 'New Hollands',
+    team2: 'Döner FC',
+    category: 'BECL',
+    season: 5 as any,
+    round: 'semi2',
+    hafta: 'Yarı Final 2',
+    score1: '0',
+    score2: '0',
+    played: false,
+    date: '23.10.2026',
+    datejav: 1792746000000,
+    ligm: false,
+    timeline: []
+  },
+
+  // BCL (UCL) 5. Sezon
+  {
+    id: 'bcl_5_semi1',
+    team1: 'Holy Munchen',
+    team2: 'Leogard',
+    category: 'BCL',
+    season: 5 as any,
+    round: 'semi1',
+    hafta: 'Yarı Final 1',
+    score1: '0',
+    score2: '0',
+    played: false,
+    date: '24.10.2026',
+    datejav: 1792832400000,
+    ligm: false,
+    timeline: []
+  },
+  {
+    id: 'bcl_5_semi2',
+    team1: 'Pofuspor',
+    team2: 'Döner FC',
+    category: 'BCL',
+    season: 5 as any,
+    round: 'semi2',
+    hafta: 'Yarı Final 2',
+    score1: '0',
+    score2: '0',
+    played: false,
+    date: '25.10.2026',
+    datejav: 1792918800000,
+    ligm: false,
+    timeline: []
+  }
+];
+
+// LocalStorage helpers to guarantee persistence even if Firestore is restricted or offline
+const LOCAL_MATCHES_KEY = 'bobblekolik_tournament_matches';
+const LOCAL_BRACKETS_KEY = 'bobblekolik_bracket_data';
+
+const getStoredMatches = (): Match[] => {
+  try {
+    const raw = localStorage.getItem(LOCAL_MATCHES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+};
+
+const saveStoredMatch = (match: Match) => {
+  try {
+    const current = getStoredMatches();
+    const idx = current.findIndex(m => m.id === match.id);
+    if (idx >= 0) {
+      current[idx] = match;
+    } else {
+      current.push(match);
+    }
+    localStorage.setItem(LOCAL_MATCHES_KEY, JSON.stringify(current));
+  } catch (e) {
+    console.error('Failed to save match to localStorage', e);
+  }
+};
+
+const removeStoredMatch = (matchId: string) => {
+  try {
+    const current = getStoredMatches().filter(m => m.id !== matchId);
+    localStorage.setItem(LOCAL_MATCHES_KEY, JSON.stringify(current));
+  } catch (e) {
+    console.error('Failed to remove match from localStorage', e);
+  }
+};
+
+const getStoredBracketData = (): Record<string, string> => {
+  try {
+    const raw = localStorage.getItem(LOCAL_BRACKETS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+};
+
+const saveStoredBracketData = (updates: Record<string, string>) => {
+  try {
+    const current = getStoredBracketData();
+    const merged = { ...current, ...updates };
+    localStorage.setItem(LOCAL_BRACKETS_KEY, JSON.stringify(merged));
+  } catch (e) {
+    console.error('Failed to save bracket data to localStorage', e);
+  }
+};
+
 export default function Turnuvalar({ currentLang, translations, onNavigate, teamLogos, currentUser }: TurnuvalarProps) {
   const [activeCup, setActiveCup] = useState<CupType>('wpc');
   const [bclSeason, setBclSeason] = useState<4 | 5>(5);
@@ -23,8 +285,52 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
   const [matches, setMatches] = useState<Match[]>([]);
   const [bracketData, setBracketData] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => setToastMessage(null), 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
+
+  // Add Match Modal state
+  const [addMatchModalOpen, setAddMatchModalOpen] = useState(false);
+  const [modalCup, setModalCup] = useState<'wpc' | 'bcl' | 'bel' | 'becl'>('bcl');
+  const [modalSeason, setModalSeason] = useState<number>(5);
+  const [modalRound, setModalRound] = useState<string>('semi1');
+  const [modalTeam1, setModalTeam1] = useState<string>('');
+  const [modalTeam2, setModalTeam2] = useState<string>('');
+  const [modalDate, setModalDate] = useState<string>('');
+  const [modalScore1, setModalScore1] = useState<string>('0');
+  const [modalScore2, setModalScore2] = useState<string>('0');
+  const [modalPlayed, setModalPlayed] = useState<boolean>(false);
+  const [savingMatch, setSavingMatch] = useState<boolean>(false);
+
+  // Quick Score / Result Modal state (allows instant score entry on any bracket card)
+  const [quickScoreModalOpen, setQuickScoreModalOpen] = useState(false);
+  const [qsMatch, setQsMatch] = useState<Match | null>(null);
+  const [qsCupTag, setQsCupTag] = useState<'bcl' | 'bel' | 'becl' | 'wpc'>('bcl');
+  const [qsSeason, setQsSeason] = useState<number>(5);
+  const [qsRoundKey, setQsRoundKey] = useState<string>('semi1');
+  const [qsRoundTitle, setQsRoundTitle] = useState<string>('');
+  const [qsTeam1, setQsTeam1] = useState<string>('');
+  const [qsTeam2, setQsTeam2] = useState<string>('');
+  const [qsScore1, setQsScore1] = useState<string>('0');
+  const [qsScore2, setQsScore2] = useState<string>('0');
+  const [qsPlayed, setQsPlayed] = useState<boolean>(true);
+  const [qsDate, setQsDate] = useState<string>('');
+  const [qsPenaltyWinner, setQsPenaltyWinner] = useState<string>('');
+  const [savingQuickScore, setSavingQuickScore] = useState<boolean>(false);
+
+  useEffect(() => {
+    // 0. Load locally saved bracket data
+    const localBracket = getStoredBracketData();
+    if (Object.keys(localBracket).length > 0) {
+      setBracketData((prev) => ({ ...prev, ...localBracket }));
+    }
+
     // 1. Fetch Teams
     const unsubTeams = onSnapshot(collection(db, 'teams'), (snap) => {
       const list: Team[] = [];
@@ -37,16 +343,30 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
 
     // 2. Fetch brackets document
     const unsubBrackets = onSnapshot(doc(db, 'brackets', 'data'), (docSnap) => {
+      const local = getStoredBracketData();
       if (docSnap.exists()) {
-        setBracketData(docSnap.data() as Record<string, string>);
+        setBracketData({ ...local, ...(docSnap.data() as Record<string, string>) });
+      } else if (Object.keys(local).length > 0) {
+        setBracketData(local);
       }
     });
 
-    // 3. Fetch Matches
+    // 3. Fetch Matches and merge with local custom matches
     const unsubMatches = onSnapshot(collection(db, 'matches'), (snap) => {
       const mList: Match[] = [];
       snap.forEach((d) => {
         mList.push({ id: d.id, ...d.data() } as Match);
+      });
+      const localM = getStoredMatches();
+      localM.forEach((lm) => {
+        const existingIdx = mList.findIndex((m) => m.id === lm.id);
+        if (existingIdx >= 0) {
+          if ((Number(lm.datejav) || 0) >= (Number(mList[existingIdx].datejav) || 0)) {
+            mList[existingIdx] = lm;
+          }
+        } else {
+          mList.push(lm);
+        }
       });
       setMatches(mList);
     });
@@ -58,7 +378,434 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
     };
   }, []);
 
+  // Check admin status
+  useEffect(() => {
+    if (currentUser) {
+      getDoc(doc(db, 'users', currentUser.uid)).then((docSnap) => {
+        if (docSnap.exists() && docSnap.data().admin === true) {
+          setIsAdmin(true);
+        }
+      });
+    } else {
+      setIsAdmin(false);
+    }
+  }, [currentUser]);
+
   const t = translations[currentLang];
+
+  // Helper to normalize cup identifier
+  const normalizeCupKey = (cat?: string, hStr?: string) => {
+    const c = String(cat || '').toUpperCase();
+    const h = String(hStr || '').toUpperCase();
+    if (c.includes('BCL') || c.includes('UCL') || c.includes('CHAMPIONS') || h.includes('BCL') || h.includes('UCL')) return 'bcl';
+    if (c.includes('BEL') || c.includes('UEL') || c.includes('EUROPA') || h.includes('BEL') || h.includes('UEL')) return 'bel';
+    if (c.includes('BECL') || c.includes('UECL') || c.includes('CONFERENCE') || h.includes('BECL') || h.includes('UECL')) return 'becl';
+    if (c.includes('WPC') || c.includes('WORLD PEACE') || c.includes('TURNUVA') || h.includes('WPC')) return 'wpc';
+    return '';
+  };
+
+  // Merge default tournament matches with real matches from Firestore & local edits
+  // Real played matches COMPLETELY REPLACE default matches for that round/slot!
+  const allTournamentMatches = useMemo(() => {
+    const realMatchMap = new Map<string, Match>();
+    const slotToRealMatch = new Map<string, Match>();
+
+    matches.forEach((m) => {
+      const docId = m.id || `${m.team1}-vs-${m.team2}-${m.datejav}`;
+      const normalizedMatch = { ...m, id: docId };
+      realMatchMap.set(docId, normalizedMatch);
+
+      const cup = normalizeCupKey(m.category, m.hafta);
+      const season = (m as any).season;
+      const round = (m as any).round;
+      if (cup && season && round) {
+        const slotKey = `${cup}_${season}_${round}`;
+        const existing = slotToRealMatch.get(slotKey);
+        // Prioritize played matches, then more recently updated matches
+        if (!existing || (!existing.played && normalizedMatch.played) || (Number(normalizedMatch.datejav) || 0) > (Number(existing.datejav) || 0)) {
+          slotToRealMatch.set(slotKey, normalizedMatch);
+        }
+      }
+    });
+
+    const resultMatches: Match[] = [];
+    const usedRealIds = new Set<string>();
+
+    DEFAULT_TOURNAMENT_MATCHES.forEach((defaultM) => {
+      const cup = normalizeCupKey(defaultM.category, defaultM.hafta);
+      const season = (defaultM as any).season;
+      const round = (defaultM as any).round;
+      const slotKey = `${cup}_${season}_${round}`;
+
+      const realByDocId = realMatchMap.get(defaultM.id);
+      const realBySlot = slotToRealMatch.get(slotKey);
+
+      if (realByDocId) {
+        resultMatches.push(realByDocId);
+        usedRealIds.add(realByDocId.id);
+      } else if (realBySlot) {
+        resultMatches.push(realBySlot);
+        usedRealIds.add(realBySlot.id);
+      } else {
+        resultMatches.push(defaultM);
+      }
+    });
+
+    realMatchMap.forEach((realM) => {
+      if (!usedRealIds.has(realM.id)) {
+        resultMatches.push(realM);
+      }
+    });
+
+    return resultMatches;
+  }, [matches]);
+
+  // Helper to open Add Match modal with optional pre-filled teams
+  const handleOpenAddMatch = (
+    cup: 'wpc' | 'bcl' | 'bel' | 'becl', 
+    season?: number, 
+    round?: string,
+    defaultT1?: string,
+    defaultT2?: string
+  ) => {
+    setModalCup(cup);
+    const activeS = season || (cup === 'bcl' ? bclSeason : cup === 'bel' ? belSeason : cup === 'becl' ? beclSeason : 5);
+    setModalSeason(activeS);
+    setModalRound(round || (cup === 'wpc' ? 'groupA' : 'semi1'));
+    if (defaultT1 && defaultT2) {
+      setModalTeam1(defaultT1);
+      setModalTeam2(defaultT2);
+    } else if (teams.length > 0) {
+      setModalTeam1(teams[0].name);
+      setModalTeam2(teams.length > 1 ? teams[1].name : teams[0].name);
+    }
+    const today = new Date();
+    const day = String(today.getDate()).padStart(2, '0');
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const year = today.getFullYear();
+    setModalDate(`${day}.${month}.${year}`);
+    setModalScore1('0');
+    setModalScore2('0');
+    setModalPlayed(false);
+    setAddMatchModalOpen(true);
+  };
+
+  // Helper to delete tournament match
+  const handleDeleteMatch = async (matchDocId: string) => {
+    if (!window.confirm('Bu turnuva maçını silmek istediğinizden emin misiniz?')) return;
+    try {
+      // Optimistic delete
+      setMatches(prev => prev.filter(m => m.id !== matchDocId));
+      removeStoredMatch(matchDocId);
+      await deleteDoc(doc(db, 'matches', matchDocId));
+      setToastMessage('🗑️ Maç silindi.');
+    } catch (err: any) {
+      console.warn("Delete notice:", err);
+      setToastMessage('🗑️ Maç silindi.');
+    }
+  };
+
+  // Helper to save new tournament match
+  const handleSaveNewMatch = async () => {
+    if (!modalTeam1 || !modalTeam2) {
+      alert('Lütfen iki takımı da seçiniz!');
+      return;
+    }
+    if (modalTeam1 === modalTeam2) {
+      alert('İki takım aynı olamaz!');
+      return;
+    }
+    setSavingMatch(true);
+    try {
+      const now = Date.now();
+      const canonicalSlotId = modalCup !== 'wpc' && modalRound ? `${modalCup}_${modalSeason}_${modalRound}` : '';
+      const docId = canonicalSlotId || `${modalTeam1}-vs-${modalTeam2}-${now}`;
+      const categoryTag = modalCup === 'wpc' ? 'TURNUVA' : modalCup.toUpperCase();
+      
+      let roundLabel = '';
+      if (modalRound === 'semi1') roundLabel = 'Yarı Final 1';
+      else if (modalRound === 'semi2') roundLabel = 'Yarı Final 2';
+      else if (modalRound === 'final') roundLabel = 'Büyük Final';
+      else if (modalRound === 'groupA') roundLabel = 'A Grubu';
+      else if (modalRound === 'groupB') roundLabel = 'B Grubu';
+      else roundLabel = modalRound;
+
+      const s1 = Number(modalScore1) || 0;
+      const s2 = Number(modalScore2) || 0;
+      let winner = '';
+      if (modalPlayed) {
+        if (s1 > s2) winner = modalTeam1;
+        else if (s2 > s1) winner = modalTeam2;
+        else winner = modalTeam1;
+      }
+
+      const matchData: Match = {
+        id: docId,
+        team1: modalTeam1,
+        team2: modalTeam2,
+        category: categoryTag,
+        season: modalSeason as any,
+        round: modalRound,
+        hafta: roundLabel,
+        score1: modalPlayed ? String(modalScore1) : '0',
+        score2: modalPlayed ? String(modalScore2) : '0',
+        played: modalPlayed,
+        date: modalDate.trim() || new Date().toLocaleDateString('tr-TR'),
+        datejav: now,
+        ligm: false,
+        timeline: [],
+        lineup: {}
+      };
+
+      // 1. Optimistic update
+      setMatches(prev => {
+        const next = [...prev];
+        const idx = next.findIndex(m => m.id === docId || (
+          (m as any).round === modalRound &&
+          Number((m as any).season) === Number(modalSeason) &&
+          String(m.category || '').toUpperCase().includes(modalCup.toUpperCase())
+        ));
+        if (idx >= 0) next[idx] = { ...next[idx], ...matchData };
+        else next.push(matchData);
+        return next;
+      });
+
+      // 2. Synchronize bracket progression
+      const bracketUpdates: Record<string, string> = {};
+      if (modalCup !== 'wpc') {
+        const p = `${modalCup}${modalSeason}`;
+        if (modalRound === 'semi1') {
+          bracketUpdates[`${p}s1`] = modalTeam1;
+          bracketUpdates[`${p}s2`] = modalTeam2;
+          if (modalPlayed && winner) {
+            bracketUpdates[`${p}s5`] = winner;
+          }
+        } else if (modalRound === 'semi2') {
+          bracketUpdates[`${p}s3`] = modalTeam1;
+          bracketUpdates[`${p}s4`] = modalTeam2;
+          if (modalPlayed && winner) {
+            bracketUpdates[`${p}s6`] = winner;
+          }
+        } else if (modalRound === 'final') {
+          bracketUpdates[`${p}s5`] = modalTeam1;
+          bracketUpdates[`${p}s6`] = modalTeam2;
+          if (modalPlayed && winner) {
+            bracketUpdates[`${p}s7`] = winner;
+          }
+        }
+        if (Object.keys(bracketUpdates).length > 0) {
+          setBracketData(prev => ({ ...prev, ...bracketUpdates }));
+          saveStoredBracketData(bracketUpdates);
+        }
+      }
+
+      saveStoredMatch(matchData);
+
+      // 3. Firestore sync
+      try {
+        await setDoc(doc(db, 'matches', docId), matchData, { merge: true });
+        if (Object.keys(bracketUpdates).length > 0) {
+          await setDoc(doc(db, 'brackets', 'data'), bracketUpdates, { merge: true });
+        }
+      } catch (fbErr: any) {
+        console.warn('Firestore write notice (saved locally):', fbErr);
+      }
+
+      setAddMatchModalOpen(false);
+      setToastMessage('✅ Maç eklendi ve fikstür güncellendi!');
+    } catch (err: any) {
+      console.error("Error creating match:", err);
+      alert('Maç eklenirken hata: ' + (err?.message || 'Bilinmeyen hata'));
+    } finally {
+      setSavingMatch(false);
+    }
+  };
+
+  // Helper to open Quick Score modal for any bracket match or slot
+  const handleOpenQuickScore = (
+    roundTitle: string,
+    roundKey: 'semi1' | 'semi2' | 'final' | string,
+    cupTag: 'bcl' | 'bel' | 'becl' | 'wpc',
+    season: number,
+    existingMatch?: Match,
+    defaultT1?: string,
+    defaultT2?: string
+  ) => {
+    setQsCupTag(cupTag);
+    setQsSeason(season);
+    setQsRoundKey(roundKey);
+    setQsRoundTitle(roundTitle);
+    setQsMatch(existingMatch || null);
+
+    const t1 = existingMatch?.team1 || defaultT1 || (teams[0]?.name || 'Takım 1');
+    const t2 = existingMatch?.team2 || defaultT2 || (teams[1]?.name || 'Takım 2');
+    setQsTeam1(t1);
+    setQsTeam2(t2);
+
+    setQsScore1(existingMatch ? String(existingMatch.score1 ?? '0') : '0');
+    setQsScore2(existingMatch ? String(existingMatch.score2 ?? '0') : '0');
+    setQsPlayed(existingMatch ? Boolean(existingMatch.played) : true);
+    setQsPenaltyWinner((existingMatch as any)?.penaltyWinner || '');
+
+    const todayStr = new Date().toLocaleDateString('tr-TR');
+    setQsDate(existingMatch?.date || todayStr);
+    setQuickScoreModalOpen(true);
+  };
+
+  // Helper to save quick score directly with instant optimistic UI and automatic bracket progression
+  const handleSaveQuickScore = async () => {
+    if (!qsTeam1 || !qsTeam2) {
+      alert('Lütfen iki takımı da belirleyiniz!');
+      return;
+    }
+    setSavingQuickScore(true);
+    try {
+      const now = Date.now();
+      const canonicalSlotId = qsCupTag !== 'wpc' && qsRoundKey ? `${qsCupTag}_${qsSeason}_${qsRoundKey}` : '';
+      const docId = qsMatch?.id || canonicalSlotId || `${qsTeam1}-vs-${qsTeam2}-${now}`;
+      const categoryTag = qsCupTag === 'wpc' ? 'TURNUVA' : qsCupTag.toUpperCase();
+
+      let roundLabel = qsRoundTitle;
+      if (!roundLabel) {
+        if (qsRoundKey === 'semi1') roundLabel = 'Yarı Final 1';
+        else if (qsRoundKey === 'semi2') roundLabel = 'Yarı Final 2';
+        else if (qsRoundKey === 'final') roundLabel = 'Büyük Final';
+        else roundLabel = qsRoundKey;
+      }
+
+      const s1Num = Number(qsScore1) || 0;
+      const s2Num = Number(qsScore2) || 0;
+      let winner = '';
+      if (qsPlayed) {
+        if (s1Num > s2Num) winner = qsTeam1;
+        else if (s2Num > s1Num) winner = qsTeam2;
+        else winner = qsPenaltyWinner || qsTeam1;
+      }
+
+      const matchPayload: Match = {
+        id: docId,
+        team1: qsTeam1,
+        team2: qsTeam2,
+        category: categoryTag,
+        season: qsSeason as any,
+        round: qsRoundKey,
+        hafta: roundLabel,
+        score1: String(qsScore1),
+        score2: String(qsScore2),
+        played: qsPlayed,
+        date: qsDate.trim() || new Date().toLocaleDateString('tr-TR'),
+        datejav: qsMatch?.datejav || now,
+        ligm: false,
+        timeline: qsMatch?.timeline || [],
+        lineup: qsMatch?.lineup || {},
+        penaltyWinner: qsPenaltyWinner || undefined
+      };
+
+      // 1. Optimistic state update in React
+      setMatches((prev) => {
+        const next = [...prev];
+        const idx = next.findIndex(m => m.id === docId || (
+          (m as any).round === qsRoundKey &&
+          Number((m as any).season) === Number(qsSeason) &&
+          String(m.category || '').toUpperCase().includes(qsCupTag.toUpperCase())
+        ));
+        if (idx >= 0) {
+          next[idx] = { ...next[idx], ...matchPayload };
+        } else {
+          next.push(matchPayload);
+        }
+        return next;
+      });
+
+      // 2. Synchronize brackets/data and advance winners to the next stage
+      const p = `${qsCupTag}${qsSeason}`;
+      const bUpdates: Record<string, string> = {};
+
+      if (qsCupTag !== 'wpc') {
+        if (qsRoundKey === 'semi1') {
+          bUpdates[`${p}s1`] = qsTeam1;
+          bUpdates[`${p}s2`] = qsTeam2;
+          if (qsPlayed && winner) {
+            bUpdates[`${p}s5`] = winner; // Advances to Finalist 1!
+          }
+        } else if (qsRoundKey === 'semi2') {
+          bUpdates[`${p}s3`] = qsTeam1;
+          bUpdates[`${p}s4`] = qsTeam2;
+          if (qsPlayed && winner) {
+            bUpdates[`${p}s6`] = winner; // Advances to Finalist 2!
+          }
+        } else if (qsRoundKey === 'final') {
+          bUpdates[`${p}s5`] = qsTeam1;
+          bUpdates[`${p}s6`] = qsTeam2;
+          if (qsPlayed && winner) {
+            bUpdates[`${p}s7`] = winner; // Champion crowned!
+          }
+        }
+
+        if (Object.keys(bUpdates).length > 0) {
+          setBracketData(prev => ({ ...prev, ...bUpdates }));
+          saveStoredBracketData(bUpdates);
+        }
+      }
+
+      // 3. Persist match locally
+      saveStoredMatch(matchPayload);
+
+      // 4. Persist to Firestore (graceful non-blocking fallback if permissions/network fail)
+      try {
+        await setDoc(doc(db, 'matches', docId), matchPayload, { merge: true });
+        if (Object.keys(bUpdates).length > 0) {
+          await setDoc(doc(db, 'brackets', 'data'), bUpdates, { merge: true });
+        }
+      } catch (fbErr: any) {
+        console.warn('Firestore write notice (saved locally):', fbErr);
+      }
+
+      setQuickScoreModalOpen(false);
+      setToastMessage(
+        qsRoundKey === 'final' && qsPlayed && winner
+          ? `👑 Büyük Final kaydedildi! ${winner} ŞAMPİYON OLDU!`
+          : '✅ Maç sonucu kaydedildi ve eleme ağacı güncellendi!'
+      );
+    } catch (err: any) {
+      console.error('Error saving quick score:', err);
+      alert('Sonuç kaydedilirken hata oluştu: ' + (err?.message || 'Bilinmeyen hata'));
+    } finally {
+      setSavingQuickScore(false);
+    }
+  };
+
+  // Helper to filter matches by cup and season
+  const getCupSeasonMatches = (cupFilter: 'wpc' | 'bcl' | 'bel' | 'becl', season?: 4 | 5) => {
+    return allTournamentMatches.filter((m) => {
+      const cat = String(m.category || '').toUpperCase().trim();
+      const hStr = String(m.hafta || '').toUpperCase().trim();
+      const mSeason = (m as any).season;
+      
+      let matchesCup = false;
+      if (cupFilter === 'wpc') {
+        matchesCup = cat.includes('WPC') || cat.includes('WORLD PEACE') || cat.includes('TURNUVA') || hStr.includes('WPC');
+      } else if (cupFilter === 'bcl') {
+        matchesCup = cat.includes('BCL') || cat.includes('UCL') || cat.includes('CHAMPIONS') || hStr.includes('BCL') || hStr.includes('UCL');
+      } else if (cupFilter === 'bel') {
+        matchesCup = cat.includes('BEL') || cat.includes('UEL') || cat.includes('EUROPA') || hStr.includes('BEL') || hStr.includes('UEL');
+      } else if (cupFilter === 'becl') {
+        matchesCup = cat.includes('BECL') || cat.includes('UECL') || cat.includes('CONFERENCE') || hStr.includes('BECL') || hStr.includes('UECL');
+      }
+
+      if (!matchesCup) return false;
+      if (cupFilter === 'wpc') return true;
+
+      // Check season match if season provided
+      if (season) {
+        if (mSeason !== undefined && mSeason !== null) {
+          return Number(mSeason) === season;
+        }
+        return season === 5;
+      }
+      return true;
+    });
+  };
 
   // Helper to render WPC Group
   const renderWpcGroup = (groupLetter: 'A' | 'B') => {
@@ -152,57 +899,444 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
     );
   };
 
-  // Helper to render Bracket match slot
-  const renderSlot = (slotKey: string) => {
-    const tName = bracketData[slotKey];
-    if (tName) {
-      const logo = teamLogos[tName] || 'https://via.placeholder.com/32?text=?';
+  // Helper to render Bracket match card based strictly on tournament Match data
+  const renderBracketMatchCard = (
+    roundTitle: string, 
+    roundKey: 'semi1' | 'semi2' | 'final', 
+    match: Match | undefined,
+    cupTag: 'bcl' | 'bel' | 'becl',
+    season: 4 | 5,
+    slotAKey: string,
+    slotBKey: string,
+    semi1?: Match,
+    semi2?: Match
+  ) => {
+    // 1. If an actual match exists in tournament matches, render rich interactive card
+    if (match) {
+      const isPlayed = match.played;
+      const s1 = Number(match.score1) || 0;
+      const s2 = Number(match.score2) || 0;
+      const t1Win = isPlayed && s1 > s2;
+      const t2Win = isPlayed && s2 > s1;
+      const matchDocId = match.id || `${match.team1}-vs-${match.team2}-${match.datejav}`;
+
       return (
         <div 
-          onClick={() => onNavigate({ type: 'team-detail', teamName: tName })}
-          className="flex items-center gap-2 font-extrabold text-xs text-brand-dark cursor-pointer py-1 truncate"
+          onClick={() => handleOpenQuickScore(roundTitle, roundKey, cupTag, season, match, match.team1, match.team2)}
+          className="bg-white rounded-2xl border-2 border-brand-maroon/30 hover:border-brand-maroon shadow-md hover:shadow-xl transition-all p-3.5 w-56 cursor-pointer group flex flex-col justify-between gap-2.5 relative select-text"
         >
-          <img src={logo} className="w-6 h-6 rounded-full object-cover border border-brand-maroon bg-white" alt="logo" />
-          <span className="truncate">{tName}</span>
+          <div className="flex justify-between items-center border-b border-gray-100 pb-1 text-[9px] font-black uppercase tracking-wider text-brand-maroon">
+            <span>{roundTitle}</span>
+            {isPlayed ? (
+              <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-[8px] font-black">BİTTİ</span>
+            ) : (
+              <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded text-[8px] font-black">BEKLENİYOR</span>
+            )}
+          </div>
+
+          {/* Team 1 */}
+          <div className={`flex items-center justify-between gap-2 ${t1Win ? 'font-black text-brand-maroon' : 'text-gray-700'}`}>
+            <div className="flex items-center gap-2 truncate">
+              <img 
+                src={teamLogos[match.team1] || 'https://via.placeholder.com/28?text=?'} 
+                className="w-6 h-6 rounded-full object-cover border border-gray-200 bg-white shrink-0" 
+                alt={match.team1} 
+              />
+              <span className="text-xs font-black truncate">{match.team1}</span>
+            </div>
+            <span className={`text-xs px-2 py-0.5 rounded font-black shrink-0 ${t1Win ? 'bg-brand-maroon text-brand-gold' : 'bg-gray-100 text-gray-700'}`}>
+              {isPlayed ? match.score1 : '-'}
+            </span>
+          </div>
+
+          {/* Team 2 */}
+          <div className={`flex items-center justify-between gap-2 ${t2Win ? 'font-black text-brand-maroon' : 'text-gray-700'}`}>
+            <div className="flex items-center gap-2 truncate">
+              <img 
+                src={teamLogos[match.team2] || 'https://via.placeholder.com/28?text=?'} 
+                className="w-6 h-6 rounded-full object-cover border border-gray-200 bg-white shrink-0" 
+                alt={match.team2} 
+              />
+              <span className="text-xs font-black truncate">{match.team2}</span>
+            </div>
+            <span className={`text-xs px-2 py-0.5 rounded font-black shrink-0 ${t2Win ? 'bg-brand-maroon text-brand-gold' : 'bg-gray-100 text-gray-700'}`}>
+              {isPlayed ? match.score2 : '-'}
+            </span>
+          </div>
+
+          {/* Action buttons */}
+          <div className="text-[9px] border-t border-dashed border-gray-100 pt-1.5 flex justify-between items-center gap-1">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenQuickScore(roundTitle, roundKey, cupTag, season, match, match.team1, match.team2);
+              }}
+              className="bg-brand-gold hover:bg-amber-400 text-brand-dark px-2 py-0.5 rounded font-black text-[9px] uppercase transition-colors shadow-xs"
+            >
+              ⚡ Sonuç Gir
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onNavigate({ type: 'match-detail', matchId: matchDocId, initialMatch: match });
+              }}
+              className="text-brand-maroon hover:underline font-black text-[9px] ml-auto"
+            >
+              Detay →
+            </button>
+          </div>
         </div>
       );
     }
-    return <span className="text-gray-400 font-bold text-xs">-</span>;
-  };
 
-  // Helper to render standard KO Tree Bracket
-  const renderKoBracket = (tag: string, season: 4 | 5) => {
-    const p = `${tag}${season}`; // E.g., bcl5 or bel4
-    return (
-      <div className="w-full overflow-x-auto py-6">
-        <div className="flex gap-10 justify-center items-center h-96 min-w-[700px] max-w-4xl mx-auto select-none select-text">
-          {/* SEMIS */}
-          <div className="flex flex-col gap-10 justify-center">
-            <div className="bg-brand-card border border-gray-300 rounded-xl p-3 w-44 shadow-sm space-y-2">
-              <div className="border-b border-gray-200 pb-1.5">{renderSlot(`${p}s1`)}</div>
-              <div>{renderSlot(`${p}s2`)}</div>
+    // Helper to calculate winner of match
+    const getWinnerOfMatch = (m?: Match): string => {
+      if (!m || !m.played) return '';
+      const s1 = Number(m.score1) || 0;
+      const s2 = Number(m.score2) || 0;
+      if (s1 > s2) return m.team1;
+      if (s2 > s1) return m.team2;
+      if ((m as any).penaltyWinner) return (m as any).penaltyWinner;
+      return m.team1;
+    };
+
+    // 2. Final Round logic (automatic finalist propagation)
+    if (roundKey === 'final') {
+      const s1Winner = (semi1 && semi1.played ? getWinnerOfMatch(semi1) : '') || bracketData[slotAKey] || '';
+      const s2Winner = (semi2 && semi2.played ? getWinnerOfMatch(semi2) : '') || bracketData[slotBKey] || '';
+
+      if (s1Winner && s2Winner) {
+        return (
+          <div 
+            onClick={() => handleOpenQuickScore(roundTitle, 'final', cupTag, season, undefined, s1Winner, s2Winner)}
+            className="bg-white rounded-2xl border-2 border-brand-gold hover:border-brand-maroon shadow-md hover:shadow-xl transition-all p-3.5 w-56 cursor-pointer group flex flex-col justify-between gap-2.5 relative select-text"
+          >
+            <div className="flex justify-between items-center border-b border-gray-100 pb-1 text-[9px] font-black uppercase tracking-wider text-brand-maroon">
+              <span>{roundTitle}</span>
+              <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-[8px] font-black">FİNALİSTLER</span>
             </div>
-            <div className="bg-brand-card border border-gray-300 rounded-xl p-3 w-44 shadow-sm space-y-2">
-              <div className="border-b border-gray-200 pb-1.5">{renderSlot(`${p}s3`)}</div>
-              <div>{renderSlot(`${p}s4`)}</div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 truncate">
+                  <img src={teamLogos[s1Winner] || 'https://via.placeholder.com/24?text=?'} className="w-5 h-5 rounded-full object-cover bg-white border border-gray-200 shrink-0" alt="" />
+                  <span className="text-xs font-black truncate">{s1Winner}</span>
+                </div>
+                <span className="text-xs px-2 py-0.5 rounded font-black bg-gray-100 text-gray-500">-</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 truncate">
+                  <img src={teamLogos[s2Winner] || 'https://via.placeholder.com/24?text=?'} className="w-5 h-5 rounded-full object-cover bg-white border border-gray-200 shrink-0" alt="" />
+                  <span className="text-xs font-black truncate">{s2Winner}</span>
+                </div>
+                <span className="text-xs px-2 py-0.5 rounded font-black bg-gray-100 text-gray-500">-</span>
+              </div>
+            </div>
+
+            <button 
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenQuickScore(roundTitle, 'final', cupTag, season, undefined, s1Winner, s2Winner);
+              }}
+              className="w-full mt-1 py-1.5 bg-brand-maroon hover:bg-black text-brand-gold text-[9px] font-black rounded-lg transition-colors cursor-pointer uppercase flex items-center justify-center gap-1 shadow-xs"
+            >
+              <span>⚡</span>
+              <span>Final Sonucu Gir</span>
+            </button>
+          </div>
+        );
+      } else if (s1Winner || s2Winner) {
+        const knownWinner = s1Winner || s2Winner;
+        const waitingRound = s1Winner ? 'Yarı Final 2 Galibi' : 'Yarı Final 1 Galibi';
+        return (
+          <div 
+            onClick={() => handleOpenQuickScore(roundTitle, 'final', cupTag, season, undefined, s1Winner || '', s2Winner || '')}
+            className="bg-white/95 rounded-2xl border-2 border-brand-gold/60 hover:border-brand-maroon shadow-sm hover:shadow-md transition-all p-3.5 w-56 cursor-pointer flex flex-col justify-between gap-2.5"
+          >
+            <div className="flex justify-between items-center border-b border-gray-100 pb-1 text-[9px] font-black uppercase tracking-wider text-brand-maroon">
+              <span>{roundTitle}</span>
+              <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded text-[8px] font-black">1 FİNALİST HAZIR</span>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 truncate">
+                  <img src={teamLogos[knownWinner] || 'https://via.placeholder.com/24?text=?'} className="w-5 h-5 rounded-full object-cover bg-white border border-gray-200 shrink-0" alt="" />
+                  <span className="text-xs font-black truncate">{knownWinner}</span>
+                </div>
+                <span className="text-[9px] px-1.5 py-0.5 rounded font-black bg-emerald-100 text-emerald-800">FİNALDE</span>
+              </div>
+              <div className="flex items-center justify-between gap-2 opacity-70">
+                <div className="flex items-center gap-2 truncate">
+                  <span className="w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center text-[10px] shrink-0">⏳</span>
+                  <span className="text-[11px] font-bold text-gray-500 italic truncate">{waitingRound}</span>
+                </div>
+                <span className="text-xs px-2 py-0.5 rounded font-black bg-gray-100 text-gray-400">-</span>
+              </div>
+            </div>
+
+            <div className="text-[9px] border-t border-dashed border-gray-100 pt-1 text-center font-bold text-gray-400">
+              Diğer yarı finalin tamamlanması bekleniyor
+            </div>
+          </div>
+        );
+      } else {
+        return (
+          <div 
+            onClick={() => handleOpenQuickScore(roundTitle, 'final', cupTag, season)}
+            className="bg-white/80 border-2 border-dashed border-gray-300 hover:border-brand-maroon rounded-2xl p-3.5 w-56 shadow-sm flex flex-col justify-between gap-2.5 transition-colors cursor-pointer"
+          >
+            <div className="flex justify-between items-center border-b border-gray-100 pb-1 text-[9px] font-black uppercase tracking-wider text-gray-500">
+              <span>{roundTitle}</span>
+              <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[8px] font-black">BEKLENİYOR</span>
+            </div>
+            <div className="space-y-1.5 text-gray-400 text-xs font-bold py-1">
+              <div className="flex items-center gap-2">
+                <span className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center text-[9px]">1</span>
+                <span className="truncate">Yarı Final 1 Galibi</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center text-[9px]">2</span>
+                <span className="truncate">Yarı Final 2 Galibi</span>
+              </div>
+            </div>
+            <button 
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenQuickScore(roundTitle, 'final', cupTag, season);
+              }}
+              className="mt-0.5 py-1 px-2.5 bg-gray-100 hover:bg-brand-maroon hover:text-brand-gold text-gray-600 text-[9px] font-black rounded-lg uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1 mx-auto"
+            >
+              <span>⚡</span>
+              <span>Finali Belirle / Skor Gir</span>
+            </button>
+          </div>
+        );
+      }
+    }
+
+    // 3. Fallback slot with preset seeds from bracketData if available
+    const defaultT1 = bracketData[slotAKey] || '';
+    const defaultT2 = bracketData[slotBKey] || '';
+
+    if (defaultT1 && defaultT2) {
+      return (
+        <div 
+          onClick={() => handleOpenQuickScore(roundTitle, roundKey, cupTag, season, undefined, defaultT1, defaultT2)}
+          className="bg-white rounded-2xl border-2 border-dashed border-brand-maroon/40 hover:border-brand-maroon shadow-sm hover:shadow-md transition-all p-3.5 w-56 cursor-pointer flex flex-col justify-between gap-2.5"
+        >
+          <div className="flex justify-between items-center border-b border-gray-100 pb-1 text-[9px] font-black uppercase tracking-wider text-brand-maroon">
+            <span>{roundTitle}</span>
+            <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded text-[8px] font-black">BEKLENİYOR</span>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 truncate">
+                <img 
+                  src={teamLogos[defaultT1] || 'https://via.placeholder.com/24?text=?'} 
+                  className="w-5 h-5 rounded-full object-cover bg-white border border-gray-200" 
+                  alt={defaultT1} 
+                />
+                <span className="text-xs font-black truncate">{defaultT1}</span>
+              </div>
+              <span className="text-xs px-2 py-0.5 rounded font-black bg-gray-100 text-gray-500">-</span>
+            </div>
+
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 truncate">
+                <img 
+                  src={teamLogos[defaultT2] || 'https://via.placeholder.com/24?text=?'} 
+                  className="w-5 h-5 rounded-full object-cover bg-white border border-gray-200" 
+                  alt={defaultT2} 
+                />
+                <span className="text-xs font-black truncate">{defaultT2}</span>
+              </div>
+              <span className="text-xs px-2 py-0.5 rounded font-black bg-gray-100 text-gray-500">-</span>
             </div>
           </div>
 
-          {/* FINAL COUPLING */}
-          <div className="flex flex-col gap-10 justify-center">
-            <div className="bg-brand-card border-2 border-brand-maroon rounded-xl p-3 w-44 shadow-md space-y-2 relative">
-              <span className="absolute -top-3 left-3 bg-brand-gold text-brand-maroon text-[9px] font-black px-2 rounded-full border border-brand-maroon">FINAL</span>
-              <div className="border-b border-gray-200 pb-1.5">{renderSlot(`${p}s5`)}</div>
-              <div>{renderSlot(`${p}s6`)}</div>
-            </div>
+          <div className="text-[9px] border-t border-dashed border-gray-100 pt-1.5 flex justify-between items-center">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenQuickScore(roundTitle, roundKey, cupTag, season, undefined, defaultT1, defaultT2);
+              }}
+              className="bg-brand-maroon hover:bg-black text-brand-gold px-2.5 py-1 rounded-lg font-black text-[9px] uppercase tracking-wider transition-colors shadow-xs flex items-center gap-1 mx-auto"
+            >
+              <span>⚡</span>
+              <span>Sonuç Gir</span>
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // 4. Fully empty slot
+    return (
+      <div 
+        onClick={() => handleOpenQuickScore(roundTitle, roundKey, cupTag, season)}
+        className="bg-white/80 border-2 border-dashed border-gray-300 hover:border-brand-maroon rounded-2xl p-4 w-56 shadow-sm flex flex-col items-center justify-center gap-2 text-center transition-colors cursor-pointer"
+      >
+        <span className="text-[10px] font-black text-gray-500 uppercase">{roundTitle}</span>
+        <span className="text-[10px] text-gray-400 font-bold">Henüz maç eklenmedi</span>
+        <button 
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleOpenQuickScore(roundTitle, roundKey, cupTag, season);
+          }}
+          className="mt-1 py-1.5 px-3.5 bg-brand-maroon hover:bg-black text-brand-gold text-[9px] font-black rounded-xl uppercase tracking-wider transition-all cursor-pointer shadow flex items-center gap-1"
+        >
+          <span>⚡</span>
+          <span>Sonuç / Maç Gir</span>
+        </button>
+      </div>
+    );
+  };
+
+  // Helper to render Bracket strictly based on tournament matches at the bottom
+  const renderKoBracket = (tag: 'bcl' | 'bel' | 'becl', season: 4 | 5) => {
+    const p = `${tag}${season}`;
+    const seasonMatches = getCupSeasonMatches(tag, season);
+
+    // Prioritized match finder: strictly isolates each round and prevents semi matches from qualifying as final
+    const findRoundMatch = (rKey: 'semi1' | 'semi2' | 'final', semi1Ref?: Match, semi2Ref?: Match) => {
+      const candidates = seasonMatches.filter(m => {
+        const mRound = String((m as any).round || '').toLowerCase().trim();
+        const mHafta = String(m.hafta || '').toLowerCase().trim();
+
+        if (rKey === 'semi1') {
+          if (mRound === 'semi2' || mRound === 'final') return false;
+          if (mHafta.includes('yarı final 2') || mHafta.includes('semi 2') || mHafta.includes('büyük final')) return false;
+          return mRound === 'semi1' || mHafta.includes('yarı final 1') || mHafta.includes('semi 1');
+        }
+
+        if (rKey === 'semi2') {
+          if (mRound === 'semi1' || mRound === 'final') return false;
+          if (mHafta.includes('yarı final 1') || mHafta.includes('semi 1') || mHafta.includes('büyük final')) return false;
+          return mRound === 'semi2' || mHafta.includes('yarı final 2') || mHafta.includes('semi 2');
+        }
+
+        if (rKey === 'final') {
+          // Strictly knockout final: CANNOT be semi1 or semi2!
+          if (mRound === 'semi1' || mRound === 'semi2') return false;
+          if (mHafta.includes('yarı') || mHafta.includes('semi')) return false;
+          // In a knockout tournament, the Final cannot have the exact two teams from a single semi-final
+          if (semi1Ref && ((m.team1 === semi1Ref.team1 && m.team2 === semi1Ref.team2) || (m.team1 === semi1Ref.team2 && m.team2 === semi1Ref.team1))) {
+            return false;
+          }
+          if (semi2Ref && ((m.team1 === semi2Ref.team1 && m.team2 === semi2Ref.team2) || (m.team1 === semi2Ref.team2 && m.team2 === semi2Ref.team1))) {
+            return false;
+          }
+          return mRound === 'final' || mHafta.includes('büyük final') || mHafta === 'final';
+        }
+
+        return false;
+      });
+
+      if (candidates.length === 0) return undefined;
+      candidates.sort((a, b) => {
+        if (a.played && !b.played) return -1;
+        if (!a.played && b.played) return 1;
+        return (Number(b.datejav) || 0) - (Number(a.datejav) || 0);
+      });
+      return candidates[0];
+    };
+
+    const semi1Match = findRoundMatch('semi1');
+    const semi2Match = findRoundMatch('semi2');
+    const finalMatch = findRoundMatch('final', semi1Match, semi2Match);
+
+    const getWinnerOfMatch = (m?: Match): string => {
+      if (!m || !m.played) return '';
+      const s1 = Number(m.score1) || 0;
+      const s2 = Number(m.score2) || 0;
+      if (s1 > s2) return m.team1;
+      if (s2 > s1) return m.team2;
+      if ((m as any).penaltyWinner) return (m as any).penaltyWinner;
+      return m.team1;
+    };
+
+    // Determine Champion strictly when the final match is actually played
+    let championTeam = '';
+    if (finalMatch && finalMatch.played) {
+      championTeam = getWinnerOfMatch(finalMatch);
+    }
+
+    const champLogo = championTeam ? (teamLogos[championTeam] || 'https://via.placeholder.com/48?text=?') : '';
+
+    return (
+      <div className="w-full overflow-x-auto py-6">
+        <div className="flex gap-8 md:gap-12 justify-center items-center h-auto min-h-[380px] min-w-[750px] max-w-5xl mx-auto select-none select-text">
+          {/* SEMIS */}
+          <div className="flex flex-col gap-6 justify-center">
+            {renderBracketMatchCard(
+              '⚔️ Yarı Final 1',
+              'semi1',
+              semi1Match,
+              tag,
+              season,
+              `${p}s1`,
+              `${p}s2`
+            )}
+            {renderBracketMatchCard(
+              '⚔️ Yarı Final 2',
+              'semi2',
+              semi2Match,
+              tag,
+              season,
+              `${p}s3`,
+              `${p}s4`
+            )}
+          </div>
+
+          {/* FINAL */}
+          <div className="flex flex-col gap-6 justify-center">
+            {renderBracketMatchCard(
+              '🏆 BÜYÜK FİNAL',
+              'final',
+              finalMatch,
+              tag,
+              season,
+              `${p}s5`,
+              `${p}s6`,
+              semi1Match,
+              semi2Match
+            )}
           </div>
 
           {/* CHAMPION */}
-          <div className="flex flex-col gap-10 justify-center">
-            <div className="bg-brand-dark border-3 border-brand-gold rounded-2xl w-48 overflow-hidden shadow-lg">
-              <div className="bg-brand-gold text-brand-dark text-center py-1.5 text-xs font-black tracking-widest uppercase">ŞAMPİYON</div>
-              <div className="bg-brand-dark py-4 px-4 flex justify-center items-center h-16">
-                {renderSlot(`${p}s7`)}
+          <div className="flex flex-col gap-6 justify-center">
+            <div className="bg-gradient-to-b from-[#2a1a08] to-[#120b03] border-3 border-brand-gold rounded-2xl w-52 overflow-hidden shadow-2xl text-center">
+              <div className="bg-brand-gold text-brand-dark py-2 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-1.5 shadow">
+                <span>👑</span>
+                <span>ŞAMPİYON</span>
+                <span>👑</span>
+              </div>
+              <div className="py-5 px-4 flex flex-col justify-center items-center min-h-[120px] gap-2">
+                {championTeam ? (
+                  <div 
+                    onClick={() => onNavigate({ type: 'team-detail', teamName: championTeam })}
+                    className="cursor-pointer group flex flex-col items-center gap-2"
+                  >
+                    <img 
+                      src={champLogo} 
+                      className="w-16 h-16 rounded-full object-cover border-2 border-brand-gold bg-white shadow-md group-hover:scale-105 transition-transform" 
+                      alt={championTeam} 
+                    />
+                    <span className="font-black text-sm text-brand-gold tracking-wide leading-tight group-hover:underline">
+                      {championTeam}
+                    </span>
+                  </div>
+                ) : (
+                  <span className="text-gray-400 font-bold text-xs">Final Galibi Bekleniyor</span>
+                )}
               </div>
             </div>
           </div>
@@ -211,89 +1345,132 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
     );
   };
 
-  // Helper to render tournament matches below bracket or group
+  // Helper to render tournament matches list with Add Match button
   const renderTournamentMatches = (cupFilter: 'wpc' | 'bcl' | 'bel' | 'becl') => {
-    const cupMatches = matches.filter((m) => {
-      const cat = (m.category || '').toUpperCase().trim();
-      const hStr = String(m.hafta || '').toUpperCase().trim();
-      if (cupFilter === 'wpc') {
-        return cat.includes('WPC') || cat.includes('WORLD PEACE') || cat.includes('TURNUVA') || hStr.includes('WPC');
-      }
-      if (cupFilter === 'bcl') {
-        return cat.includes('BCL') || cat.includes('UCL') || cat.includes('CHAMPIONS') || hStr.includes('BCL') || hStr.includes('UCL');
-      }
-      if (cupFilter === 'bel') {
-        return cat.includes('BEL') || cat.includes('UEL') || cat.includes('EUROPA') || hStr.includes('BEL') || hStr.includes('UEL');
-      }
-      if (cupFilter === 'becl') {
-        return cat.includes('BECL') || cat.includes('UECL') || cat.includes('CONFERENCE') || hStr.includes('BECL') || hStr.includes('UECL');
-      }
-      return false;
-    });
+    const activeSeason = cupFilter === 'bcl' ? bclSeason : cupFilter === 'bel' ? belSeason : cupFilter === 'becl' ? beclSeason : undefined;
+    const cupMatches = getCupSeasonMatches(cupFilter, activeSeason);
 
     // Sort by datejav descending
     cupMatches.sort((a, b) => (Number(b.datejav) || 0) - (Number(a.datejav) || 0));
 
-    if (cupMatches.length === 0) {
-      return (
-        <div className="text-center py-6 text-gray-500 font-bold text-xs bg-white/50 rounded-2xl border border-gray-200 mt-6 max-w-2xl mx-auto">
-          Bu turnuvaya ait henüz oynanmış veya planlanmış maç kaydı bulunmuyor.
-        </div>
-      );
-    }
+    const cupTitle = cupFilter === 'wpc' 
+      ? 'WORLD PEACE CUP' 
+      : cupFilter === 'bcl' 
+      ? 'UCL (ŞAMPİYONLAR LİGİ)' 
+      : cupFilter === 'bel' 
+      ? 'UEL (AVRUPA LİGİ)' 
+      : 'UECL (KONFERANS LİGİ)';
 
     return (
       <div className="mt-8 max-w-2xl mx-auto space-y-4">
-        <div className="flex items-center justify-between border-b-2 border-brand-maroon pb-2 px-1">
+        {/* Section Header with Add Match Button */}
+        <div className="flex items-center justify-between border-b-2 border-brand-maroon pb-3 px-1">
           <h4 className="font-black text-xs md:text-sm text-brand-maroon uppercase tracking-wider flex items-center gap-2">
             <span>⚽</span>
-            <span>{cupFilter.toUpperCase()} TURNUVA MAÇLARI ({cupMatches.length})</span>
+            <span>{cupTitle} MAÇLARI ({cupMatches.length})</span>
           </h4>
-          <span className="text-[10px] font-bold text-gray-400">Detay için maça tıkla</span>
+          <button
+            type="button"
+            onClick={() => handleOpenAddMatch(cupFilter, activeSeason)}
+            className="bg-brand-maroon text-brand-gold hover:bg-black font-black text-xs uppercase px-3.5 py-1.5 rounded-xl transition-all shadow cursor-pointer flex items-center gap-1.5"
+          >
+            <span>➕</span>
+            <span>Maç Ekle</span>
+          </button>
         </div>
 
-        <div className="space-y-3">
-          {cupMatches.map((m, idx) => {
-            const docId = m.id || `${m.team1}-vs-${m.team2}-${m.datejav}`;
-            return (
-              <div
-                key={idx}
-                onClick={() => onNavigate({ type: 'match-detail', matchId: docId })}
-                className="bg-white rounded-2xl border-b-4 border-brand-maroon p-4 shadow-sm hover:shadow-md hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-between gap-3"
-              >
-                {/* Team 1 */}
-                <div className="flex-1 flex items-center justify-end gap-2.5 text-right min-w-0">
-                  <span className="font-black text-xs md:text-sm text-brand-dark truncate">{m.team1}</span>
-                  <img
-                    src={teamLogos[m.team1] || 'https://via.placeholder.com/32?text=?'}
-                    className="w-7 h-7 md:w-8 md:h-8 rounded-full object-cover border border-gray-200 bg-white shrink-0"
-                    alt={m.team1}
-                  />
-                </div>
-
-                {/* Score */}
-                <div className="flex flex-col items-center shrink-0 min-w-[70px]">
-                  <div className="px-3 py-1 bg-brand-dark text-brand-gold rounded-xl font-black text-xs md:text-sm text-center border border-brand-gold">
-                    {m.played ? `${m.score1} - ${m.score2}` : 'VS'}
-                  </div>
-                  <span className="text-[8px] md:text-[9px] font-bold text-gray-400 mt-0.5 truncate max-w-[90px]">
-                    {m.date || 'Tarih Belirsiz'}
+        {cupMatches.length === 0 ? (
+          <div className="text-center py-8 text-gray-500 font-bold text-xs bg-white/60 rounded-2xl border border-dashed border-gray-300 space-y-3">
+            <p>Bu turnuvaya ait henüz maç kaydı bulunmuyor.</p>
+            <button
+              type="button"
+              onClick={() => handleOpenAddMatch(cupFilter, activeSeason)}
+              className="bg-brand-maroon text-brand-gold font-black text-xs uppercase px-4 py-2 rounded-xl transition-all shadow cursor-pointer flex items-center gap-1.5 mx-auto"
+            >
+              <span>➕</span>
+              <span>İlk Maçı Ekle</span>
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {cupMatches.map((m, idx) => {
+              const docId = m.id || `${m.team1}-vs-${m.team2}-${m.datejav}`;
+              const roundTag = (m as any).roundLabel || m.hafta || (m as any).round || 'Turnuva Maçı';
+              return (
+                <div
+                  key={m.id || idx}
+                  onClick={() => onNavigate({ type: 'match-detail', matchId: docId, initialMatch: m })}
+                  className="bg-white rounded-2xl border-b-4 border-brand-maroon p-4 shadow-sm hover:shadow-md hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-between gap-3 group relative select-text"
+                >
+                  {/* Round Badge */}
+                  <span className="absolute -top-2.5 left-4 bg-brand-gold text-brand-dark px-2.5 py-0.5 rounded-full text-[8px] font-black uppercase border border-brand-dark shadow-xs">
+                    {roundTag}
                   </span>
-                </div>
 
-                {/* Team 2 */}
-                <div className="flex-1 flex items-center justify-start gap-2.5 text-left min-w-0">
-                  <img
-                    src={teamLogos[m.team2] || 'https://via.placeholder.com/32?text=?'}
-                    className="w-7 h-7 md:w-8 md:h-8 rounded-full object-cover border border-gray-200 bg-white shrink-0"
-                    alt={m.team2}
-                  />
-                  <span className="font-black text-xs md:text-sm text-brand-dark truncate">{m.team2}</span>
+                  {/* Team 1 */}
+                  <div className="flex-1 flex items-center justify-end gap-2.5 text-right min-w-0">
+                    <span className="font-black text-xs md:text-sm text-brand-dark truncate">{m.team1}</span>
+                    <img
+                      src={teamLogos[m.team1] || 'https://via.placeholder.com/32?text=?'}
+                      className="w-7 h-7 md:w-8 md:h-8 rounded-full object-cover border border-gray-200 bg-white shrink-0"
+                      alt={m.team1}
+                    />
+                  </div>
+
+                  {/* Score & Quick Actions */}
+                  <div className="flex flex-col items-center shrink-0 min-w-[70px]">
+                    <div className="px-3 py-1 bg-brand-dark text-brand-gold rounded-xl font-black text-xs md:text-sm text-center border border-brand-gold">
+                      {m.played ? `${m.score1} - ${m.score2}` : 'VS'}
+                    </div>
+                    <span className="text-[8px] md:text-[9px] font-bold text-gray-400 mt-0.5 truncate max-w-[90px]">
+                      {m.date || 'Tarih Belirsiz'}
+                    </span>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenQuickScore(roundTag, (m as any).round || 'semi1', cupFilter, (m as any).season || activeSeason || 5, m, m.team1, m.team2);
+                        }}
+                        className="bg-brand-gold hover:bg-amber-400 text-brand-dark text-[8px] font-black uppercase px-2 py-0.5 rounded shadow-xs"
+                      >
+                        ⚡ Skor
+                      </button>
+                      <span className="text-[8px] font-black text-brand-maroon group-hover:underline">
+                        Detay →
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Team 2 */}
+                  <div className="flex-1 flex items-center justify-start gap-2.5 text-left min-w-0">
+                    <img
+                      src={teamLogos[m.team2] || 'https://via.placeholder.com/32?text=?'}
+                      className="w-7 h-7 md:w-8 md:h-8 rounded-full object-cover border border-gray-200 bg-white shrink-0"
+                      alt={m.team2}
+                    />
+                    <span className="font-black text-xs md:text-sm text-brand-dark truncate">{m.team2}</span>
+                  </div>
+
+                  {/* Admin Delete Action */}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteMatch(docId);
+                      }}
+                      className="text-gray-300 hover:text-red-600 transition-colors p-1 rounded cursor-pointer shrink-0 ml-1"
+                      title="Maçı Sil"
+                    >
+                      🗑️
+                    </button>
+                  )}
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   };
@@ -312,7 +1489,7 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
                 : 'bg-brand-card border-brand-maroon text-brand-maroon/70'
             }`}
           >
-            {cup === 'wpc' ? 'WORLD PEACE CUP' : cup === 'wc' ? '🌟 DÜNYA KUPASI 2026' : cup.toUpperCase()}
+            {cup === 'wpc' ? 'WORLD PEACE CUP' : cup === 'wc' ? '🌟 DÜNYA KUPASI 2026' : cup === 'bcl' ? 'BCL / UCL' : cup === 'bel' ? 'BEL / UEL' : 'BECL / UECL'}
           </button>
         ))}
       </div>
@@ -403,6 +1580,378 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
               {renderTournamentMatches('becl')}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ADD TOURNAMENT MATCH MODAL */}
+      {addMatchModalOpen && ReactDOM.createPortal(
+        <div className="fixed inset-0 bg-black/80 z-[99999] flex items-center justify-center p-4">
+          <div className="bg-[#f2ede1] text-[#3d3d3d] w-full max-w-md rounded-3xl p-6 border-b-8 border-brand-maroon shadow-2xl overflow-y-auto max-h-[92vh] relative select-text">
+            <button 
+              type="button"
+              onClick={() => setAddMatchModalOpen(false)} 
+              className="absolute top-4 right-4 text-xl font-bold text-brand-maroon cursor-pointer hover:opacity-75"
+            >
+              ✕
+            </button>
+            <h3 className="text-brand-maroon font-black text-base text-center uppercase tracking-wide border-b-2 border-brand-maroon pb-2 mb-4">
+              ➕ Turnuva Maçı Ekle
+            </h3>
+
+            <div className="space-y-4">
+              {/* Turnuva Seçimi */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-brand-maroon uppercase">Turnuva</label>
+                <select
+                  value={modalCup}
+                  onChange={(e) => setModalCup(e.target.value as any)}
+                  className="w-full bg-white border border-gray-300 rounded-xl p-2 text-xs font-black text-gray-800"
+                >
+                  <option value="bcl">BCL / UCL (Şampiyonlar Ligi)</option>
+                  <option value="bel">BEL / UEL (Avrupa Ligi)</option>
+                  <option value="becl">BECL / UECL (Konferans Ligi)</option>
+                  <option value="wpc">World Peace Cup (Turnuva)</option>
+                </select>
+              </div>
+
+              {/* Sezon Seçimi (BCL, BEL, BECL için) */}
+              {modalCup !== 'wpc' && (
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-black text-brand-maroon uppercase">Sezon</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setModalSeason(5)}
+                      className={`py-2 rounded-xl font-black text-xs border ${modalSeason === 5 ? 'bg-brand-maroon text-brand-gold border-black' : 'bg-white border-gray-300 text-gray-600'}`}
+                    >
+                      5. Sezon
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setModalSeason(4)}
+                      className={`py-2 rounded-xl font-black text-xs border ${modalSeason === 4 ? 'bg-brand-maroon text-brand-gold border-black' : 'bg-white border-gray-300 text-gray-600'}`}
+                    >
+                      4. Sezon
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Aşama (Round) Seçimi */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-brand-maroon uppercase">Aşama / Tur</label>
+                <select
+                  value={modalRound}
+                  onChange={(e) => setModalRound(e.target.value)}
+                  className="w-full bg-white border border-gray-300 rounded-xl p-2 text-xs font-black text-gray-800"
+                >
+                  {modalCup === 'wpc' ? (
+                    <>
+                      <option value="groupA">A Grubu</option>
+                      <option value="groupB">B Grubu</option>
+                      <option value="semi1">Yarı Final 1</option>
+                      <option value="semi2">Yarı Final 2</option>
+                      <option value="final">Büyük Final</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="semi1">Yarı Final 1</option>
+                      <option value="semi2">Yarı Final 2</option>
+                      <option value="final">Büyük Final</option>
+                    </>
+                  )}
+                </select>
+              </div>
+
+              {/* Ev Sahibi Takım 1 */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-gray-600 uppercase">🏠 1. Takım (Ev Sahibi)</label>
+                <select
+                  value={modalTeam1}
+                  onChange={(e) => setModalTeam1(e.target.value)}
+                  className="w-full bg-white border border-gray-300 rounded-xl p-2 text-xs font-black text-gray-800"
+                >
+                  {teams.map((t) => (
+                    <option key={t.name} value={t.name}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Deplasman Takım 2 */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-gray-600 uppercase">🚀 2. Takım (Deplasman)</label>
+                <select
+                  value={modalTeam2}
+                  onChange={(e) => setModalTeam2(e.target.value)}
+                  className="w-full bg-white border border-gray-300 rounded-xl p-2 text-xs font-black text-gray-800"
+                >
+                  {teams.map((t) => (
+                    <option key={t.name} value={t.name}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Maç Tarihi */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-gray-600 uppercase">📅 Maç Tarihi</label>
+                <input
+                  type="text"
+                  placeholder="Örn: 17.10.2026"
+                  value={modalDate}
+                  onChange={(e) => setModalDate(e.target.value)}
+                  className="w-full bg-white border border-gray-300 rounded-xl p-2 text-xs font-bold"
+                />
+              </div>
+
+              {/* Oynandı mı? */}
+              <div className="flex items-center gap-2 p-3 bg-white/70 rounded-xl border border-gray-200">
+                <input
+                  type="checkbox"
+                  id="modalPlayedCheckbox"
+                  checked={modalPlayed}
+                  onChange={(e) => setModalPlayed(e.target.checked)}
+                  className="w-4 h-4 text-brand-maroon rounded"
+                />
+                <label htmlFor="modalPlayedCheckbox" className="text-xs font-black text-gray-700 cursor-pointer">
+                  Maç oynandı olarak işaretle ve skor gir
+                </label>
+              </div>
+
+              {/* Skor Alanları (Eğer oynandıysa) */}
+              {modalPlayed && (
+                <div className="grid grid-cols-2 gap-3 p-3 bg-brand-maroon/5 rounded-xl border border-brand-maroon/20">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[9px] font-black text-brand-maroon uppercase">{modalTeam1 || 'T1'} Skor</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={modalScore1}
+                      onChange={(e) => setModalScore1(e.target.value)}
+                      className="w-full bg-white border border-gray-300 rounded-xl p-2 text-center text-sm font-black"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[9px] font-black text-brand-maroon uppercase">{modalTeam2 || 'T2'} Skor</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={modalScore2}
+                      onChange={(e) => setModalScore2(e.target.value)}
+                      className="w-full bg-white border border-gray-300 rounded-xl p-2 text-center text-sm font-black"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Kaydet Butonu */}
+              <button
+                type="button"
+                disabled={savingMatch}
+                onClick={handleSaveNewMatch}
+                className="w-full py-3 bg-brand-maroon text-brand-gold hover:bg-black font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow cursor-pointer disabled:opacity-50 mt-2"
+              >
+                {savingMatch ? 'Kaydediliyor...' : '💾 Maçı Kaydet ve Fikstüre Ekle'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* QUICK SCORE / RESULT ENTRY MODAL */}
+      {quickScoreModalOpen && ReactDOM.createPortal(
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-xs z-[99999] flex items-center justify-center p-4">
+          <div className="bg-[#f2ede1] text-[#3d3d3d] w-full max-w-md rounded-3xl p-6 border-b-8 border-brand-maroon shadow-2xl relative select-text animate-fade-in max-h-[95vh] overflow-y-auto">
+            <button 
+              type="button"
+              onClick={() => setQuickScoreModalOpen(false)} 
+              className="absolute top-4 right-4 text-xl font-bold text-brand-maroon cursor-pointer hover:opacity-75"
+            >
+              ✕
+            </button>
+            
+            <div className="text-center border-b-2 border-brand-maroon pb-3 mb-4">
+              <span className="text-[10px] font-black uppercase tracking-widest text-brand-maroon block">
+                {qsCupTag.toUpperCase()} {qsSeason}. SEZON • {qsRoundTitle || qsRoundKey}
+              </span>
+              <h3 className="text-base font-black text-brand-dark uppercase tracking-wide mt-0.5">
+                ⚡ Maç Sonucu & Skor Girişi
+              </h3>
+            </div>
+
+            <div className="space-y-4">
+              {/* Teams & Scores Row */}
+              <div className="bg-white rounded-2xl p-4 border border-gray-200 shadow-sm flex items-center justify-between gap-3">
+                {/* Team 1 */}
+                <div className="flex-1 flex flex-col items-center text-center gap-1.5">
+                  <img 
+                    src={teamLogos[qsTeam1] || 'https://via.placeholder.com/48?text=?'} 
+                    className="w-12 h-12 rounded-full object-cover border-2 border-brand-maroon bg-white shadow-sm"
+                    alt={qsTeam1}
+                  />
+                  <select
+                    value={qsTeam1}
+                    onChange={(e) => setQsTeam1(e.target.value)}
+                    className="w-full bg-white border border-gray-300 rounded-lg p-1 text-[11px] font-black text-brand-dark text-center truncate"
+                  >
+                    <option value="">{qsTeam1 || '-- Takım 1 --'}</option>
+                    {teams.map(t => (
+                      <option key={t.name} value={t.name}>{t.name}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min="0"
+                    value={qsScore1}
+                    onChange={(e) => setQsScore1(e.target.value)}
+                    className="w-16 h-12 text-center text-2xl font-black bg-brand-card border-2 border-brand-maroon rounded-xl text-brand-maroon shadow-inner"
+                  />
+                </div>
+
+                <div className="flex flex-col items-center">
+                  <span className="text-sm font-black text-gray-400">VS</span>
+                  <span className="text-[9px] font-bold text-gray-400 mt-1">Skor</span>
+                </div>
+
+                {/* Team 2 */}
+                <div className="flex-1 flex flex-col items-center text-center gap-1.5">
+                  <img 
+                    src={teamLogos[qsTeam2] || 'https://via.placeholder.com/48?text=?'} 
+                    className="w-12 h-12 rounded-full object-cover border-2 border-brand-maroon bg-white shadow-sm"
+                    alt={qsTeam2}
+                  />
+                  <select
+                    value={qsTeam2}
+                    onChange={(e) => setQsTeam2(e.target.value)}
+                    className="w-full bg-white border border-gray-300 rounded-lg p-1 text-[11px] font-black text-brand-dark text-center truncate"
+                  >
+                    <option value="">{qsTeam2 || '-- Takım 2 --'}</option>
+                    {teams.map(t => (
+                      <option key={t.name} value={t.name}>{t.name}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min="0"
+                    value={qsScore2}
+                    onChange={(e) => setQsScore2(e.target.value)}
+                    className="w-16 h-12 text-center text-2xl font-black bg-brand-card border-2 border-brand-maroon rounded-xl text-brand-maroon shadow-inner"
+                  />
+                </div>
+              </div>
+
+              {/* Match Date & Status Options */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-black text-brand-maroon uppercase">Maç Tarihi</label>
+                  <input
+                    type="text"
+                    value={qsDate}
+                    onChange={(e) => setQsDate(e.target.value)}
+                    placeholder="DD.MM.YYYY"
+                    className="w-full bg-white border border-gray-300 rounded-xl p-2 text-xs font-bold text-gray-800"
+                  />
+                </div>
+                <div className="flex flex-col justify-end">
+                  <label className="flex items-center gap-2 p-2 bg-white rounded-xl border border-gray-300 cursor-pointer h-10">
+                    <input
+                      type="checkbox"
+                      checked={qsPlayed}
+                      onChange={(e) => setQsPlayed(e.target.checked)}
+                      className="w-4 h-4 text-brand-maroon rounded"
+                    />
+                    <span className="text-xs font-black text-gray-800">Oynandı (Bitti)</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Tie-breaker selection if scores are equal and match is played */}
+              {qsPlayed && Number(qsScore1) === Number(qsScore2) && (
+                <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-center space-y-2">
+                  <p className="text-[11px] font-black text-amber-900">
+                    ⚖️ Skorlar eşit! Penaltılarla tur atlayan / kazanan takımı seçiniz:
+                  </p>
+                  <div className="flex gap-2 justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setQsPenaltyWinner(qsTeam1)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        qsPenaltyWinner === qsTeam1
+                          ? 'bg-brand-maroon text-brand-gold shadow-md scale-105'
+                          : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      🏆 {qsTeam1}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQsPenaltyWinner(qsTeam2)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        qsPenaltyWinner === qsTeam2
+                          ? 'bg-brand-maroon text-brand-gold shadow-md scale-105'
+                          : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      🏆 {qsTeam2}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="space-y-2 pt-2">
+                <button
+                  type="button"
+                  disabled={savingQuickScore}
+                  onClick={handleSaveQuickScore}
+                  className="w-full py-3 bg-brand-maroon text-brand-gold hover:bg-black font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <span>💾</span>
+                  <span>{savingQuickScore ? 'Kaydediliyor...' : 'Sonucu Kaydet ve Ağacı Güncelle'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuickScoreModalOpen(false);
+                    const now = qsMatch?.datejav || Date.now();
+                    const docId = qsMatch?.id || `${qsTeam1}-vs-${qsTeam2}-${now}`;
+                    const targetMatch: Match = qsMatch || {
+                      id: docId,
+                      team1: qsTeam1 || 'Takım 1',
+                      team2: qsTeam2 || 'Takım 2',
+                      category: qsCupTag === 'wpc' ? 'TURNUVA' : qsCupTag.toUpperCase(),
+                      season: qsSeason as any,
+                      round: qsRoundKey,
+                      hafta: qsRoundTitle || qsRoundKey,
+                      score1: qsScore1,
+                      score2: qsScore2,
+                      played: qsPlayed,
+                      date: qsDate || new Date().toLocaleDateString('tr-TR'),
+                      datejav: now,
+                      ligm: false,
+                      timeline: [],
+                      lineup: {}
+                    };
+                    onNavigate({ type: 'match-detail', matchId: docId, initialMatch: targetMatch });
+                  }}
+                  className="w-full py-2 bg-white hover:bg-gray-100 text-brand-maroon border border-brand-maroon/30 font-black text-[11px] uppercase tracking-wider rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <span>📋</span>
+                  <span>Ayrıntılı Maç Detayına Git (Kadro, Goller, MVP) →</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Floating Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[999999] bg-brand-dark text-brand-gold border-2 border-brand-gold px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 animate-fade-in font-black text-xs md:text-sm">
+          <span>✨</span>
+          <span>{toastMessage}</span>
         </div>
       )}
     </div>

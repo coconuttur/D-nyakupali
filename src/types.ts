@@ -62,6 +62,9 @@ export interface Team {
 }
 
 export interface Player {
+  id?: string;
+  docId?: string;
+  playerId?: string;
   pname: string;
   pteam: string;
   foto: string;
@@ -81,6 +84,8 @@ export interface Player {
   kiralikTakim?: string;
   notactive?: boolean;
   noclub?: boolean;
+  aliases?: string[];
+  previousNames?: string[];
 }
 
 export interface MatchTimelineEvent {
@@ -101,21 +106,27 @@ export interface MatchTimelineEvent {
 
 export interface Match {
   id?: string;
+  docId?: string;
   team1: string;
   team2: string;
   score1: string;
   score2: string;
   played: boolean;
-  hafta: string;
+  hafta?: string;
   date?: string;
   datejav: number;
   ligm?: boolean;
   category?: string;
+  season?: number;
+  round?: string;
+  roundLabel?: string;
+  lineup?: Record<string, any>;
   isWorldCup?: boolean;
   mvp?: string;
   rating?: string;
   timeline?: MatchTimelineEvent[];
   iyScore?: string;
+  penaltyWinner?: string;
 }
 
 export interface Bet {
@@ -239,3 +250,36 @@ export interface WcBracket {
   id: string; // "wc_brackets_state" holds all slots as key-values: e.g. { "r16_m1_t1": "Arjantin", "r16_m1_t2": "Fransa", ... }
   slots: Record<string, string>;
 }
+
+export interface DuelMatch {
+  id: string;
+  player1Id?: string;
+  player1Name: string;
+  player1Photo?: string;
+  player1Team?: string;
+  player2Id?: string;
+  player2Name: string;
+  player2Photo?: string;
+  player2Team?: string;
+  score1: number;
+  score2: number;
+  date: string;
+  datejav: number;
+  createdAt?: any;
+}
+
+export interface DuelPlayerStanding {
+  playerId: string;
+  playerName: string;
+  playerPhoto: string;
+  playerTeam: string;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  goalDifference: number;
+  points: number;
+}
+

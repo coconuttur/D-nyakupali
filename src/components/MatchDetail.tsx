@@ -6,6 +6,7 @@ import { recalculateStandings, recalculatePlayerRatings } from '../lib/standings
 
 interface MatchDetailProps {
   matchId: string; // "team1-vs-team2-datejav" representation
+  initialMatch?: Match;
   currentUser: UserProfile | null;
   currentLang: 'tr' | 'en' | 'pt';
   translations: any;
@@ -15,9 +16,9 @@ interface MatchDetailProps {
 
 type TabType = 'goal' | 'period' | 'card' | 'sub' | 'incident' | 'date' | 'mvp' | 'quick' | 'loan';
 
-export default function MatchDetail({ matchId, currentUser, currentLang, translations, onBack, onNavigate }: MatchDetailProps) {
-  const [match, setMatch] = useState<Match | null>(null);
-  const [docId, setDocId] = useState<string | null>(null);
+export default function MatchDetail({ matchId, initialMatch, currentUser, currentLang, translations, onBack, onNavigate }: MatchDetailProps) {
+  const [match, setMatch] = useState<Match | null>(initialMatch || null);
+  const [docId, setDocId] = useState<string | null>(initialMatch?.id || matchId);
   const [team1Form, setTeam1Form] = useState<string[]>([]);
   const [team2Form, setTeam2Form] = useState<string[]>([]);
   const [team1Players, setTeam1Players] = useState<Player[]>([]);
@@ -26,7 +27,7 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
   const [logos, setLogos] = useState<Record<string, string>>({});
   const [teamDocIdToNameMap, setTeamDocIdToNameMap] = useState<Record<string, string>>({});
   const [teamNameToDocIdMap, setTeamNameToDocIdMap] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialMatch);
 
   // Admin controls
   const [isAdmin, setIsAdmin] = useState(false);
@@ -144,13 +145,19 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
     const targetDocId = docId || matchId;
     if (!targetDocId || !selectedLineupPlayer) return;
     try {
+      const allAvailable = [...team1Players, ...team2Players];
+      const matchedP = allAvailable.find(p => p.pname.toLowerCase().trim() === selectedLineupPlayer.toLowerCase().trim() || (p as any).id === selectedLineupPlayer);
+      const pId = (matchedP as any)?.id || (matchedP as any)?.docId || selectedLineupPlayer;
+
       const updatedLineup = {
         ...(match?.lineup || {}),
         [selectedLineupPlayer]: {
           position: lineupPosition,
           rating: Number(lineupRating) || 0,
           played: lineupPlayed,
-          team: lineupTeam
+          team: lineupTeam,
+          playerId: pId,
+          pname: matchedP ? matchedP.pname : selectedLineupPlayer
         }
       };
       await setDoc(doc(db, 'matches', targetDocId), {
@@ -223,16 +230,27 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
 
   // Extract team names and datejav from state representation
   const parseMatchId = () => {
-    const parts = matchId.split("-vs-");
-    const t1 = parts[0] || "";
-    const t2_date = parts[1] || "";
+    let cleanId = matchId;
+    try {
+      cleanId = decodeURIComponent(matchId);
+    } catch {}
+    const parts = cleanId.split("-vs-");
+    const t1 = parts[0]?.trim() || initialMatch?.team1 || "";
+    const t2_date = parts[1]?.trim() || "";
     const lastHyphen = t2_date.lastIndexOf("-");
-    const t2 = lastHyphen !== -1 ? t2_date.substring(0, lastHyphen) : t2_date;
-    const datejavStr = lastHyphen !== -1 ? t2_date.substring(lastHyphen + 1) : "";
-    return { t1, t2, datejav: parseInt(datejavStr) };
+    const t2 = lastHyphen !== -1 ? t2_date.substring(0, lastHyphen).trim() : (t2_date || initialMatch?.team2 || "");
+    const datejavStr = lastHyphen !== -1 ? t2_date.substring(lastHyphen + 1).trim() : "";
+    return { 
+      t1: t1 || initialMatch?.team1 || "", 
+      t2: t2 || initialMatch?.team2 || "", 
+      datejav: parseInt(datejavStr) || initialMatch?.datejav || undefined, 
+      cleanId 
+    };
   };
 
-  const { t1: team1Name, t2: team2Name, datejav: currentMatchDatejav } = parseMatchId();
+  const { t1: team1Name, t2: team2Name, datejav: currentMatchDatejav, cleanId: decodedMatchId } = parseMatchId();
+  const effectiveTeam1 = match?.team1 || initialMatch?.team1 || team1Name;
+  const effectiveTeam2 = match?.team2 || initialMatch?.team2 || team2Name;
 
   // Check Admin Status
   useEffect(() => {
@@ -266,13 +284,13 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
       setTeamDocIdToNameMap(docToName);
       setTeamNameToDocIdMap(nameToDoc);
 
-      const t1Lower = team1Name.toLowerCase().trim();
-      const t2Lower = team2Name.toLowerCase().trim();
+      const t1Lower = (effectiveTeam1 || '').toLowerCase().trim();
+      const t2Lower = (effectiveTeam2 || '').toLowerCase().trim();
       
       const t1DocId = nameToDoc[t1Lower] || t1Lower;
       const t2DocId = nameToDoc[t2Lower] || t2Lower;
-      const t1DisplayName = docToName[t1Lower] || team1Name;
-      const t2DisplayName = docToName[t2Lower] || team2Name;
+      const t1DisplayName = docToName[t1Lower] || effectiveTeam1;
+      const t2DisplayName = docToName[t2Lower] || effectiveTeam2;
 
       // 2. Load formats
       const findForm = (team: string, resolvedDocId: string, resolvedName: string, setter: React.Dispatch<React.SetStateAction<string[]>>) => {
@@ -312,8 +330,8 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
         });
       };
 
-      findForm(team1Name, t1DocId, t1DisplayName, setTeam1Form);
-      findForm(team2Name, t2DocId, t2DisplayName, setTeam2Form);
+      if (effectiveTeam1) findForm(effectiveTeam1, t1DocId, t1DisplayName, setTeam1Form);
+      if (effectiveTeam2) findForm(effectiveTeam2, t2DocId, t2DisplayName, setTeam2Form);
 
       // 3. Load active players
       getDocs(collection(db, "players")).then((pSnap) => {
@@ -348,7 +366,7 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
         if (t1p.length > 0) setSelectedCardPlayer(t1p[0].pname);
       });
     });
-  }, [team1Name, team2Name]);
+  }, [effectiveTeam1, effectiveTeam2]);
 
   // Set default Scorer and card player on side toggle
   useEffect(() => {
@@ -363,12 +381,12 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
       setIsKKGoal(false);
       return;
     }
-    const scoringTeamName = selectedGoalTeam === 'team1' ? team1Name : team2Name;
+    const scoringTeamName = selectedGoalTeam === 'team1' ? effectiveTeam1 : effectiveTeam2;
     const playerInDb = [...team1Players, ...team2Players].find(p => p.pname === selectedScorer);
     if (playerInDb) {
       const pTeamLower = (playerInDb.pteam || '').toLowerCase().trim();
       const pKiralikLower = (playerInDb.kiralikTakim || '').toLowerCase().trim();
-      const sTeamLower = scoringTeamName.toLowerCase().trim();
+      const sTeamLower = (scoringTeamName || '').toLowerCase().trim();
       
       const pDocId = teamNameToDocIdMap[pTeamLower] || pTeamLower;
       const pKiralikDocId = teamNameToDocIdMap[pKiralikLower] || pKiralikLower;
@@ -382,7 +400,7 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
       }
       setIsKKGoal(autoKK);
     }
-  }, [selectedScorer, selectedGoalTeam, team1Name, team2Name, teamNameToDocIdMap, team1Players, team2Players]);
+  }, [selectedScorer, selectedGoalTeam, effectiveTeam1, effectiveTeam2, teamNameToDocIdMap, team1Players, team2Players]);
 
   useEffect(() => {
     const list = selectedCardTeam === 'team1' ? team1Players : team2Players;
@@ -393,31 +411,55 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
 
   // 4. Real-time Match Subscription
   useEffect(() => {
+    let isSubscribed = true;
+    const targetId = decodedMatchId || matchId;
+
+    // Direct doc snapshot first for instantaneous loading
+    const unsubDoc = onSnapshot(doc(db, "matches", targetId), (dSnap) => {
+      if (!isSubscribed) return;
+      if (dSnap.exists()) {
+        const m = { id: dSnap.id, ...dSnap.data() } as Match;
+        setMatch(m);
+        setDocId(dSnap.id);
+        setMatchDateText(m.date || '');
+        setMatchDatejavText(String(m.datejav || ''));
+        setMatchCategory((m as any).category || '');
+        setSelectedMvp(m.mvp || '');
+        setMvpRating(m.rating || '');
+        setLoading(false);
+      }
+    });
+
     const q = collection(db, "matches");
-    const unsubscribe = onSnapshot(q, (snap) => {
+    const unsubCollection = onSnapshot(q, (snap) => {
+      if (!isSubscribed) return;
       let found: Match | null = null;
       let fId: string | null = null;
 
-      // First check by direct docId
+      // First check by direct docId (exact, decoded, case-insensitive)
       snap.forEach((docSnap) => {
-        if (docSnap.id === matchId) {
-          found = docSnap.data() as Match;
+        const dId = docSnap.id;
+        if (dId === matchId || dId === targetId || dId.toLowerCase() === targetId.toLowerCase()) {
+          found = { id: docSnap.id, ...docSnap.data() } as Match;
           fId = docSnap.id;
         }
       });
 
-      // Second check by team names and datejav
+      // Second check by team names
       if (!found) {
         snap.forEach((docSnap) => {
           const m = docSnap.data() as Match;
           const mt1 = (m.team1 || '').toLowerCase().trim();
           const mt2 = (m.team2 || '').toLowerCase().trim();
-          const t1L = team1Name.toLowerCase().trim();
-          const t2L = team2Name.toLowerCase().trim();
-          if (mt1 && mt2 && t1L && t2L && mt1 === t1L && mt2 === t2L) {
-            if (!currentMatchDatejav || Number(m.datejav) === Number(currentMatchDatejav)) {
-              found = m;
-              fId = docSnap.id;
+          const t1L = (team1Name || '').toLowerCase().trim();
+          const t2L = (team2Name || '').toLowerCase().trim();
+          if (mt1 && mt2 && t1L && t2L) {
+            const matchesTeams = (mt1 === t1L && mt2 === t2L) || (mt1 === t2L && mt2 === t1L);
+            if (matchesTeams) {
+              if (!currentMatchDatejav || Number(m.datejav) === Number(currentMatchDatejav)) {
+                found = { id: docSnap.id, ...m };
+                fId = docSnap.id;
+              }
             }
           }
         });
@@ -432,13 +474,17 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
         setSelectedMvp((found as Match).mvp || '');
         setMvpRating((found as Match).rating || '');
       } else {
-        setDocId(matchId);
+        setDocId(targetId);
       }
       setLoading(false);
     });
 
-    return () => unsubscribe();
-  }, [matchId, team1Name, team2Name, currentMatchDatejav]);
+    return () => {
+      isSubscribed = false;
+      unsubDoc();
+      unsubCollection();
+    };
+  }, [matchId, decodedMatchId, team1Name, team2Name, currentMatchDatejav]);
 
   const t = translations[currentLang];
 
@@ -804,6 +850,25 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
     });
   };
 
+  // Fallback match representation in case doc is uninitialized or being planned
+  const fallbackMatch: Match = {
+    id: decodedMatchId || initialMatch?.id || matchId,
+    team1: initialMatch?.team1 || team1Name || 'Takım 1',
+    team2: initialMatch?.team2 || team2Name || 'Takım 2',
+    date: initialMatch?.date || matchDateText || new Date().toLocaleDateString('tr-TR'),
+    datejav: initialMatch?.datejav || currentMatchDatejav || Date.now(),
+    score1: initialMatch?.score1 !== undefined ? String(initialMatch.score1) : '0',
+    score2: initialMatch?.score2 !== undefined ? String(initialMatch.score2) : '0',
+    played: initialMatch?.played || false,
+    timeline: initialMatch?.timeline || [],
+    lineup: initialMatch?.lineup || {},
+    category: initialMatch?.category || matchCategory || 'TURNUVA',
+    hafta: initialMatch?.hafta || 'Turnuva',
+    ligm: false
+  };
+
+  const activeMatch: Match = match || initialMatch || fallbackMatch;
+
   const sortedEvents = getSortedTimeline();
 
   // Accumulate goals for scores
@@ -853,32 +918,30 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
         <div className="w-16"></div>
       </div>
 
-      {loading ? (
+      {loading && !match ? (
         <h3 className="text-center text-gray-500 font-bold">{t.loading}</h3>
-      ) : !match ? (
-        <h3 className="text-center text-red-500 font-bold">Maç kaydı bulunamadı.</h3>
       ) : (
         <div className="max-w-4xl mx-auto space-y-8 animate-fade-in select-text">
           <div className="bg-brand-card rounded-3xl p-6 md:p-12 shadow-xl border-t-8 border-brand-maroon select-text">
             <span className="text-center text-xs font-black text-gray-400 block mb-6 uppercase tracking-widest">
-              {match.date || 'Tarih Belirsiz'}
+              {activeMatch.date || 'Tarih Belirsiz'}
             </span>
 
             <div className="flex flex-col md:flex-row items-center justify-center gap-10">
               {/* Team 1 Card */}
               <div 
                 className="flex-1 flex flex-col items-center cursor-pointer hover:scale-105 transition-transform text-center"
-                onClick={() => onNavigate({ type: 'team-detail', teamName: match.team1 })}
+                onClick={() => onNavigate({ type: 'team-detail', teamName: activeMatch.team1 })}
               >
-                <img src={logos[match.team1]} className="w-32 h-32 rounded-full border-4 border-brand-maroon object-cover bg-white shadow-md shadow-black/10" alt="team1" />
-                <span className="text-xl md:text-2xl font-black text-brand-dark block mt-4 leading-tight">{match.team1}</span>
+                <img src={logos[activeMatch.team1] || 'https://via.placeholder.com/128?text=?'} className="w-32 h-32 rounded-full border-4 border-brand-maroon object-cover bg-white shadow-md shadow-black/10" alt="team1" />
+                <span className="text-xl md:text-2xl font-black text-brand-dark block mt-4 leading-tight">{activeMatch.team1}</span>
                 <div className="flex gap-1.5 justify-center mt-3 scale-90">{renderFormSqs(team1Form)}</div>
               </div>
 
               {/* Scoreboard Block */}
               <div className="flex flex-col items-center">
                 <span className="text-6xl md:text-8xl font-black text-brand-maroon text-shadow leading-none">
-                  {match.played ? `${match.score1} - ${match.score2}` : 'VS'}
+                  {activeMatch.played ? `${activeMatch.score1} - ${activeMatch.score2}` : 'VS'}
                 </span>
                 
                 {isAdmin && (
@@ -922,28 +985,28 @@ export default function MatchDetail({ matchId, currentUser, currentLang, transla
               {/* Team 2 Card */}
               <div 
                 className="flex-1 flex flex-col items-center cursor-pointer hover:scale-105 transition-transform text-center"
-                onClick={() => onNavigate({ type: 'team-detail', teamName: match.team2 })}
+                onClick={() => onNavigate({ type: 'team-detail', teamName: activeMatch.team2 })}
               >
-                <img src={logos[match.team2]} className="w-32 h-32 rounded-full border-4 border-brand-maroon object-cover bg-white shadow-md shadow-black/10" alt="team2" />
-                <span className="text-xl md:text-2xl font-black text-brand-dark block mt-4 leading-tight">{match.team2}</span>
+                <img src={logos[activeMatch.team2] || 'https://via.placeholder.com/128?text=?'} className="w-32 h-32 rounded-full border-4 border-brand-maroon object-cover bg-white shadow-md shadow-black/10" alt="team2" />
+                <span className="text-xl md:text-2xl font-black text-brand-dark block mt-4 leading-tight">{activeMatch.team2}</span>
                 <div className="flex gap-1.5 justify-center mt-3 scale-90">{renderFormSqs(team2Form)}</div>
               </div>
             </div>
 
             {/* MVP award segment */}
-            {match.played && match.mvp && (
+            {activeMatch.played && activeMatch.mvp && (
               <div className="bg-brand-dark rounded-2xl p-4 text-brand-gold flex items-center justify-between border-l-12 border-brand-gold mt-10 shadow-lg">
                 <div>
                   <span className="bg-brand-maroon text-[9px] px-2 py-0.5 rounded text-white font-extrabold uppercase select-none">{t.mvp}</span>
                   <h4 
-                    onClick={() => onNavigate({ type: 'player-profile', playerName: match.mvp || '' })}
+                    onClick={() => onNavigate({ type: 'player-profile', playerName: activeMatch.mvp || '' })}
                     className="text-lg md:text-xl font-black uppercase hover:underline cursor-pointer tracking-wide mt-1.5 text-white"
                   >
-                    {match.mvp}
+                    {activeMatch.mvp}
                   </h4>
                 </div>
                 <div className="text-right">
-                  <span className="text-3xl md:text-4xl font-black block leading-none">{match.rating}</span>
+                  <span className="text-3xl md:text-4xl font-black block leading-none">{activeMatch.rating}</span>
                   <span className="text-[9px] text-gray-400 font-extrabold block mt-1 select-none">STAR RATING</span>
                 </div>
               </div>

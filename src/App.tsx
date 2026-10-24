@@ -12,6 +12,7 @@ import Haftalar from './components/Haftalar';
 import Turnuvalar from './components/Turnuvalar';
 import Istatistikler from './components/Istatistikler';
 import Forum from './components/Forum';
+import Duellolar from './components/Duellolar';
 
 // Deatil sub-views components
 import MatchDetail from './components/MatchDetail';
@@ -145,11 +146,12 @@ type ViewState =
   | { type: 'haftalar' }
   | { type: 'turnuva' }
   | { type: 'istatistik' }
+  | { type: 'duellolar' }
   | { type: 'forum' }
   | { type: 'album' }
   | { type: 'all-trophies' }
-  | { type: 'match-detail'; matchId: string }
-  | { type: 'player-profile'; playerName: string }
+  | { type: 'match-detail'; matchId: string; initialMatch?: any }
+  | { type: 'player-profile'; playerName: string; playerId?: string }
   | { type: 'team-detail'; teamName: string }
   | { type: 'user-profile'; userId: string }
   | { type: 'trophy-detail'; trophyId: string };
@@ -332,15 +334,60 @@ export default function App() {
     setAuthError('');
   };
 
+  // View navigation history stack (stores previous views in chronological order)
+  const historyStackRef = React.useRef<ViewState[]>([{ type: 'news' }]);
+  const currentIndexRef = React.useRef<number>(0);
+
+  // Track browser / mouse back button (popstate event)
+  useEffect(() => {
+    try {
+      window.history.replaceState({ idx: 0, view: { type: 'news' } }, '');
+    } catch {}
+
+    const handlePopState = (e: PopStateEvent) => {
+      if (e.state && e.state.view) {
+        const targetIdx = typeof e.state.idx === 'number' ? e.state.idx : Math.max(0, currentIndexRef.current - 1);
+        currentIndexRef.current = targetIdx;
+        setCurrentView(e.state.view);
+      } else {
+        const prevIdx = Math.max(0, currentIndexRef.current - 1);
+        currentIndexRef.current = prevIdx;
+        const targetView = historyStackRef.current[prevIdx] || { type: 'news' };
+        setCurrentView(targetView);
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   const handleNavigate = (view: ViewState) => {
+    const nextIdx = currentIndexRef.current + 1;
+    currentIndexRef.current = nextIdx;
+    historyStackRef.current = [...historyStackRef.current.slice(0, nextIdx), view];
     setCurrentView(view);
-    // Scroll window back to top on transitions
+    try {
+      window.history.pushState({ idx: nextIdx, view }, '');
+    } catch {}
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleBack = () => {
-    // Falls back home safely
-    handleNavigate({ type: 'news' });
+    if (currentIndexRef.current > 0) {
+      try {
+        window.history.back();
+      } catch {
+        const prevIdx = Math.max(0, currentIndexRef.current - 1);
+        currentIndexRef.current = prevIdx;
+        const targetView = historyStackRef.current[prevIdx] || { type: 'news' };
+        setCurrentView(targetView);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    } else {
+      setCurrentView({ type: 'news' });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   return (
@@ -352,8 +399,9 @@ export default function App() {
           {/* Main logo and language picker */}
           <div className="flex items-center gap-4">
             <div 
-              onClick={handleBack}
+              onClick={() => handleNavigate({ type: 'news' })}
               className="flex items-center gap-3 cursor-pointer shrink-0 hover:scale-102 transition-transform select-none"
+              title="Ana Sayfaya Git"
             >
               <div className="w-10 h-10 rounded-xl bg-brand-gold flex items-center justify-center font-black text-brand-maroon border-2 border-white shadow">
                 BK
@@ -461,9 +509,10 @@ export default function App() {
             })}
           </div>
 
-          {/* Row 2: FORUM, ALBÜM, KUPALAR */}
+          {/* Row 2: DÜELLOLAR, FORUM, ALBÜM, KUPALAR */}
           <div className="flex flex-wrap items-center justify-center gap-3">
             {[
+              { id: 'duellolar', label: currentLang === 'tr' ? '⚔️ DÜELLOLAR' : currentLang === 'en' ? '⚔️ DUELS' : '⚔️ DUELOS' },
               { id: 'forum', label: currentLang === 'tr' ? 'FORUM' : currentLang === 'en' ? 'FORUM' : 'FÓRUM' },
               { id: 'album', label: currentLang === 'tr' ? 'ALBÜM' : currentLang === 'en' ? 'ALBUM' : 'ÁLBUM' },
               { id: 'all-trophies', label: currentLang === 'tr' ? 'KUPALAR' : currentLang === 'en' ? 'TROPHIES' : 'TROFÉUS' }
@@ -548,6 +597,16 @@ export default function App() {
           />
         )}
 
+        {currentView.type === 'duellolar' && (
+          <Duellolar 
+            currentUser={userProfile} 
+            currentLang={currentLang}
+            translations={TRANSLATIONS}
+            onNavigate={handleNavigate} 
+            teamLogos={teamLogos} 
+          />
+        )}
+
         {currentView.type === 'forum' && (
           <Forum 
             currentUser={userProfile} 
@@ -560,6 +619,7 @@ export default function App() {
         {currentView.type === 'match-detail' && (
           <MatchDetail 
             matchId={(currentView as any).matchId} 
+            initialMatch={(currentView as any).initialMatch}
             currentUser={userProfile}
             currentLang={currentLang}
             translations={TRANSLATIONS}
@@ -571,6 +631,7 @@ export default function App() {
         {currentView.type === 'player-profile' && (
           <PlayerProfile 
             playerName={(currentView as any).playerName}
+            playerId={(currentView as any).playerId}
             currentUser={userProfile}
             currentLang={currentLang}
             translations={TRANSLATIONS}

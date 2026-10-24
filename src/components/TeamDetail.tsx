@@ -233,8 +233,9 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
     <div className="space-y-8">
       {/* Dynamic Sub nav bar */}
       <div className="flex justify-between items-center py-2 px-4 bg-brand-dark rounded-xl border border-brand-gold select-none z-10 shadow-sm">
-        <button onClick={onBack} className="text-brand-gold font-black uppercase text-xs hover:underline cursor-pointer">
-          {t.home}
+        <button onClick={onBack} className="text-brand-gold font-black uppercase text-xs hover:underline cursor-pointer flex items-center gap-1.5">
+          <span>←</span>
+          <span>{t.back}</span>
         </button>
       </div>
 
@@ -350,7 +351,7 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
                 return (
                   <div 
                     key={player.pname}
-                    onClick={() => onNavigate({ type: 'player-profile', playerName: player.pname })}
+                    onClick={() => onNavigate({ type: 'player-profile', playerName: player.pname, playerId: (player as any).id || (player as any).docId })}
                     className="bg-brand-card p-4 rounded-2xl flex items-center shadow-sm cursor-pointer border border-transparent hover:border-brand-maroon hover:-translate-y-0.5 transition-all"
                   >
                     <img src={player.foto} className="w-14 h-14 rounded-xl object-cover shrink-0 border-2 border-brand-maroon bg-white" alt="avatar" />

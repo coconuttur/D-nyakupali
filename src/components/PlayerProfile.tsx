@@ -3,10 +3,11 @@ import { collection, onSnapshot, query, where, doc, getDoc, getDocs, updateDoc, 
 import { db } from '../firebase';
 import { Player, Match, UserProfile } from '../types';
 import { TrophiesShowcase, TrophyAdminModal } from './TrophiesShowcase';
-import { calculatePlayerStatsFromMatches } from '../lib/playerStats';
+import { calculatePlayerStatsFromMatches, buildPlayerAliasMap, getPlayerIdentifierSet, doesCandidateMatchPlayer, normalizePlayerName, stripAllDiacritics } from '../lib/playerStats';
 
 interface PlayerProfileProps {
   playerName: string;
+  playerId?: string;
   currentUser: UserProfile | null;
   currentLang: 'tr' | 'en' | 'pt';
   translations: any;
@@ -14,9 +15,10 @@ interface PlayerProfileProps {
   onNavigate: (view: any) => void;
 }
 
-export default function PlayerProfile({ playerName, currentUser, currentLang, translations, onBack, onNavigate }: PlayerProfileProps) {
+export default function PlayerProfile({ playerName, playerId, currentUser, currentLang, translations, onBack, onNavigate }: PlayerProfileProps) {
   const [player, setPlayer] = useState<Player | null>(null);
   const [matches, setMatches] = useState<Match[]>([]);
+  const [allPlayers, setAllPlayers] = useState<Player[]>([]);
   const [docId, setDocId] = useState<string | null>(null);
   const [teamLogo, setTeamLogo] = useState<string>('');
   const [countryLogo, setCountryLogo] = useState<string>('');
@@ -55,25 +57,55 @@ export default function PlayerProfile({ playerName, currentUser, currentLang, tr
   }, []);
 
   useEffect(() => {
-    const q = query(collection(db, "players"), where("pname", "==", playerName));
-    const unsubscribe = onSnapshot(q, (snap) => {
-      if (!snap.empty) {
-        const dObj = snap.docs[0];
-        setDocId(dObj.id);
-        const data = dObj.data() as Player;
-        setPlayer(data);
+    const unsubPlayers = onSnapshot(collection(db, "players"), (snap) => {
+      const list: Player[] = [];
+      let found: Player | null = null;
+      let fId: string | null = null;
+
+      const normTarget = normalizePlayerName(playerName);
+      const strippedTarget = stripAllDiacritics(playerName);
+      const normPlayerId = playerId ? normalizePlayerName(playerId) : '';
+
+      snap.forEach((d) => {
+        const pObj = { id: d.id, docId: d.id, ...d.data() } as unknown as Player;
+        list.push(pObj);
+
+        const dNorm = normalizePlayerName(d.id);
+        const dStrip = stripAllDiacritics(d.id);
+        const pNorm = normalizePlayerName(pObj.pname);
+        const pStrip = stripAllDiacritics(pObj.pname);
+
+        // 1. Direct doc ID match
+        const matchesDocId = (normPlayerId && (dNorm === normPlayerId || dStrip === normPlayerId)) ||
+          d.id === playerName || dNorm === normTarget || dStrip === strippedTarget;
+
+        // 2. Name or alias match
+        const matchesName = (pNorm && (pNorm === normTarget || pStrip === strippedTarget)) ||
+          (normPlayerId && (pNorm === normPlayerId || pStrip === normPlayerId));
+
+        if (matchesDocId || matchesName) {
+          found = pObj;
+          fId = d.id;
+        }
+      });
+
+      setAllPlayers(list);
+
+      if (found) {
+        setDocId(fId);
+        setPlayer(found);
 
         // Fetch team logo
-        if (data.pteam) {
-          const qLogo = query(collection(db, "teams"), where("name", "==", data.pteam));
+        if ((found as Player).pteam) {
+          const qLogo = query(collection(db, "teams"), where("name", "==", (found as Player).pteam));
           getDocs(qLogo).then(tSnap => {
             if (!tSnap.empty) setTeamLogo(tSnap.docs[0].data().logo || '');
           });
         }
 
         // Fetch country flag
-        if (data.pülke) {
-          const qCountry = query(collection(db, "ülkeler"), where("ülkead", "==", data.pülke));
+        if ((found as Player).pülke) {
+          const qCountry = query(collection(db, "ülkeler"), where("ülkead", "==", (found as Player).pülke));
           getDocs(qCountry).then(uSnap => {
             if (!uSnap.empty) setCountryLogo(uSnap.docs[0].data().ülkefoto || '');
           });
@@ -82,8 +114,8 @@ export default function PlayerProfile({ playerName, currentUser, currentLang, tr
       setLoading(false);
     });
 
-    return () => unsubscribe();
-  }, [playerName]);
+    return () => unsubPlayers();
+  }, [playerName, playerId]);
 
   const t = translations[currentLang];
 
@@ -163,8 +195,9 @@ export default function PlayerProfile({ playerName, currentUser, currentLang, tr
 
   var total = totalVotes;
 
-  // Calculate player performance strictly from matches
-  const matchStats = player ? calculatePlayerStatsFromMatches(player, matches) : null;
+  // Calculate player performance strictly from matches using unified alias map
+  const aliasMap = buildPlayerAliasMap(allPlayers.length > 0 ? allPlayers : (player ? [player] : []));
+  const matchStats = player ? calculatePlayerStatsFromMatches(player, matches, aliasMap) : null;
   const matchesCount = matchStats ? matchStats.mac : (player?.poyn || 0);
   const playerGoals = matchStats ? matchStats.goals : (player?.goals || 0);
   const playerAssists = matchStats ? matchStats.asistsay : (player?.asistsay || 0);
@@ -176,9 +209,10 @@ export default function PlayerProfile({ playerName, currentUser, currentLang, tr
       <div className="bg-brand-card p-4 rounded-b-2xl flex items-center justify-between border-b-4 border-brand-maroon shadow-md relative shrink-0">
         <button 
           onClick={onBack}
-          className="bg-brand-gold text-brand-dark hover:scale-105 transition-transform font-black text-xs uppercase px-4 py-2 rounded-xl h-10 cursor-pointer border border-brand-maroon shadow-sm"
+          className="bg-brand-gold text-brand-dark hover:scale-105 transition-transform font-black text-xs uppercase px-4 py-2 rounded-xl h-10 cursor-pointer border border-brand-maroon shadow-sm flex items-center gap-1.5"
         >
-          {t.back}
+          <span>←</span>
+          <span>{t.back}</span>
         </button>
         <h2 className="text-lg font-black text-brand-maroon select-none uppercase">Profil</h2>
         <div className="w-16"></div>
@@ -337,18 +371,40 @@ export default function PlayerProfile({ playerName, currentUser, currentLang, tr
             </h2>
 
             {(() => {
-              const pNameLower = playerName.toLowerCase().trim();
+              const identifiers = player ? getPlayerIdentifierSet(player, aliasMap) : new Set<string>([normalizePlayerName(playerName), stripAllDiacritics(playerName)]);
+              const pDocId = docId || (player as any)?.id || (player as any)?.docId;
+
               const playerPlayedMatches = matches.filter(m => {
                 if (!m.played) return false;
-                const pLineup = m.lineup?.[playerName] || Object.entries(m.lineup || {}).find(([k]) => k.toLowerCase().trim() === pNameLower)?.[1];
-                const hasLineup = pLineup && (pLineup.played !== false || (pLineup.rating !== undefined && Number(pLineup.rating) > 0));
+
+                // 1. Lineup check
+                const lineup = m.lineup || {};
+                let hasLineup = false;
+                for (const [key, val] of Object.entries(lineup)) {
+                  const pVal: any = val;
+                  const keyMatch = doesCandidateMatchPlayer(key, identifiers);
+                  const idMatch = pVal?.playerId && (pVal.playerId === pDocId || identifiers.has(normalizePlayerName(pVal.playerId)));
+                  const nameMatch = pVal?.pname && doesCandidateMatchPlayer(pVal.pname, identifiers);
+                  if (keyMatch || idMatch || nameMatch) {
+                    if (pVal?.played !== false || (pVal?.rating !== undefined && Number(pVal?.rating) > 0)) {
+                      hasLineup = true;
+                      break;
+                    }
+                  }
+                }
+
+                // 2. Timeline check
                 const hasTimeline = (m.timeline || []).some((e: any) => 
-                  e.scorer?.toLowerCase().trim() === pNameLower ||
-                  e.player?.toLowerCase().trim() === pNameLower ||
-                  e.subIn?.toLowerCase().trim() === pNameLower ||
-                  e.subOut?.toLowerCase().trim() === pNameLower
+                  doesCandidateMatchPlayer(e.scorer, identifiers) ||
+                  doesCandidateMatchPlayer(e.assist, identifiers) ||
+                  doesCandidateMatchPlayer(e.player, identifiers) ||
+                  doesCandidateMatchPlayer(e.subIn, identifiers) ||
+                  doesCandidateMatchPlayer(e.subOut, identifiers)
                 );
-                const isMvp = (m.mvp || '').toLowerCase().trim() === pNameLower;
+
+                // 3. MVP check
+                const isMvp = doesCandidateMatchPlayer(m.mvp, identifiers);
+
                 return hasLineup || hasTimeline || isMvp;
               }).sort((a, b) => (Number(b.datejav) || 0) - (Number(a.datejav) || 0));
 
@@ -363,21 +419,33 @@ export default function PlayerProfile({ playerName, currentUser, currentLang, tr
               return (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {playerPlayedMatches.map((m, idx) => {
-                    const pLineup = m.lineup?.[playerName] || Object.entries(m.lineup || {}).find(([k]) => k.toLowerCase().trim() === pNameLower)?.[1];
+                    const lineup = m.lineup || {};
+                    let pLineup: any = null;
+                    for (const [key, val] of Object.entries(lineup)) {
+                      const pVal: any = val;
+                      const keyMatch = doesCandidateMatchPlayer(key, identifiers);
+                      const idMatch = pVal?.playerId && (pVal.playerId === pDocId || identifiers.has(normalizePlayerName(pVal.playerId)));
+                      const nameMatch = pVal?.pname && doesCandidateMatchPlayer(pVal.pname, identifiers);
+                      if (keyMatch || idMatch || nameMatch) {
+                        pLineup = val;
+                        break;
+                      }
+                    }
+
                     let matchRating: number | null = null;
                     if (pLineup && pLineup.rating !== undefined && !isNaN(Number(pLineup.rating)) && Number(pLineup.rating) > 0) {
                       matchRating = Number(pLineup.rating);
-                    } else if ((m.mvp || '').toLowerCase().trim() === pNameLower && m.rating) {
+                    } else if (doesCandidateMatchPlayer(m.mvp, identifiers) && m.rating) {
                       matchRating = Number(m.rating) || null;
                     }
 
-                    const isMvp = (m.mvp || '').toLowerCase().trim() === pNameLower;
-                    const pGoals = (m.timeline || []).filter(e => e.type === 'goal' && !e.isKK && (e.scorer || '').toLowerCase().trim() === pNameLower).length;
-                    const pAssists = (m.timeline || []).filter(e => e.type === 'goal' && (e.assist || '').toLowerCase().trim() === pNameLower).length;
-                    const pCards = (m.timeline || []).filter(e => e.type === 'card' && (e.player || '').toLowerCase().trim() === pNameLower);
-                    const pSubIn = (m.timeline || []).find(e => e.type === 'sub' && (e.subIn || '').toLowerCase().trim() === pNameLower);
-                    const pSubOut = (m.timeline || []).find(e => e.type === 'sub' && (e.subOut || '').toLowerCase().trim() === pNameLower);
-                    const pKK = (m.timeline || []).filter(e => e.type === 'goal' && e.isKK && (e.scorer || '').toLowerCase().trim() === pNameLower).length;
+                    const isMvp = doesCandidateMatchPlayer(m.mvp, identifiers);
+                    const pGoals = (m.timeline || []).filter(e => e.type === 'goal' && !e.isKK && doesCandidateMatchPlayer(e.scorer, identifiers)).length;
+                    const pAssists = (m.timeline || []).filter(e => e.type === 'goal' && doesCandidateMatchPlayer(e.assist, identifiers)).length;
+                    const pCards = (m.timeline || []).filter(e => e.type === 'card' && doesCandidateMatchPlayer(e.player, identifiers));
+                    const pSubIn = (m.timeline || []).find(e => e.type === 'sub' && doesCandidateMatchPlayer(e.subIn, identifiers));
+                    const pSubOut = (m.timeline || []).find(e => e.type === 'sub' && doesCandidateMatchPlayer(e.subOut, identifiers));
+                    const pKK = (m.timeline || []).filter(e => e.type === 'goal' && e.isKK && doesCandidateMatchPlayer(e.scorer, identifiers)).length;
 
                     let ratingColor = 'bg-gray-200 border-gray-300 text-gray-700';
                     if (matchRating !== null) {

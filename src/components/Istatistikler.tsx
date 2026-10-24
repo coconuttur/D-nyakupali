@@ -5,7 +5,7 @@ import { Player, Team, Match, UserProfile } from '../types';
 import { TROPHIES_LIST, TROPHY_MAP } from '../lib/trophies';
 import { TrophyDetailModal } from './TrophyDetailModal';
 import EloView from './EloView';
-import { calculatePlayerStatsFromMatches, calculateOwnGoalSummary, syncPlayerStatsToFirestore } from '../lib/playerStats';
+import { calculatePlayerStatsFromMatches, calculateOwnGoalSummary, syncPlayerStatsToFirestore, buildPlayerAliasMap } from '../lib/playerStats';
 
 interface IstatistiklerProps {
   currentLang: 'tr' | 'en' | 'pt';
@@ -49,7 +49,7 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
     const unsubscribeP = onSnapshot(collection(db, 'players'), (snap) => {
       const list: Player[] = [];
       snap.forEach((doc) => {
-        list.push({ ...doc.data() } as Player);
+        list.push({ id: doc.id, docId: doc.id, ...doc.data() } as unknown as Player);
       });
       setPlayers(list);
       setLoading(false);
@@ -124,11 +124,12 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
 
   // Computes player statistics strictly from the matches collection in real-time
   const getSortedPlayers = () => {
+    const aliasMap = buildPlayerAliasMap(players);
     const list: any[] = players
       // firebasede oyuncu notactive : true ise istatistikler listesinden kaldir
       .filter((p) => p.notactive !== true)
       .map((p) => {
-        const stats = calculatePlayerStatsFromMatches(p, matches);
+        const stats = calculatePlayerStatsFromMatches(p, matches, aliasMap);
         const totalKupa = getTotalTrophies(p.kupalar);
         // bir oyuncu noclub : true ise takimsiz olarak görünsün ama listede kalsin
         const isNoClub = p.noclub === true;
@@ -775,7 +776,7 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
             return (
               <div 
                 key={p.pname}
-                onClick={() => onNavigate({ type: 'player-profile', playerName: p.pname })}
+                onClick={() => onNavigate({ type: 'player-profile', playerName: p.pname, playerId: p.id || (p as any).docId })}
                 className="bg-brand-card p-4 rounded-2xl flex items-center border-l-12 border-brand-maroon hover:border-l-16 hover:translate-x-1.5 transition-all shadow-sm cursor-pointer"
               >
                 <div className="w-12 text-center text-xl font-black text-brand-maroon shrink-0">

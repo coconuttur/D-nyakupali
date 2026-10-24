@@ -3,13 +3,14 @@ import { db } from '../firebase';
 import { Player, Team, Match, MatchTimelineEvent } from '../types';
 
 /**
- * Normalizes player name for reliable case-insensitive and diacritic-insensitive comparison
+ * Normalizes player name for reliable case-insensitive, whitespace-insensitive, and diacritic-insensitive comparison
  */
 export function normalizePlayerName(name?: string | null): string {
   if (!name) return '';
   return name
     .trim()
     .toLowerCase()
+    .replace(/\s+/g, ' ') // collapse multi-spaces, newlines, tabs
     .replace(/i̇/g, 'i') // decomposed dotted i
     .replace(/ı/g, 'i')
     .replace(/İ/g, 'i')
@@ -18,6 +19,16 @@ export function normalizePlayerName(name?: string | null): string {
     .replace(/ş/g, 's')
     .replace(/ö/g, 'o')
     .replace(/ç/g, 'c');
+}
+
+/**
+ * Strips all Latin diacritics (accents like é, á, ó, ú, ñ, ć, č, etc.)
+ */
+export function stripAllDiacritics(str?: string | null): string {
+  if (!str) return '';
+  return normalizePlayerName(str)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
 }
 
 const NON_ASSIST_STRINGS = new Set([
@@ -67,11 +78,133 @@ export interface ComputedPlayerStats {
 }
 
 /**
- * Calculates comprehensive stats for a single player strictly derived from matches data
+ * Builds an alias map mapping any normalized player doc ID, player ID, or player name to the set of all associated names/IDs.
+ * This guarantees that when a player's name is updated or changed, all past matches referencing either
+ * the player ID, doc ID, or old/new name remain unified under the exact same player stats!
  */
-export function calculatePlayerStatsFromMatches(player: Player, matches: Match[]): ComputedPlayerStats {
-  const normName = normalizePlayerName(player.pname);
-  if (!normName) {
+export function buildPlayerAliasMap(players: Player[]): Map<string, Set<string>> {
+  const map = new Map<string, Set<string>>();
+
+  players.forEach((p) => {
+    const docId = (p as any).id || (p as any).docId;
+    const group = new Set<string>();
+
+    const addIdentifier = (raw?: string | null) => {
+      if (!raw) return;
+      const norm = normalizePlayerName(raw);
+      if (norm) group.add(norm);
+      const stripped = stripAllDiacritics(raw);
+      if (stripped) group.add(stripped);
+    };
+
+    addIdentifier(docId);
+    addIdentifier(p.pname);
+    addIdentifier((p as any).playerId);
+    addIdentifier((p as any).originalName);
+    addIdentifier((p as any).oldName);
+
+    // Any alias or previous names array
+    const aliases = (p as any).aliases || (p as any).previousNames || (p as any).oldNames || [];
+    if (Array.isArray(aliases)) {
+      aliases.forEach(a => addIdentifier(a));
+    }
+
+    // Merge with any existing aliases in map
+    group.forEach((id) => {
+      if (map.has(id)) {
+        map.get(id)!.forEach(x => group.add(x));
+      }
+    });
+
+    // Assign unified group to every identifier in group
+    group.forEach((id) => {
+      map.set(id, group);
+    });
+  });
+
+  return map;
+}
+
+/**
+ * Returns all normalized identifiers for a player (doc ID, player ID, display name, and known aliases).
+ */
+export function getPlayerIdentifierSet(player: Player, aliasMap?: Map<string, Set<string>>): Set<string> {
+  const set = new Set<string>();
+
+  const add = (raw?: string | null) => {
+    if (!raw) return;
+    const n = normalizePlayerName(raw);
+    if (n) set.add(n);
+    const s = stripAllDiacritics(raw);
+    if (s) set.add(s);
+  };
+
+  add(player.pname);
+  const docId = (player as any).id || (player as any).docId;
+  add(docId);
+  add((player as any).playerId);
+  add((player as any).originalName);
+  add((player as any).oldName);
+
+  const aliases = (player as any).aliases || (player as any).previousNames || (player as any).oldNames || [];
+  if (Array.isArray(aliases)) {
+    aliases.forEach(a => add(a));
+  }
+
+  if (aliasMap) {
+    const currentItems = Array.from(set);
+    currentItems.forEach((item) => {
+      if (aliasMap.has(item)) {
+        aliasMap.get(item)!.forEach(a => set.add(a));
+      }
+    });
+  }
+
+  return set;
+}
+
+/**
+ * Checks if a candidate player string/id from a match matches the target player's identifiers.
+ */
+export function doesCandidateMatchPlayer(
+  candidate: string | null | undefined,
+  identifiers: Set<string>
+): boolean {
+  if (!candidate) return false;
+  const raw = normalizePlayerName(candidate);
+  if (!raw) return false;
+  if (identifiers.has(raw)) return true;
+
+  const stripped = stripAllDiacritics(candidate);
+  if (stripped && identifiers.has(stripped)) return true;
+
+  // Strip own goal / penalty annotations
+  const cleaned = normalizePlayerName(
+    candidate
+      .replace(/\(k\.?k\.?\)/gi, '')
+      .replace(/kendi kalesine/gi, '')
+      .replace(/\(penalt[ıi]\)/gi, '')
+      .trim()
+  );
+  if (cleaned && identifiers.has(cleaned)) return true;
+
+  const cleanedStripped = stripAllDiacritics(cleaned);
+  if (cleanedStripped && identifiers.has(cleanedStripped)) return true;
+
+  return false;
+}
+
+/**
+ * Calculates comprehensive stats for a single player strictly derived from matches data.
+ * Checks both player ID / doc ID and player name so renamed players maintain full statistics!
+ */
+export function calculatePlayerStatsFromMatches(
+  player: Player, 
+  matches: Match[], 
+  aliasMap?: Map<string, Set<string>>
+): ComputedPlayerStats {
+  const identifiers = getPlayerIdentifierSet(player, aliasMap);
+  if (identifiers.size === 0) {
     return {
       goals: 0,
       ownGoals: 0,
@@ -91,6 +224,8 @@ export function calculatePlayerStatsFromMatches(player: Player, matches: Match[]
     };
   }
 
+  const pDocId = (player as any).id || (player as any).docId;
+
   let goals = 0;
   let ownGoals = 0;
   let assists = 0;
@@ -107,13 +242,18 @@ export function calculatePlayerStatsFromMatches(player: Player, matches: Match[]
 
     let playedInThisMatch = false;
 
-    // 1. Lineup check
+    // 1. Lineup check (check by key, or playerId field in lineup value)
     const lineup = (m as any).lineup || {};
     let playerLineup: any = null;
 
     if (typeof lineup === 'object' && lineup !== null) {
       for (const [key, val] of Object.entries(lineup)) {
-        if (normalizePlayerName(key) === normName) {
+        const pVal: any = val;
+        const keyMatch = doesCandidateMatchPlayer(key, identifiers);
+        const idMatch = pVal?.playerId && (pVal.playerId === pDocId || identifiers.has(normalizePlayerName(pVal.playerId)));
+        const nameMatch = pVal?.pname && doesCandidateMatchPlayer(pVal.pname, identifiers);
+        
+        if (keyMatch || idMatch || nameMatch) {
           playerLineup = val;
           break;
         }
@@ -137,38 +277,26 @@ export function calculatePlayerStatsFromMatches(player: Player, matches: Match[]
       // Goals
       if (evt.type === 'goal') {
         const isKK = isEventOwnGoal(evt);
-        if (evt.scorer) {
-          const cleanScorer = evt.scorer
-            .replace(/\(k\.?k\.?\)/gi, '')
-            .replace(/kendi kalesine/gi, '')
-            .trim();
-          if (normalizePlayerName(cleanScorer) === normName) {
-            playedInThisMatch = true;
-            if (!isKK) {
-              goals += 1;
-            } else {
-              ownGoals += 1;
-            }
+        if (doesCandidateMatchPlayer(evt.scorer, identifiers)) {
+          playedInThisMatch = true;
+          if (!isKK) {
+            goals += 1;
+          } else {
+            ownGoals += 1;
           }
         }
 
-        if (evt.assist) {
-          const cleanAssist = evt.assist
-            .replace(/\(k\.?k\.?\)/gi, '')
-            .replace(/kendi kalesine/gi, '')
-            .trim();
-          if (normalizePlayerName(cleanAssist) === normName) {
-            const rawAssist = normalizePlayerName(evt.assist);
-            if (!NON_ASSIST_STRINGS.has(rawAssist) && !isKK) {
-              assists += 1;
-              playedInThisMatch = true;
-            }
+        if (doesCandidateMatchPlayer(evt.assist, identifiers)) {
+          const rawAssist = normalizePlayerName(evt.assist);
+          if (!NON_ASSIST_STRINGS.has(rawAssist) && !isKK) {
+            assists += 1;
+            playedInThisMatch = true;
           }
         }
       }
 
       // Cards
-      if (evt.type === 'card' && evt.player && normalizePlayerName(evt.player) === normName) {
+      if (evt.type === 'card' && doesCandidateMatchPlayer(evt.player, identifiers)) {
         playedInThisMatch = true;
         if (evt.cardColor === 'Sarı') yellowCards += 1;
         else if (evt.cardColor === 'Kırmızı') redCards += 1;
@@ -177,17 +305,14 @@ export function calculatePlayerStatsFromMatches(player: Player, matches: Match[]
 
       // Substitutions
       if (evt.type === 'sub') {
-        if (evt.subOut && normalizePlayerName(evt.subOut) === normName) {
-          playedInThisMatch = true;
-        }
-        if (evt.subIn && normalizePlayerName(evt.subIn) === normName) {
+        if (doesCandidateMatchPlayer(evt.subOut, identifiers) || doesCandidateMatchPlayer(evt.subIn, identifiers)) {
           playedInThisMatch = true;
         }
       }
     });
 
     // 3. MVP check
-    if (m.mvp && normalizePlayerName(m.mvp) === normName) {
+    if (m.mvp && doesCandidateMatchPlayer(m.mvp, identifiers)) {
       mvpCount += 1;
       playedInThisMatch = true;
       if (!playerLineup && m.rating) {
@@ -229,16 +354,21 @@ export function calculatePlayerStatsFromMatches(player: Player, matches: Match[]
 }
 
 /**
- * Calculates match-derived statistics for an array of players
+ * Calculates match-derived statistics for an array of players with unified identity matching
  */
 export function calculateAllPlayerStatsFromMatches(
   players: Player[],
   matches: Match[]
 ): Map<string, ComputedPlayerStats> {
+  const aliasMap = buildPlayerAliasMap(players);
   const map = new Map<string, ComputedPlayerStats>();
   players.forEach((p) => {
-    const stats = calculatePlayerStatsFromMatches(p, matches);
+    const stats = calculatePlayerStatsFromMatches(p, matches, aliasMap);
     map.set(p.pname, stats);
+    const docId = (p as any).id || (p as any).docId;
+    if (docId) {
+      map.set(docId, stats);
+    }
   });
   return map;
 }
@@ -504,15 +634,23 @@ export async function syncPlayerStatsToFirestore(): Promise<{ updatedCount: numb
       matchesList.push({ id: mdoc.id, ...mdoc.data() } as Match);
     });
 
+    const playersList: Player[] = [];
+    playersSnap.forEach((pdoc) => {
+      playersList.push({ id: pdoc.id, docId: pdoc.id, ...pdoc.data() } as Player);
+    });
+
+    const aliasMap = buildPlayerAliasMap(playersList);
+
     let batch = writeBatch(db);
     let opCount = 0;
     let totalUpdated = 0;
 
-    for (const pdoc of playersSnap.docs) {
-      const pdata = pdoc.data() as Player;
-      if (!pdata.pname) continue;
+    for (let i = 0; i < playersSnap.docs.length; i++) {
+      const pdoc = playersSnap.docs[i];
+      const pItem = playersList[i];
+      if (!pItem.pname) continue;
 
-      const stats = calculatePlayerStatsFromMatches(pdata, matchesList);
+      const stats = calculatePlayerStatsFromMatches(pItem, matchesList, aliasMap);
 
       batch.update(pdoc.ref, {
         goals: stats.goals,
