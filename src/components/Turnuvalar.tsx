@@ -17,6 +17,9 @@ type CupType = 'wpc' | 'bcl' | 'bel' | 'becl' | 'wc';
 
 import {
   DEFAULT_TOURNAMENT_MATCHES,
+  PURGED_SEASON_4_MATCH_IDS,
+  getDeletedTournamentMatchIds,
+  addDeletedTournamentMatchId,
   getStoredTournamentMatches,
   saveStoredTournamentMatch,
   removeStoredTournamentMatch,
@@ -197,14 +200,18 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
       }
     });
 
-    // 3. Fetch Matches and merge with local custom matches
+    // 3. Fetch Matches and merge with local custom matches (respecting deleted tombstones)
     const unsubMatches = onSnapshot(collection(db, 'matches'), (snap) => {
+      const deletedIds = getDeletedTournamentMatchIds();
       const mList: Match[] = [];
       snap.forEach((d) => {
-        mList.push({ id: d.id, ...d.data() } as Match);
+        if (!deletedIds.has(d.id) && !PURGED_SEASON_4_MATCH_IDS.includes(d.id)) {
+          mList.push({ id: d.id, ...d.data() } as Match);
+        }
       });
       const localM = getStoredMatches();
       localM.forEach((lm) => {
+        if (deletedIds.has(lm.id) || PURGED_SEASON_4_MATCH_IDS.includes(lm.id)) return;
         const existingIdx = mList.findIndex((m) => m.id === lm.id);
         if (existingIdx >= 0) {
           if ((Number(lm.datejav) || 0) >= (Number(mList[existingIdx].datejav) || 0)) {
@@ -396,7 +403,8 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
   const handleDeleteMatch = async (matchDocId: string) => {
     if (!window.confirm('Bu turnuva maçını silmek istediğinizden emin misiniz?')) return;
     try {
-      // Optimistic delete
+      // Optimistic delete and permanent tombstone registration
+      addDeletedTournamentMatchId(matchDocId);
       setMatches(prev => prev.filter(m => m.id !== matchDocId));
       removeStoredMatch(matchDocId);
       await deleteDoc(doc(db, 'matches', matchDocId));

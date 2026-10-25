@@ -59,6 +59,95 @@ export function isEventOwnGoal(evt: MatchTimelineEvent): boolean {
   return false;
 }
 
+export interface GoldenBootStats {
+  leagueGoals: number;
+  wpcGoals: number;
+  uclGoals: number;
+  uelGoals: number;
+  ueclGoals: number;
+  totalGoals: number;
+  score: number;
+  scoreFormatted: string;
+}
+
+export type CompetitionCategory = 'ucl' | 'uel' | 'uecl' | 'wpc' | 'league';
+
+/**
+ * Returns tournament category and Golden Boot coefficient
+ * - UCL / BCL / Bobble Şampiyonlar Ligi: 2.0
+ * - UEL / BEL / Bobble Avrupa Ligi: 1.75
+ * - UECL / BECL / Bobble Konferans Ligi: 1.5
+ * - Süper Lig / Lig Maçları: 1.0
+ * - WPC / Ziraat Kupası / World Peace Cup: 0.5
+ */
+export function getMatchCompetitionType(m: Match): CompetitionCategory {
+  const cat = (m.category || '').toString().trim().toUpperCase();
+  const hafta = (m.hafta || '').toString().trim().toUpperCase();
+
+  const cleanCat = cat
+    .replace(/İ/g, 'I')
+    .replace(/ı/g, 'i')
+    .replace(/Ğ/g, 'G')
+    .replace(/Ş/g, 'S')
+    .replace(/Ü/g, 'U')
+    .replace(/Ö/g, 'O')
+    .replace(/Ç/g, 'C');
+
+  const cleanHafta = hafta
+    .replace(/İ/g, 'I')
+    .replace(/ı/g, 'i')
+    .replace(/Ğ/g, 'G')
+    .replace(/Ş/g, 'S')
+    .replace(/Ü/g, 'U')
+    .replace(/Ö/g, 'O')
+    .replace(/Ç/g, 'C');
+
+  // 1. UCL / BCL / Şampiyonlar Ligi -> Katsayı 2.0
+  if (
+    cleanCat === 'BCL' || cleanCat === 'UCL' || cleanCat.includes('CHAMPIONS') || cleanCat.includes('SAMPIYON') ||
+    cleanHafta.includes('BCL') || cleanHafta.includes('UCL') || cleanHafta.includes('SAMPIYON')
+  ) {
+    return 'ucl';
+  }
+
+  // 2. UEL / BEL / Bobble Avrupa Ligi -> Katsayı 1.75
+  if (
+    cleanCat === 'BEL' || cleanCat === 'UEL' || cleanCat.includes('EUROPA') || cleanCat.includes('AVRUPA') ||
+    cleanHafta.includes('BEL') || cleanHafta.includes('UEL') || cleanHafta.includes('AVRUPA')
+  ) {
+    return 'uel';
+  }
+
+  // 3. UECL / BECL / Bobble Konferans Ligi -> Katsayı 1.5
+  if (
+    cleanCat === 'BECL' || cleanCat === 'UECL' || cleanCat.includes('CONFERENCE') || cleanCat.includes('KONFERANS') ||
+    cleanHafta.includes('BECL') || cleanHafta.includes('UECL') || cleanHafta.includes('KONFERANS')
+  ) {
+    return 'uecl';
+  }
+
+  // 4. WPC / Ziraat Kupası / World Peace Cup -> Katsayı 0.5
+  if (
+    cleanCat === 'TURNUVA' || cleanCat === 'WPC' || cleanCat.includes('WORLD PEACE') || cleanCat.includes('ZIRAAT') ||
+    cleanHafta.includes('WPC') || cleanHafta.includes('WORLD PEACE') || cleanHafta.includes('ZIRAAT') ||
+    cleanHafta.includes('GRUP A') || cleanHafta.includes('GRUP B') ||
+    (m as any).kgrup !== undefined
+  ) {
+    return 'wpc';
+  }
+
+  // Check round or bracket for cup
+  if ((m as any).round || (m as any).bracketId || m.ligm === false) {
+    if (cleanCat.includes('BCL') || cleanHafta.includes('BCL')) return 'ucl';
+    if (cleanCat.includes('BEL') || cleanHafta.includes('BEL')) return 'uel';
+    if (cleanCat.includes('BECL') || cleanHafta.includes('BECL')) return 'uecl';
+    if (cleanCat.includes('WPC') || cleanHafta.includes('WPC')) return 'wpc';
+  }
+
+  // 5. Normal Lig Maçı -> Katsayı 1.0
+  return 'league';
+}
+
 export interface ComputedPlayerStats {
   goals: number;
   ownGoals: number;
@@ -75,6 +164,7 @@ export interface ComputedPlayerStats {
   kirmizi_kart: number;
   yesil_kart: number;
   totalCards: number;
+  goldenBoot: GoldenBootStats;
 }
 
 /**
@@ -220,7 +310,17 @@ export function calculatePlayerStatsFromMatches(
       sari_kart: 0,
       kirmizi_kart: 0,
       yesil_kart: 0,
-      totalCards: 0
+      totalCards: 0,
+      goldenBoot: {
+        leagueGoals: 0,
+        wpcGoals: 0,
+        uclGoals: 0,
+        uelGoals: 0,
+        ueclGoals: 0,
+        totalGoals: 0,
+        score: 0,
+        scoreFormatted: '0'
+      }
     };
   }
 
@@ -236,6 +336,13 @@ export function calculatePlayerStatsFromMatches(
   let totalRating = 0;
   let ratedMatchCount = 0;
   let matchesPlayed = 0;
+
+  // Golden Boot (Altın Ayakkabı) goals breakdown by competition
+  let leagueGoals = 0;
+  let wpcGoals = 0;
+  let uclGoals = 0;
+  let uelGoals = 0;
+  let ueclGoals = 0;
 
   matches.forEach((m) => {
     if (!m.played) return;
@@ -281,6 +388,13 @@ export function calculatePlayerStatsFromMatches(
           playedInThisMatch = true;
           if (!isKK) {
             goals += 1;
+            // Categorize goal for Golden Boot (Altın Ayakkabı)
+            const comp = getMatchCompetitionType(m);
+            if (comp === 'ucl') uclGoals += 1;
+            else if (comp === 'uel') uelGoals += 1;
+            else if (comp === 'uecl') ueclGoals += 1;
+            else if (comp === 'wpc') wpcGoals += 1;
+            else leagueGoals += 1;
           } else {
             ownGoals += 1;
           }
@@ -334,6 +448,12 @@ export function calculatePlayerStatsFromMatches(
   const ga = goals + assists;
   const gaRatio = matchesPlayed > 0 ? Number((ga / matchesPlayed).toFixed(2)) : 0;
 
+  // Calculate Golden Boot score: Lig * 1.0 + WPC * 0.5 + UCL * 2.0 + UEL * 1.75 + UECL * 1.5
+  const rawScore = (leagueGoals * 1.0) + (wpcGoals * 0.5) + (uclGoals * 2.0) + (uelGoals * 1.75) + (ueclGoals * 1.5);
+  const goldenBootScore = Number(rawScore.toFixed(2));
+  const goldenBootScoreFormatted = Number.isInteger(goldenBootScore) ? `${goldenBootScore}` : `${goldenBootScore}`;
+  const totalGoldenBootGoals = leagueGoals + wpcGoals + uclGoals + uelGoals + ueclGoals;
+
   return {
     goals,
     ownGoals,
@@ -349,7 +469,17 @@ export function calculatePlayerStatsFromMatches(
     sari_kart: yellowCards,
     kirmizi_kart: redCards,
     yesil_kart: greenCards,
-    totalCards: yellowCards + redCards + greenCards
+    totalCards: yellowCards + redCards + greenCards,
+    goldenBoot: {
+      leagueGoals,
+      wpcGoals,
+      uclGoals,
+      uelGoals,
+      ueclGoals,
+      totalGoals: totalGoldenBootGoals,
+      score: goldenBootScore,
+      scoreFormatted: goldenBootScoreFormatted
+    }
   };
 }
 

@@ -17,6 +17,7 @@ interface IstatistiklerProps {
 }
 
 export type StatType = 
+  | 'altin_ayakkabi'
   | 'goals' 
   | 'asistsay' 
   | 'ga'
@@ -104,6 +105,7 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
   const t = translations[currentLang];
 
   const labels: Record<string, string> = {
+    altin_ayakkabi: 'Altın Ayakkabı Puanı',
     goals: `${t.gol} ${t.kral}`,
     asistsay: `${t.asist} ${t.kral}`,
     ga: 'G+A (Gol + Asist)',
@@ -175,12 +177,28 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
           kirmizi_kart: stats.kirmizi_kart,
           yesil_kart: stats.yesil_kart,
           totalCards: stats.totalCards,
+          goldenBoot: stats.goldenBoot,
+          altin_ayakkabi: stats.goldenBoot.score,
           gen: Number(p.gen) || 0,
           totalKupa
         };
       });
 
     return list.sort((a, b) => {
+      if (activeStat === 'altin_ayakkabi') {
+        // En çok gol katsayısına (puanına) ulaşan oyuncu lider
+        if (b.goldenBoot.score !== a.goldenBoot.score) return b.goldenBoot.score - a.goldenBoot.score;
+        // Eşitlik durumunda toplam gol
+        if (b.goldenBoot.totalGoals !== a.goldenBoot.totalGoals) return b.goldenBoot.totalGoals - a.goldenBoot.totalGoals;
+        // Yüksek katsayılı turnuvalarda atılan goller (ŞL > AL > KL > Lig > Ziraat)
+        if (b.goldenBoot.uclGoals !== a.goldenBoot.uclGoals) return b.goldenBoot.uclGoals - a.goldenBoot.uclGoals;
+        if (b.goldenBoot.uelGoals !== a.goldenBoot.uelGoals) return b.goldenBoot.uelGoals - a.goldenBoot.uelGoals;
+        if (b.goldenBoot.ueclGoals !== a.goldenBoot.ueclGoals) return b.goldenBoot.ueclGoals - a.goldenBoot.ueclGoals;
+        if (b.goldenBoot.leagueGoals !== a.goldenBoot.leagueGoals) return b.goldenBoot.leagueGoals - a.goldenBoot.leagueGoals;
+        // Daha az maçta bu puana ulaşmış olmak avantaj sağlar
+        if (a.mac !== b.mac) return a.mac - b.mac;
+        return a.pname.localeCompare(b.pname);
+      }
       if (activeStat === 'kupa') {
         return b.totalKupa - a.totalKupa;
       }
@@ -255,6 +273,7 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
   const teamList = (activeStat === 't_gen' || (activeStat === 'kupa' && kupaSubTab === 'teams')) ? getTeamStats() : [];
 
   const tabConfigs: { id: StatType; label: string; icon: string }[] = [
+    { id: 'altin_ayakkabi', label: '🏆 Altın Ayakkabı', icon: '👟' },
     { id: 'goals', label: `${t.gol} ${t.kral}`, icon: '⚽' },
     { id: 'asistsay', label: `${t.asist} ${t.kral}`, icon: '👟' },
     { id: 'ga', label: 'G+A Lideri', icon: '🔥' },
@@ -725,6 +744,245 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
             ))}
           </div>
         )
+      ) : activeStat === 'altin_ayakkabi' ? (
+        <div className="max-w-3xl mx-auto space-y-6 animate-fade-in select-text">
+          {/* Rules and Coefficients Banner */}
+          <div className="bg-gradient-to-br from-[#1c1605] via-[#2c2005] to-[#141005] border-2 border-brand-gold rounded-3xl p-5 text-white shadow-xl relative overflow-hidden">
+            <div className="absolute -top-12 -right-12 w-48 h-48 bg-amber-500/15 rounded-full blur-3xl pointer-events-none" />
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4 relative z-10">
+              <div className="flex items-center gap-3.5">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-300 via-brand-gold to-amber-600 text-brand-dark flex items-center justify-center text-3xl font-black shadow-lg border border-amber-200 shrink-0">
+                  👟
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="bg-brand-gold text-brand-dark px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shadow-xs">
+                      Resmi Sezon Ödülü
+                    </span>
+                    <h3 className="text-lg md:text-xl font-black text-brand-gold tracking-wide">
+                      ALTIN AYAKKABI (GOLDEN BOOT)
+                    </h3>
+                  </div>
+                  <p className="text-xs text-amber-100/90 font-medium mt-1 leading-relaxed">
+                    En çok gol katsayısına ulaşan oyuncuya verilir. Oylama yerine turnuvaların ve ligin zorluk katsayısı baz alınarak otomatik puanlanır.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Coefficient Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5 mt-4 pt-4 border-t border-brand-gold/30 relative z-10">
+              <div className="bg-black/50 border border-blue-400/40 rounded-2xl p-2.5 text-center shadow-inner">
+                <span className="text-[10px] font-black text-blue-300 block uppercase truncate">Şampiyonlar Ligi (BCL)</span>
+                <span className="text-xl font-black text-blue-400 block mt-0.5">x2.0</span>
+                <span className="text-[9px] text-gray-300 font-bold block mt-0.5">8 Gol = 16 Puan</span>
+              </div>
+              <div className="bg-black/50 border border-amber-400/40 rounded-2xl p-2.5 text-center shadow-inner">
+                <span className="text-[10px] font-black text-amber-300 block uppercase truncate">Avrupa Ligi (BEL)</span>
+                <span className="text-xl font-black text-amber-400 block mt-0.5">x1.75</span>
+                <span className="text-[9px] text-gray-300 font-bold block mt-0.5">8 Gol = 14 Puan</span>
+              </div>
+              <div className="bg-black/50 border border-emerald-400/40 rounded-2xl p-2.5 text-center shadow-inner">
+                <span className="text-[10px] font-black text-emerald-300 block uppercase truncate">Konferans (BECL)</span>
+                <span className="text-xl font-black text-emerald-400 block mt-0.5">x1.5</span>
+                <span className="text-[9px] text-gray-300 font-bold block mt-0.5">8 Gol = 12 Puan</span>
+              </div>
+              <div className="bg-black/50 border border-gray-400/40 rounded-2xl p-2.5 text-center shadow-inner">
+                <span className="text-[10px] font-black text-gray-200 block uppercase truncate">Süper Lig</span>
+                <span className="text-xl font-black text-gray-100 block mt-0.5">x1.0</span>
+                <span className="text-[9px] text-gray-300 font-bold block mt-0.5">8 Gol = 8 Puan</span>
+              </div>
+              <div className="bg-black/50 border border-purple-400/40 rounded-2xl p-2.5 text-center shadow-inner col-span-2 sm:col-span-1">
+                <span className="text-[10px] font-black text-purple-300 block uppercase truncate">Ziraat Kupası (WPC)</span>
+                <span className="text-xl font-black text-purple-400 block mt-0.5">x0.5</span>
+                <span className="text-[9px] text-gray-300 font-bold block mt-0.5">8 Gol = 4 Puan</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Golden Boot Leaderboard Cards */}
+          {sortedList.length === 0 ? (
+            <h3 className="text-center text-gray-500 font-bold">Gol kaydı bulunamadı.</h3>
+          ) : (
+            <div className="space-y-3">
+              {sortedList.slice(0, 50).map((p, idx) => {
+                const gb = p.goldenBoot;
+                const isNoClub = p.isNoClub || p.pteam === 'Takımsız';
+                const logo = isNoClub
+                  ? 'https://via.placeholder.com/32?text=%E2%9A%BD'
+                  : (teamLogos[p.pteam] || 'https://via.placeholder.com/32?text=?');
+
+                const isLeader = idx === 0 && gb.score > 0;
+                const isSecond = idx === 1 && gb.score > 0;
+                const isThird = idx === 2 && gb.score > 0;
+
+                const borderClass = isLeader
+                  ? 'border-l-12 border-brand-gold bg-gradient-to-r from-amber-500/15 via-brand-card to-brand-card ring-2 ring-brand-gold shadow-lg'
+                  : isSecond
+                  ? 'border-l-12 border-gray-400 bg-brand-card shadow-md'
+                  : isThird
+                  ? 'border-l-12 border-amber-700 bg-brand-card shadow-sm'
+                  : 'border-l-12 border-brand-maroon/70 bg-brand-card shadow-xs';
+
+                return (
+                  <div
+                    key={p.pname}
+                    onClick={() => onNavigate({ type: 'player-profile', playerName: p.pname, playerId: p.id || (p as any).docId })}
+                    className={`p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition-all hover:translate-x-1 cursor-pointer ${borderClass}`}
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0 w-full sm:w-auto">
+                      {/* Rank Indicator */}
+                      <div className="w-10 text-center shrink-0">
+                        {isLeader ? (
+                          <div className="flex flex-col items-center">
+                            <span className="text-xl">👑</span>
+                            <span className="text-sm font-black text-brand-gold leading-none">#1</span>
+                          </div>
+                        ) : isSecond ? (
+                          <div className="flex flex-col items-center">
+                            <span className="text-lg">🥈</span>
+                            <span className="text-xs font-black text-gray-500 leading-none">#2</span>
+                          </div>
+                        ) : isThird ? (
+                          <div className="flex flex-col items-center">
+                            <span className="text-lg">🥉</span>
+                            <span className="text-xs font-black text-amber-700 leading-none">#3</span>
+                          </div>
+                        ) : (
+                          <span className="text-base font-black text-brand-maroon">{idx + 1}.</span>
+                        )}
+                      </div>
+
+                      {/* Team Logo */}
+                      <img
+                        src={logo}
+                        onClick={(e) => {
+                          if (!isNoClub) {
+                            e.stopPropagation();
+                            onNavigate({ type: 'team-detail', teamName: p.pteam });
+                          }
+                        }}
+                        className="w-9 h-9 rounded-full border-2 border-brand-maroon bg-white object-cover shrink-0 cursor-pointer shadow-xs hover:scale-105 transition-transform"
+                        alt={p.pteam}
+                        title={p.pteam}
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = 'https://via.placeholder.com/32?text=?';
+                        }}
+                      />
+
+                      {/* Player Photo */}
+                      <img
+                        src={p.foto}
+                        className="w-14 h-14 rounded-2xl object-cover shrink-0 border-2 border-white shadow-md bg-white hover:scale-105 transition-transform"
+                        alt={p.pname}
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(p.pname)}&background=800000&color=fff&size=56`;
+                        }}
+                      />
+
+                      {/* Player Info & Breakdown Pills */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="font-extrabold text-sm md:text-base text-brand-dark uppercase truncate">
+                            {p.pname}
+                          </h4>
+                          {isLeader && (
+                            <span className="bg-brand-gold text-brand-dark px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shadow-2xs">
+                              🏆 Altın Ayakkabı Lideri
+                            </span>
+                          )}
+                          {isNoClub && (
+                            <span className="text-[9px] font-black text-gray-700 bg-gray-200 border border-gray-300 px-1.5 py-0.2 rounded uppercase">
+                              Takımsız
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span
+                            onClick={(e) => {
+                              if (!isNoClub) {
+                                e.stopPropagation();
+                                onNavigate({ type: 'team-detail', teamName: p.pteam });
+                              }
+                            }}
+                            className={`text-xs font-bold uppercase truncate ${
+                              isNoClub ? 'text-gray-400 italic' : 'text-gray-500 hover:text-brand-maroon'
+                            }`}
+                          >
+                            {p.pteam}
+                          </span>
+                          <span className="text-[10px] font-semibold text-gray-400">
+                            • {p.mac} Maç ({p.gol_mac.toFixed(2)} G/M)
+                          </span>
+                        </div>
+
+                        {/* Competition Breakdown Pills */}
+                        <div className="flex items-center gap-1.5 flex-wrap mt-2 text-[10px] font-bold">
+                          {gb.uclGoals > 0 && (
+                            <span className="bg-blue-50 text-blue-800 border border-blue-300 px-2 py-0.5 rounded-lg flex items-center gap-1 shadow-2xs">
+                              <span>🌟 BCL/UCL:</span>
+                              <strong>{gb.uclGoals} gol</strong>
+                              <span className="text-[9px] text-blue-600 font-mono">({(gb.uclGoals * 2.0).toFixed(1)}p)</span>
+                            </span>
+                          )}
+                          {gb.uelGoals > 0 && (
+                            <span className="bg-amber-50 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-lg flex items-center gap-1 shadow-2xs">
+                              <span>🥈 BEL/UEL:</span>
+                              <strong>{gb.uelGoals} gol</strong>
+                              <span className="text-[9px] text-amber-600 font-mono">({(gb.uelGoals * 1.75).toFixed(2)}p)</span>
+                            </span>
+                          )}
+                          {gb.ueclGoals > 0 && (
+                            <span className="bg-emerald-50 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-lg flex items-center gap-1 shadow-2xs">
+                              <span>🥉 BECL/UECL:</span>
+                              <strong>{gb.ueclGoals} gol</strong>
+                              <span className="text-[9px] text-emerald-600 font-mono">({(gb.ueclGoals * 1.5).toFixed(1)}p)</span>
+                            </span>
+                          )}
+                          {gb.leagueGoals > 0 && (
+                            <span className="bg-gray-100 text-gray-800 border border-gray-300 px-2 py-0.5 rounded-lg flex items-center gap-1 shadow-2xs">
+                              <span>⚽ Lig:</span>
+                              <strong>{gb.leagueGoals} gol</strong>
+                              <span className="text-[9px] text-gray-600 font-mono">({(gb.leagueGoals * 1.0).toFixed(1)}p)</span>
+                            </span>
+                          )}
+                          {gb.wpcGoals > 0 && (
+                            <span className="bg-purple-50 text-purple-800 border border-purple-300 px-2 py-0.5 rounded-lg flex items-center gap-1 shadow-2xs">
+                              <span>🏆 Ziraat/WPC:</span>
+                              <strong>{gb.wpcGoals} gol</strong>
+                              <span className="text-[9px] text-purple-600 font-mono">({(gb.wpcGoals * 0.5).toFixed(1)}p)</span>
+                            </span>
+                          )}
+                          {gb.totalGoals === 0 && (
+                            <span className="text-gray-400 italic text-[10px]">Henüz gol kaydı yok</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right side: Golden Boot Score Display */}
+                    <div className="w-full sm:w-auto flex sm:flex-col items-center sm:items-end justify-between sm:justify-center border-t sm:border-t-0 pt-2 sm:pt-0 border-gray-200 shrink-0">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-2xl sm:text-3xl font-black text-amber-600 leading-none">
+                          {gb.scoreFormatted}
+                        </span>
+                        <span className="text-xs font-black text-brand-dark uppercase">
+                          PUAN
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="bg-brand-maroon text-brand-gold text-[10px] font-black px-2 py-0.5 rounded-md shadow-2xs">
+                          ⚽ {gb.totalGoals} Toplam Gol
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       ) : sortedList.length === 0 ? (
         <h3 className="text-center text-gray-500 font-bold">Yüklenecek istatistik bulunamadı.</h3>
       ) : (

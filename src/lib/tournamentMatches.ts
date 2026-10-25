@@ -1,115 +1,63 @@
 import { Match } from '../types';
 
 export const LOCAL_TOURNAMENT_MATCHES_KEY = 'bobblekolik_tournament_matches';
+export const LOCAL_DELETED_TOURNAMENT_MATCHES_KEY = 'bobblekolik_deleted_tournament_matches';
 export const LOCAL_BRACKETS_KEY = 'bobblekolik_bracket_data';
 
-// Default tournament matches for BCL (UCL), BEL (UEL), and BECL (UECL)
-export const DEFAULT_TOURNAMENT_MATCHES: Match[] = [
-  // BCL (UCL) 4. Sezon
-  {
-    id: 'bcl_4_semi1',
-    team1: 'Holy Munchen',
-    team2: 'Pofuspor',
-    category: 'BCL',
-    season: 4 as any,
-    round: 'semi1',
-    hafta: 'Yarı Final 1',
-    score1: '1',
-    score2: '2',
-    played: true,
-    date: '20.06.2025',
-    datejav: 1750410000000,
-    ligm: false,
-    timeline: []
-  },
-  {
-    id: 'bcl_4_semi2',
-    team1: 'Döner FC',
-    team2: 'Leogard',
-    category: 'BCL',
-    season: 4 as any,
-    round: 'semi2',
-    hafta: 'Yarı Final 2',
-    score1: '3',
-    score2: '1',
-    played: true,
-    date: '21.06.2025',
-    datejav: 1750496400000,
-    ligm: false,
-    timeline: []
-  },
-  {
-    id: 'bcl_4_final',
-    team1: 'Pofuspor',
-    team2: 'Döner FC',
-    category: 'BCL',
-    season: 4 as any,
-    round: 'final',
-    hafta: 'Büyük Final',
-    score1: '2',
-    score2: '1',
-    played: true,
-    date: '28.06.2025',
-    datejav: 1751101200000,
-    ligm: false,
-    timeline: []
-  },
-
-  // BECL (UECL) 4. Sezon
-  {
-    id: 'becl_4_semi1',
-    team1: 'Hendrix United',
-    team2: 'KFCspor',
-    category: 'BECL',
-    season: 4 as any,
-    round: 'semi1',
-    hafta: 'Yarı Final 1',
-    score1: '0',
-    score2: '2',
-    played: true,
-    date: '15.06.2025',
-    datejav: 1749978000000,
-    ligm: false,
-    timeline: []
-  },
-  {
-    id: 'becl_4_semi2',
-    team1: 'Xeilmes',
-    team2: 'Sp5der Jack',
-    category: 'BECL',
-    season: 4 as any,
-    round: 'semi2',
-    hafta: 'Yarı Final 2',
-    score1: '1',
-    score2: '3',
-    played: true,
-    date: '16.06.2025',
-    datejav: 1750064400000,
-    ligm: false,
-    timeline: []
-  },
-  {
-    id: 'becl_4_final',
-    team1: 'KFCspor',
-    team2: 'Sp5der Jack',
-    category: 'BECL',
-    season: 4 as any,
-    round: 'final',
-    hafta: 'Büyük Final',
-    score1: '1',
-    score2: '2',
-    played: true,
-    date: '22.06.2025',
-    datejav: 1750582800000,
-    ligm: false,
-    timeline: []
-  }
+// Dummy Season 4 match IDs that should never resurrect automatically
+export const PURGED_SEASON_4_MATCH_IDS = [
+  'bcl_4_semi1',
+  'bcl_4_semi2',
+  'bcl_4_final',
+  'becl_4_semi1',
+  'becl_4_semi2',
+  'becl_4_final'
 ];
+
+// No hardcoded default matches that resurrect on their own
+export const DEFAULT_TOURNAMENT_MATCHES: Match[] = [];
+
+export const getDeletedTournamentMatchIds = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem(LOCAL_DELETED_TOURNAMENT_MATCHES_KEY);
+    const list: string[] = raw ? JSON.parse(raw) : [];
+    // Ensure purged season 4 matches are always included in deleted set
+    PURGED_SEASON_4_MATCH_IDS.forEach(id => {
+      if (!list.includes(id)) list.push(id);
+    });
+    return new Set(list);
+  } catch (e) {
+    return new Set(PURGED_SEASON_4_MATCH_IDS);
+  }
+};
+
+export const addDeletedTournamentMatchId = (matchId: string) => {
+  try {
+    const set = getDeletedTournamentMatchIds();
+    set.add(matchId);
+    localStorage.setItem(LOCAL_DELETED_TOURNAMENT_MATCHES_KEY, JSON.stringify(Array.from(set)));
+  } catch (e) {
+    console.error('Failed to save deleted tournament match ID', e);
+  }
+};
+
+export const clearDeletedTournamentMatchId = (matchId: string) => {
+  try {
+    const set = getDeletedTournamentMatchIds();
+    set.delete(matchId);
+    localStorage.setItem(LOCAL_DELETED_TOURNAMENT_MATCHES_KEY, JSON.stringify(Array.from(set)));
+  } catch (e) {
+    console.error('Failed to clear deleted tournament match ID', e);
+  }
+};
 
 export const getStoredTournamentMatches = (): Match[] => {
   try {
     const raw = localStorage.getItem(LOCAL_TOURNAMENT_MATCHES_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const list: Match[] = raw ? JSON.parse(raw) : [];
+    const deletedIds = getDeletedTournamentMatchIds();
+    // Filter out deleted matches
+    return list.filter(m => m && m.id && !deletedIds.has(m.id) && !PURGED_SEASON_4_MATCH_IDS.includes(m.id));
   } catch (e) {
     return [];
   }
@@ -130,6 +78,10 @@ export const saveStoredTournamentMatch = (match: Match) => {
       team1: normalizeTeamName(match.team1),
       team2: normalizeTeamName(match.team2)
     };
+    // If saving this match, ensure it is un-flagged from deleted
+    if (cleanMatch.id) {
+      clearDeletedTournamentMatchId(cleanMatch.id);
+    }
     const idx = current.findIndex((m) => m.id === cleanMatch.id);
     if (idx >= 0) {
       current[idx] = cleanMatch;
@@ -145,6 +97,7 @@ export const saveStoredTournamentMatch = (match: Match) => {
 
 export const removeStoredTournamentMatch = (matchId: string) => {
   try {
+    addDeletedTournamentMatchId(matchId);
     const current = getStoredTournamentMatches().filter((m) => m.id !== matchId);
     localStorage.setItem(LOCAL_TOURNAMENT_MATCHES_KEY, JSON.stringify(current));
     window.dispatchEvent(new CustomEvent('tournament_matches_updated', { detail: { removedId: matchId } }));
@@ -193,10 +146,15 @@ export const normalizeCupKey = (cat?: string, hStr?: string): 'bcl' | 'bel' | 'b
 export function mergeTournamentMatches(firestoreMatches: Match[]): Match[] {
   const map = new Map<string, Match>();
   const slotToMatch = new Map<string, Match>();
+  const deletedIds = getDeletedTournamentMatchIds();
 
-  // 1. Load firestore matches first
+  // 1. Load firestore matches first (ignoring any match that was deleted or purged)
   (firestoreMatches || []).forEach((m) => {
     const id = m.id || `${m.team1}-vs-${m.team2}-${m.datejav}`;
+    if (deletedIds.has(id) || PURGED_SEASON_4_MATCH_IDS.includes(id)) {
+      return;
+    }
+
     const cleanM: Match = {
       ...m,
       id,
@@ -217,6 +175,10 @@ export function mergeTournamentMatches(firestoreMatches: Match[]): Match[] {
   const localM = getStoredTournamentMatches();
   localM.forEach((lm) => {
     const id = lm.id || `${lm.team1}-vs-${lm.team2}-${lm.datejav}`;
+    if (deletedIds.has(id) || PURGED_SEASON_4_MATCH_IDS.includes(id)) {
+      return;
+    }
+
     const cleanLM: Match = {
       ...lm,
       id,
@@ -235,8 +197,11 @@ export function mergeTournamentMatches(firestoreMatches: Match[]): Match[] {
     }
   });
 
-  // 3. Include default tournament matches if not present in firestore or local
+  // 3. Include default tournament matches if any remain and not deleted
   DEFAULT_TOURNAMENT_MATCHES.forEach((dm) => {
+    if (deletedIds.has(dm.id) || PURGED_SEASON_4_MATCH_IDS.includes(dm.id)) {
+      return;
+    }
     const cup = normalizeCupKey(dm.category, dm.hafta);
     const season = (dm as any).season;
     const round = (dm as any).round;

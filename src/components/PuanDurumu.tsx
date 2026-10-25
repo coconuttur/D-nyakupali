@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Team } from '../types';
+import { Team, Match } from '../types';
 import { recalculateStandings } from '../lib/standings';
+import { getMatchCompetitionType } from '../lib/playerStats';
+import { normalizeTeamName } from '../lib/tournamentMatches';
 
 interface PuanDurumuProps {
   currentLang: 'tr' | 'en' | 'pt';
@@ -20,24 +22,122 @@ export default function PuanDurumu({ currentLang, translations, onNavigate }: Pu
   }, []);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'teams'), (snap) => {
-      const list: Team[] = [];
-      snap.forEach((doc) => {
-        const d = doc.data();
-        const atilan = Number(d["atilan gol"]) || 0;
-        const yenilen = Number(d["yenilen gol"]) || 0;
-        list.push({
-          name: d.name,
-          logo: d.logo || '',
-          played: Number(d.played) || 0,
-          wins: Number(d.wins) || 0,
-          draws: Number(d.draws) || 0,
-          losses: Number(d.losses) || 0,
-          "atilan gol": atilan,
-          "yenilen gol": yenilen,
-          points: Number(d.points) || 0,
-        } as Team);
+    let teamsList: { id: string; data: any }[] = [];
+    let matchesList: Match[] = [];
+
+    const computeAndSetStandings = () => {
+      if (teamsList.length === 0) return;
+
+      const teamDocIdMap = new Map<string, string>();
+      const calculatedStats: Record<string, {
+        name: string;
+        logo: string;
+        played: number;
+        wins: number;
+        draws: number;
+        losses: number;
+        atilan: number;
+        yenilen: number;
+        points: number;
+      }> = {};
+
+      teamsList.forEach(({ id, data }) => {
+        const nameField = (data.name || '').trim();
+        const docId = id.trim();
+
+        if (nameField) {
+          teamDocIdMap.set(nameField.toLowerCase(), docId);
+          teamDocIdMap.set(normalizeTeamName(nameField).toLowerCase(), docId);
+        }
+        teamDocIdMap.set(docId.toLowerCase(), docId);
+        teamDocIdMap.set(normalizeTeamName(docId).toLowerCase(), docId);
+
+        calculatedStats[docId] = {
+          name: nameField || docId,
+          logo: data.logo || '',
+          played: 0,
+          wins: 0,
+          draws: 0,
+          losses: 0,
+          atilan: 0,
+          yenilen: 0,
+          points: 0
+        };
       });
+
+      matchesList.forEach((m) => {
+        if (!m.played) return;
+
+        // Isolate tournament & cup matches
+        const comp = getMatchCompetitionType(m);
+        if (comp !== 'league' || m.ligm === false) return;
+
+        const cat = String(m.category ?? '').trim().toUpperCase();
+        const hafta = String(m.hafta ?? '').trim().toUpperCase();
+        if (
+          cat === 'BEL' || cat === 'BCL' || cat === 'BECL' || cat === 'TURNUVA' || cat === 'WPC' ||
+          hafta.includes('FINAL') || hafta.includes('YARI') || hafta.includes('CEYREK') ||
+          (m as any).round !== undefined || (m as any).bracketId !== undefined
+        ) return;
+
+        const score1 = Number(m.score1) || 0;
+        const score2 = Number(m.score2) || 0;
+        const t1Display = (m.team1 || '').trim();
+        const t2Display = (m.team2 || '').trim();
+
+        const t1 = teamDocIdMap.get(t1Display.toLowerCase()) || 
+                   teamDocIdMap.get(normalizeTeamName(t1Display).toLowerCase()) || t1Display;
+        const t2 = teamDocIdMap.get(t2Display.toLowerCase()) || 
+                   teamDocIdMap.get(normalizeTeamName(t2Display).toLowerCase()) || t2Display;
+
+        if (!calculatedStats[t1]) {
+          calculatedStats[t1] = { name: t1Display, logo: '', played: 0, wins: 0, draws: 0, losses: 0, atilan: 0, yenilen: 0, points: 0 };
+        }
+        if (!calculatedStats[t2]) {
+          calculatedStats[t2] = { name: t2Display, logo: '', played: 0, wins: 0, draws: 0, losses: 0, atilan: 0, yenilen: 0, points: 0 };
+        }
+
+        const isT1Bob = t1Display.toLowerCase().trim() === 'bobblica' || t1.toLowerCase().trim() === 'bobblica' || t1.toLowerCase().trim() === 'hiyar city';
+        const isT2Bob = t2Display.toLowerCase().trim() === 'bobblica' || t2.toLowerCase().trim() === 'bobblica' || t2.toLowerCase().trim() === 'hiyar city';
+        const isBobblicaLoss = (isT1Bob && score2 > score1) || (isT2Bob && score1 > score2);
+
+        calculatedStats[t1].played += 1;
+        calculatedStats[t2].played += 1;
+
+        if (!isBobblicaLoss) {
+          calculatedStats[t1].atilan += score1;
+          calculatedStats[t1].yenilen += score2;
+          calculatedStats[t2].atilan += score2;
+          calculatedStats[t2].yenilen += score1;
+        }
+
+        if (score1 > score2) {
+          calculatedStats[t1].wins += 1;
+          calculatedStats[t1].points += 3;
+          calculatedStats[t2].losses += 1;
+        } else if (score1 < score2) {
+          calculatedStats[t2].wins += 1;
+          calculatedStats[t2].points += 3;
+          calculatedStats[t1].losses += 1;
+        } else {
+          calculatedStats[t1].draws += 1;
+          calculatedStats[t1].points += 1;
+          calculatedStats[t2].draws += 1;
+          calculatedStats[t2].points += 1;
+        }
+      });
+
+      const list: Team[] = Object.values(calculatedStats).map((st) => ({
+        name: st.name,
+        logo: st.logo,
+        played: st.played,
+        wins: st.wins,
+        draws: st.draws,
+        losses: st.losses,
+        "atilan gol": st.atilan,
+        "yenilen gol": st.yenilen,
+        points: st.points
+      } as Team));
 
       // Sort by points desc, then goal difference (av) desc
       list.sort((a, b) => {
@@ -51,9 +151,22 @@ export default function PuanDurumu({ currentLang, translations, onNavigate }: Pu
 
       setTeams(list);
       setLoading(false);
+    };
+
+    const unsubTeams = onSnapshot(collection(db, 'teams'), (snap) => {
+      teamsList = snap.docs.map(d => ({ id: d.id, data: d.data() }));
+      computeAndSetStandings();
     });
 
-    return () => unsubscribe();
+    const unsubMatches = onSnapshot(collection(db, 'matches'), (snap) => {
+      matchesList = snap.docs.map(d => ({ id: d.id, ...d.data() } as Match));
+      computeAndSetStandings();
+    });
+
+    return () => {
+      unsubTeams();
+      unsubMatches();
+    };
   }, []);
 
   const t = translations[currentLang];

@@ -4,6 +4,9 @@ import { db } from '../firebase';
 import { Team, Player, Match, UserProfile } from '../types';
 import { TrophiesShowcase, TrophyAdminModal } from './TrophiesShowcase';
 
+import { getMatchCompetitionType, CompetitionCategory } from '../lib/playerStats';
+import { mergeTournamentMatches, normalizeTeamName } from '../lib/tournamentMatches';
+
 interface TeamDetailProps {
   teamName: string;
   currentUser: UserProfile | null;
@@ -13,6 +16,78 @@ interface TeamDetailProps {
   onNavigate: (view: any) => void;
   teamLogos: Record<string, string>;
 }
+
+export const COMPETITION_TABS: {
+  id: CompetitionCategory | 'all';
+  label: string;
+  shortLabel: string;
+  icon: string;
+  badgeBg: string;
+  badgeText: string;
+  borderCol: string;
+  accentCol: string;
+}[] = [
+  {
+    id: 'all',
+    label: 'Tüm Maçlar',
+    shortLabel: 'Tümü',
+    icon: '📋',
+    badgeBg: 'bg-brand-dark text-brand-gold',
+    badgeText: 'text-brand-gold',
+    borderCol: 'border-brand-gold',
+    accentCol: 'border-l-brand-maroon'
+  },
+  {
+    id: 'league',
+    label: 'Süper Lig',
+    shortLabel: 'Süper Lig',
+    icon: '⚽',
+    badgeBg: 'bg-red-950 text-red-200',
+    badgeText: 'text-red-300',
+    borderCol: 'border-red-600/70',
+    accentCol: 'border-l-red-600'
+  },
+  {
+    id: 'ucl',
+    label: 'Şampiyonlar Ligi (UCL / BCL)',
+    shortLabel: 'UCL / BCL',
+    icon: '⭐',
+    badgeBg: 'bg-blue-950 text-amber-300',
+    badgeText: 'text-amber-300',
+    borderCol: 'border-blue-500/70',
+    accentCol: 'border-l-blue-600'
+  },
+  {
+    id: 'uel',
+    label: 'Avrupa Ligi (UEL / BEL)',
+    shortLabel: 'UEL / BEL',
+    icon: '🥈',
+    badgeBg: 'bg-amber-950 text-amber-200',
+    badgeText: 'text-amber-300',
+    borderCol: 'border-amber-600/70',
+    accentCol: 'border-l-amber-600'
+  },
+  {
+    id: 'uecl',
+    label: 'Konferans Ligi (UECL / BECL)',
+    shortLabel: 'UECL / BECL',
+    icon: '🥉',
+    badgeBg: 'bg-emerald-950 text-emerald-200',
+    badgeText: 'text-emerald-300',
+    borderCol: 'border-emerald-600/70',
+    accentCol: 'border-l-emerald-600'
+  },
+  {
+    id: 'wpc',
+    label: 'Kupa & WPC (Turnuva)',
+    shortLabel: 'Kupa & WPC',
+    icon: '🏆',
+    badgeBg: 'bg-purple-950 text-purple-200',
+    badgeText: 'text-purple-300',
+    borderCol: 'border-purple-600/70',
+    accentCol: 'border-l-purple-600'
+  }
+];
 
 export default function TeamDetail({ teamName, currentUser, currentLang, translations, onBack, onNavigate, teamLogos }: TeamDetailProps) {
   const [team, setTeam] = useState<Team | null>(null);
@@ -26,6 +101,11 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
   const [loading, setLoading] = useState(true);
   const [trophyModalOpen, setTrophyModalOpen] = useState(false);
 
+  // Tournament/Competition filter tabs
+  const [selectedCompetition, setSelectedCompetition] = useState<CompetitionCategory | 'all'>('all');
+  const [matchStatusFilter, setMatchStatusFilter] = useState<'all' | 'played' | 'upcoming'>('all');
+  const [tournamentUpdateCounter, setTournamentUpdateCounter] = useState(0);
+
   // Loan management modal states
   const [loanModalOpen, setLoanModalOpen] = useState(false);
   const [allPlayersList, setAllPlayersList] = useState<{ id: string; player: Player }[]>([]);
@@ -38,6 +118,17 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
   const [dislikesUsers, setDislikesUsers] = useState<any[]>([]);
   const [loadingVoters, setLoadingVoters] = useState(false);
 
+  // Listen to local tournament changes so matches refresh instantly
+  useEffect(() => {
+    const handleTournamentUpdate = () => {
+      setTournamentUpdateCounter((prev) => prev + 1);
+    };
+    window.addEventListener('tournament_matches_updated', handleTournamentUpdate);
+    return () => {
+      window.removeEventListener('tournament_matches_updated', handleTournamentUpdate);
+    };
+  }, []);
+
   useEffect(() => {
     let unsubSquad: (() => void) | null = null;
     let unsubMatches: (() => void) | null = null;
@@ -48,7 +139,8 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
         const dId = d.id.toLowerCase().trim();
         const dName = (d.data().name || '').toLowerCase().trim();
         const tName = teamName.toLowerCase().trim();
-        return dId === tName || dName === tName;
+        const normTName = normalizeTeamName(tName).toLowerCase();
+        return dId === tName || dName === tName || normalizeTeamName(dId).toLowerCase() === normTName || normalizeTeamName(dName).toLowerCase() === normTName;
       });
 
       if (foundDoc) {
@@ -80,13 +172,15 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
             const list: Player[] = [];
             pSnap.forEach((d) => {
               const p = d.data() as Player;
-              const pTeamLower = (p.pteam || '').toLowerCase().trim();
-              const pKiralikLower = (p.kiralikTakim || '').toLowerCase().trim();
+              const pTeamLower = normalizeTeamName(p.pteam || '').toLowerCase().trim();
+              const pKiralikLower = normalizeTeamName(p.kiralikTakim || '').toLowerCase().trim();
+              const rDocLower = normalizeTeamName(resolvedDocId).toLowerCase().trim();
+              const rNameLower = normalizeTeamName(resolvedTeam.name || '').toLowerCase().trim();
               
               // Match player if their team or kiralikTakim matches resolved name or doc ID
-              const isMatch = pTeamLower === resolvedDocId.toLowerCase().trim() || 
-                              pTeamLower === (resolvedTeam.name || '').toLowerCase().trim() ||
-                              (p.kiralik && (pKiralikLower === resolvedDocId.toLowerCase().trim() || pKiralikLower === (resolvedTeam.name || '').toLowerCase().trim()));
+              const isMatch = pTeamLower === rDocLower || 
+                              pTeamLower === rNameLower ||
+                              (p.kiralik && (pKiralikLower === rDocLower || pKiralikLower === rNameLower));
               
               if (isMatch) {
                 list.push(p);
@@ -97,19 +191,29 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
           });
         }
 
-        // 3. Fetch Matches in real time using the resolved team identifiers
+        // 3. Fetch Matches in real time using the resolved team identifiers & merge tournament matches
         if (!unsubMatches) {
           unsubMatches = onSnapshot(collection(db, "matches"), (mSnap) => {
+            const rawList: Match[] = [];
+            mSnap.forEach((d) => {
+              rawList.push({ id: d.id, ...d.data() } as Match);
+            });
+
+            // Merge with local tournament matches (eliminates deleted matches and merges brackets)
+            const merged = mergeTournamentMatches(rawList);
+
             const played: Match[] = [];
             const upcoming: Match[] = [];
 
-            mSnap.forEach((d) => {
-              const m = d.data() as Match;
-              const mt1 = (m.team1 || '').toLowerCase().trim();
-              const mt2 = (m.team2 || '').toLowerCase().trim();
+            const rDocLower = normalizeTeamName(resolvedDocId).toLowerCase().trim();
+            const rNameLower = normalizeTeamName(resolvedTeam.name || '').toLowerCase().trim();
+
+            merged.forEach((m) => {
+              const mt1 = normalizeTeamName(m.team1 || '').toLowerCase().trim();
+              const mt2 = normalizeTeamName(m.team2 || '').toLowerCase().trim();
               
-              const isT1 = mt1 === resolvedDocId.toLowerCase().trim() || mt1 === (resolvedTeam.name || '').toLowerCase().trim();
-              const isT2 = mt2 === resolvedDocId.toLowerCase().trim() || mt2 === (resolvedTeam.name || '').toLowerCase().trim();
+              const isT1 = mt1 === rDocLower || mt1 === rNameLower;
+              const isT2 = mt2 === rDocLower || mt2 === rNameLower;
 
               if (isT1 || isT2) {
                 if (m.played) played.push(m);
@@ -118,8 +222,8 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
             });
 
             // Sort lists
-            played.sort((a,b) => b.datejav - a.datejav); // last played first
-            upcoming.sort((a,b) => a.datejav - b.datejav); // soonest play first
+            played.sort((a,b) => (Number(b.datejav) || 0) - (Number(a.datejav) || 0)); // last played first
+            upcoming.sort((a,b) => (Number(a.datejav) || 0) - (Number(b.datejav) || 0)); // soonest play first
 
             setPlayedMatches(played);
             setUpcomingMatches(upcoming);
@@ -128,8 +232,8 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
             const last5 = played.slice(0, 5);
             const reversed = [...last5].reverse();
             const sqs: string[] = reversed.map((match) => {
-              const mt1 = (match.team1 || '').toLowerCase().trim();
-              const isT1 = mt1 === resolvedDocId.toLowerCase().trim() || mt1 === (resolvedTeam.name || '').toLowerCase().trim();
+              const mt1 = normalizeTeamName(match.team1 || '').toLowerCase().trim();
+              const isT1 = mt1 === rDocLower || mt1 === rNameLower;
               const own = Number(isT1 ? match.score1 : match.score2);
               const opp = Number(isT1 ? match.score2 : match.score1);
               if (own > opp) return 'W';
@@ -150,7 +254,7 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
       if (unsubSquad) unsubSquad();
       if (unsubMatches) unsubMatches();
     };
-  }, [teamName]);
+  }, [teamName, tournamentUpdateCounter]);
 
   const handleCastVote = async (choice: 'like' | 'dislike') => {
     if (!currentUser) {
@@ -378,104 +482,461 @@ export default function TeamDetail({ teamName, currentUser, currentLang, transla
             </div>
           </div>
 
-          {/* Performance counts grid matrix */}
-          <div>
-            <h2 className="text-lg font-black text-brand-dark mb-4 uppercase tracking-wider relative flex items-center gap-2">
-              <span className="w-6 h-1 bg-brand-maroon rounded-full shrink-0" />
-              {t.stats}
-            </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3 md:gap-4 select-text">
-              {[
-                { val: team?.wins || 0, desc: t.w, cls: '' },
-                { val: team?.draws || 0, desc: t.d, cls: '' },
-                { val: team?.losses || 0, desc: t.l, cls: '' },
-                { val: team?.['atilan gol'] || 0, desc: t.gf, cls: 'border-b-6 border-green-500' },
-                { val: team?.['yenilen gol'] || 0, desc: t.ga, cls: 'border-b-6 border-red-500' },
-                { val: squadAvgGen, desc: 'T-GEN ORT.', cls: 'border-b-6 border-brand-gold bg-brand-dark/5' },
-                { val: squadTotalGoals, desc: 'T-GOL TOPLAM', cls: 'border-b-6 border-brand-maroon bg-brand-maroon/5' }
-              ].map((perf, idx) => (
-                <div key={idx} className={`bg-brand-card rounded-2xl p-4 text-center hover:bg-white transition-colors shadow-sm select-text ${perf.cls}`}>
-                  <span className="text-xl md:text-2xl font-black text-brand-maroon block leading-none">{perf.val}</span>
-                  <span className="text-[9px] font-black text-gray-400 block tracking-wider uppercase mt-1.5">{perf.desc}</span>
+
+          {/* Performance counts grid matrix (Süper Lig İstatistikleri) */}
+          {(() => {
+            const leaguePlayedMatches = playedMatches.filter(m => getMatchCompetitionType(m) === 'league' && m.ligm !== false);
+            const rDocLower = normalizeTeamName(docId || '').toLowerCase().trim();
+            const rNameLower = normalizeTeamName(team?.name || teamName).toLowerCase().trim();
+
+            let leagueWins = 0;
+            let leagueDraws = 0;
+            let leagueLosses = 0;
+            let leagueGf = 0;
+            let leagueGa = 0;
+
+            leaguePlayedMatches.forEach(m => {
+              const mt1 = normalizeTeamName(m.team1 || '').toLowerCase().trim();
+              const isT1 = mt1 === rDocLower || mt1 === rNameLower;
+              const own = Number(isT1 ? m.score1 : m.score2) || 0;
+              const opp = Number(isT1 ? m.score2 : m.score1) || 0;
+              const isT1Bob = (m.team1 || '').toLowerCase().trim() === 'bobblica' || (m.team1 || '').toLowerCase().trim() === 'hiyar city';
+              const isT2Bob = (m.team2 || '').toLowerCase().trim() === 'bobblica' || (m.team2 || '').toLowerCase().trim() === 'hiyar city';
+              const isBobblicaLoss = (isT1Bob && opp > own) || (isT2Bob && own > opp);
+
+              if (!isBobblicaLoss) {
+                leagueGf += own;
+                leagueGa += opp;
+              }
+              if (own > opp) leagueWins++;
+              else if (own < opp) leagueLosses++;
+              else leagueDraws++;
+            });
+
+            const statWins = leaguePlayedMatches.length > 0 ? leagueWins : (team?.wins || 0);
+            const statDraws = leaguePlayedMatches.length > 0 ? leagueDraws : (team?.draws || 0);
+            const statLosses = leaguePlayedMatches.length > 0 ? leagueLosses : (team?.losses || 0);
+            const statGf = leaguePlayedMatches.length > 0 ? leagueGf : (team?.['atilan gol'] || 0);
+            const statGa = leaguePlayedMatches.length > 0 ? leagueGa : (team?.['yenilen gol'] || 0);
+
+            return (
+              <div>
+                <h2 className="text-lg font-black text-brand-dark mb-4 uppercase tracking-wider relative flex items-center gap-2">
+                  <span className="w-6 h-1 bg-brand-maroon rounded-full shrink-0" />
+                  {t.stats} (Süper Lig)
+                </h2>
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3 md:gap-4 select-text">
+                  {[
+                    { val: statWins, desc: t.w, cls: '' },
+                    { val: statDraws, desc: t.d, cls: '' },
+                    { val: statLosses, desc: t.l, cls: '' },
+                    { val: statGf, desc: t.gf, cls: 'border-b-6 border-green-500' },
+                    { val: statGa, desc: t.ga, cls: 'border-b-6 border-red-500' },
+                    { val: squadAvgGen, desc: 'T-GEN ORT.', cls: 'border-b-6 border-brand-gold bg-brand-dark/5' },
+                    { val: squadTotalGoals, desc: 'T-GOL TOPLAM', cls: 'border-b-6 border-brand-maroon bg-brand-maroon/5' }
+                  ].map((perf, idx) => (
+                    <div key={idx} className={`bg-brand-card rounded-2xl p-4 text-center hover:bg-white transition-colors shadow-sm select-text ${perf.cls}`}>
+                      <span className="text-xl md:text-2xl font-black text-brand-maroon block leading-none">{perf.val}</span>
+                      <span className="text-[9px] font-black text-gray-400 block tracking-wider uppercase mt-1.5">{perf.desc}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
+              </div>
+            );
+          })()}
 
-          {/* Played fixtures */}
-          <div>
-            <h2 className="text-lg font-black text-brand-dark mb-4 uppercase tracking-wider relative flex items-center gap-2">
-              <span className="w-6 h-1 bg-brand-maroon rounded-full shrink-0" />
-              {t.last}
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {playedMatches.length === 0 ? (
-                <span className="text-gray-400 font-bold block p-4 bg-brand-card rounded-2xl">Geçmiş maç bulunmamaktadır.</span>
-              ) : (
-                playedMatches.map((m, idx) => {
-                  const opp = m.team1 === teamName ? m.team2 : m.team1;
-                  const isT1 = m.team1 === teamName;
-                  const scoreDisplay = isT1 ? `${m.score1} - ${m.score2}` : `${m.score2} - ${m.score1}`;
-                  return (
-                    <div 
-                      key={idx}
-                      onClick={() => onNavigate({ type: 'match-detail', matchId: `${m.team1}-vs-${m.team2}-${m.datejav}` })}
-                      className="bg-brand-card p-5 rounded-2xl border-l-8 border-brand-maroon shadow-sm cursor-pointer hover:scale-101 hover:-translate-y-0.5 transition-all text-center select-text"
-                    >
-                      <span className="text-[10px] font-black text-brand-maroon uppercase tracking-wider block mb-2">📅 {m.date || t.wait}</span>
-                      <div className="flex justify-around items-center gap-3">
-                        <div className="flex flex-col items-center">
-                          <img src={teamLogos[teamName]} className="w-10 h-10 rounded-full border bg-white object-cover shadow-sm shrink-0" alt="team" />
-                          <span className="text-xs font-extrabold mt-1 text-brand-dark block truncate w-20 text-center">{teamName}</span>
-                        </div>
-                        <span className="py-1 px-4 bg-brand-dark text-brand-gold font-black text-base rounded-xl border border-brand-gold shadow-inner shrink-0">{scoreDisplay}</span>
-                        <div className="flex flex-col items-center">
-                          <img src={teamLogos[opp]} className="w-10 h-10 rounded-full border bg-white object-cover shadow-sm shrink-0" alt="opponent" />
-                          <span className="text-xs font-extrabold mt-1 text-brand-dark block truncate w-20 text-center">{opp}</span>
-                        </div>
+          {/* Tournament & League Match Categorization Section */}
+          <div className="space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b-2 border-brand-maroon/20 pb-3">
+              <div>
+                <h2 className="text-xl font-black text-brand-dark uppercase tracking-wider relative flex items-center gap-2">
+                  <span className="w-6 h-1.5 bg-brand-maroon rounded-full shrink-0" />
+                  <span>Maç Fikstürü & Sonuçları</span>
+                </h2>
+                <p className="text-xs font-bold text-gray-500 mt-0.5">
+                  Lig, Şampiyonlar Ligi, Avrupa, Konferans ve Kupa maçlarını ayrı ayrı inceleyin.
+                </p>
+              </div>
+
+              {/* Match status toggle (Hepsi / Oynanan / Gelecek) */}
+              <div className="flex items-center gap-1 bg-brand-card p-1 rounded-xl border border-brand-gold/60 self-start md:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setMatchStatusFilter('all')}
+                  className={`px-3 py-1 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                    matchStatusFilter === 'all'
+                      ? 'bg-brand-dark text-brand-gold shadow-sm'
+                      : 'text-gray-600 hover:text-brand-dark'
+                  }`}
+                >
+                  Tümü
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMatchStatusFilter('played')}
+                  className={`px-3 py-1 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                    matchStatusFilter === 'played'
+                      ? 'bg-brand-dark text-brand-gold shadow-sm'
+                      : 'text-gray-600 hover:text-brand-dark'
+                  }`}
+                >
+                  Oynanan ({playedMatches.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMatchStatusFilter('upcoming')}
+                  className={`px-3 py-1 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                    matchStatusFilter === 'upcoming'
+                      ? 'bg-brand-dark text-brand-gold shadow-sm'
+                      : 'text-gray-600 hover:text-brand-dark'
+                  }`}
+                >
+                  Gelecek ({upcomingMatches.length})
+                </button>
+              </div>
+            </div>
+
+            {/* Competition Tabs (Tümü, Süper Lig, UCL, UEL, UECL, Kupa) */}
+            {(() => {
+              const allM = [...playedMatches, ...upcomingMatches];
+              const getComp = (m: Match) => getMatchCompetitionType(m);
+
+              const compCounts: Record<CompetitionCategory | 'all', number> = {
+                all: allM.length,
+                league: allM.filter(m => getComp(m) === 'league').length,
+                ucl: allM.filter(m => getComp(m) === 'ucl').length,
+                uel: allM.filter(m => getComp(m) === 'uel').length,
+                uecl: allM.filter(m => getComp(m) === 'uecl').length,
+                wpc: allM.filter(m => getComp(m) === 'wpc').length,
+              };
+
+              return (
+                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
+                  {COMPETITION_TABS.map((tab) => {
+                    const count = compCounts[tab.id];
+                    const isSelected = selectedCompetition === tab.id;
+
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setSelectedCompetition(tab.id)}
+                        className={`flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-black uppercase tracking-wider shrink-0 transition-all cursor-pointer border ${
+                          isSelected
+                            ? 'bg-brand-maroon text-white border-brand-dark shadow-md scale-102'
+                            : 'bg-brand-card hover:bg-white text-brand-dark border-brand-gold/40 hover:border-brand-maroon/50 shadow-sm'
+                        }`}
+                      >
+                        <span>{tab.icon}</span>
+                        <span>{tab.shortLabel}</span>
+                        <span
+                          className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none ${
+                            isSelected
+                              ? 'bg-brand-gold text-brand-dark'
+                              : 'bg-brand-dark/10 text-brand-dark'
+                          }`}
+                        >
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
+            {/* Selected Competition Mini Stats Summary */}
+            {(() => {
+              const rDocLower = normalizeTeamName(docId || '').toLowerCase().trim();
+              const rNameLower = normalizeTeamName(team?.name || teamName).toLowerCase().trim();
+
+              const getComp = (m: Match) => getMatchCompetitionType(m);
+              const targetMatches = playedMatches.filter((m) => {
+                if (selectedCompetition === 'all') return true;
+                return getComp(m) === selectedCompetition;
+              });
+
+              if (targetMatches.length > 0) {
+                let wins = 0;
+                let draws = 0;
+                let losses = 0;
+                let gf = 0;
+                let ga = 0;
+
+                targetMatches.forEach((m) => {
+                  const mt1 = normalizeTeamName(m.team1 || '').toLowerCase().trim();
+                  const isT1 = mt1 === rDocLower || mt1 === rNameLower;
+                  const own = Number(isT1 ? m.score1 : m.score2) || 0;
+                  const opp = Number(isT1 ? m.score2 : m.score1) || 0;
+                  gf += own;
+                  ga += opp;
+                  if (own > opp) wins++;
+                  else if (own < opp) losses++;
+                  else draws++;
+                });
+
+                const activeTabInfo = COMPETITION_TABS.find(t => t.id === selectedCompetition);
+
+                return (
+                  <div className="bg-white/90 border border-brand-gold/60 p-3.5 rounded-2xl shadow-sm flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">{activeTabInfo?.icon}</span>
+                      <div>
+                        <span className="font-black text-brand-dark uppercase block">
+                          {activeTabInfo?.label} Performansı
+                        </span>
+                        <span className="text-[10px] font-bold text-gray-500">
+                          {targetMatches.length} Oynanan Maç
+                        </span>
                       </div>
                     </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
+                    <div className="flex items-center gap-3 font-extrabold text-xs">
+                      <span className="text-green-600 bg-green-50 px-2 py-0.5 rounded-lg border border-green-200">
+                        {wins} Galibiyet
+                      </span>
+                      <span className="text-amber-600 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">
+                        {draws} Beraberlik
+                      </span>
+                      <span className="text-red-600 bg-red-50 px-2 py-0.5 rounded-lg border border-red-200">
+                        {losses} Mağlubiyet
+                      </span>
+                      <span className="text-brand-dark bg-brand-card px-2 py-0.5 rounded-lg border border-brand-gold/40">
+                        ⚽ {gf} - {ga} (Av: {gf - ga > 0 ? `+${gf - ga}` : gf - ga})
+                      </span>
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
 
-          {/* Upcoming fixtures */}
-          <div>
-            <h2 className="text-lg font-black text-brand-dark mb-4 uppercase tracking-wider relative flex items-center gap-2">
-              <span className="w-6 h-1 bg-brand-maroon rounded-full shrink-0" />
-              {t.next}
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {upcomingMatches.length === 0 ? (
-                <span className="text-gray-400 font-bold block p-4 bg-brand-card rounded-2xl">Planlanan gelecek lig maçı bulunmamaktadır.</span>
-              ) : (
-                upcomingMatches.map((m, idx) => {
-                  const opp = m.team1 === teamName ? m.team2 : m.team1;
-                  return (
-                    <div 
-                      key={idx}
-                      onClick={() => onNavigate({ type: 'match-detail', matchId: `${m.team1}-vs-${m.team2}-${m.datejav}` })}
-                      className="bg-brand-card p-5 rounded-2xl border-l-8 border-brand-maroon shadow-sm cursor-pointer hover:scale-101 hover:-translate-y-0.5 transition-all text-center select-text"
-                    >
-                      <span className="text-[10px] font-black text-brand-maroon uppercase tracking-wider block mb-2">📅 {m.date || t.wait}</span>
-                      <div className="flex justify-around items-center gap-3">
-                        <div className="flex flex-col items-center">
-                          <img src={teamLogos[teamName]} className="w-10 h-10 rounded-full border bg-white object-cover shadow-sm shrink-0" alt="team" />
-                          <span className="text-xs font-extrabold mt-1 text-brand-dark block truncate w-20 text-center">{teamName}</span>
-                        </div>
-                        <span className="py-1 px-4 bg-brand-dark text-brand-gold font-black text-xs rounded-xl border border-brand-gold shrink-0">VS</span>
-                        <div className="flex flex-col items-center">
-                          <img src={teamLogos[opp]} className="w-10 h-10 rounded-full border bg-white object-cover shadow-sm shrink-0" alt="opponent" />
-                          <span className="text-xs font-extrabold mt-1 text-brand-dark block truncate w-20 text-center">{opp}</span>
-                        </div>
+            {/* Filtered Matches Content */}
+            {(() => {
+              const getComp = (m: Match) => getMatchCompetitionType(m);
+
+              const currentFilteredPlayed = playedMatches.filter((m) => {
+                if (selectedCompetition === 'all') return true;
+                return getComp(m) === selectedCompetition;
+              });
+
+              const currentFilteredUpcoming = upcomingMatches.filter((m) => {
+                if (selectedCompetition === 'all') return true;
+                return getComp(m) === selectedCompetition;
+              });
+
+              const showPlayed = matchStatusFilter === 'all' || matchStatusFilter === 'played';
+              const showUpcoming = matchStatusFilter === 'all' || matchStatusFilter === 'upcoming';
+
+              const activeTabObj = COMPETITION_TABS.find(t => t.id === selectedCompetition);
+
+              // Helper for match card
+              const renderMatchCard = (m: Match, isPlayed: boolean, idx: number) => {
+                const comp = getComp(m);
+                const tabMeta = COMPETITION_TABS.find(t => t.id === comp) || COMPETITION_TABS[1];
+
+                const rDocLower = normalizeTeamName(docId || '').toLowerCase().trim();
+                const rNameLower = normalizeTeamName(team?.name || teamName).toLowerCase().trim();
+                const mt1 = normalizeTeamName(m.team1 || '').toLowerCase().trim();
+                const isT1 = mt1 === rDocLower || mt1 === rNameLower;
+
+                const ownTeamName = isT1 ? m.team1 : m.team2;
+                const oppTeamName = isT1 ? m.team2 : m.team1;
+
+                const ownScore = Number(isT1 ? m.score1 : m.score2) || 0;
+                const oppScore = Number(isT1 ? m.score2 : m.score1) || 0;
+
+                let resultStatus: 'win' | 'loss' | 'draw' = 'draw';
+                if (ownScore > oppScore) resultStatus = 'win';
+                else if (ownScore < oppScore) resultStatus = 'loss';
+
+                const roundOrHafta = String(m.hafta || (m as any).round || (m as any).kgrup || '').trim();
+
+                const matchKey = m.id || `${m.team1}-vs-${m.team2}-${m.datejav}`;
+
+                return (
+                  <div
+                    key={`${matchKey}-${idx}`}
+                    onClick={() => onNavigate({ type: 'match-detail', matchId: matchKey })}
+                    className={`bg-brand-card p-4 rounded-2xl border-l-8 ${tabMeta.accentCol} shadow-sm cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all text-center select-text relative overflow-hidden`}
+                  >
+                    {/* Header bar: Competition Badge + Hafta / Round + Date */}
+                    <div className="flex justify-between items-center gap-2 mb-3 pb-2 border-b border-black/5 text-[10px]">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={`px-2 py-0.5 rounded-md font-black uppercase text-[10px] flex items-center gap-1 ${tabMeta.badgeBg} border ${tabMeta.borderCol}`}>
+                          <span>{tabMeta.icon}</span>
+                          <span>{tabMeta.shortLabel}</span>
+                        </span>
+                        {roundOrHafta && (
+                          <span className="bg-white/80 text-brand-dark px-2 py-0.5 rounded-md font-extrabold border border-gray-200">
+                            {roundOrHafta}
+                          </span>
+                        )}
+                        {(m as any).season && (
+                          <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-md font-bold">
+                            {(m as any).season}. Sezon
+                          </span>
+                        )}
+                      </div>
+                      <span className="font-extrabold text-gray-500 shrink-0">
+                        📅 {m.date || t.wait}
+                      </span>
+                    </div>
+
+                    {/* Body: Teams & Score / VS */}
+                    <div className="flex justify-between items-center gap-2 sm:gap-4">
+                      {/* Current Team */}
+                      <div className="flex flex-col items-center flex-1 min-w-0">
+                        <img
+                          src={teamLogos[ownTeamName] || 'https://via.placeholder.com/40?text=?'}
+                          className="w-11 h-11 rounded-full border-2 border-brand-maroon bg-white object-cover shadow-sm shrink-0"
+                          alt="team"
+                        />
+                        <span className="text-xs font-black mt-1 text-brand-maroon block truncate w-full text-center">
+                          {ownTeamName}
+                        </span>
+                      </div>
+
+                      {/* Middle: Score or VS Badge */}
+                      <div className="flex flex-col items-center shrink-0 px-2">
+                        {isPlayed ? (
+                          <>
+                            <span className="py-1.5 px-4 bg-brand-dark text-brand-gold font-black text-base rounded-xl border border-brand-gold shadow-inner leading-none">
+                              {ownScore} - {oppScore}
+                            </span>
+                            <div className="mt-1.5">
+                              {resultStatus === 'win' && (
+                                <span className="bg-green-100 text-green-700 text-[9px] font-black uppercase px-2 py-0.5 rounded-full border border-green-300">
+                                  ✓ Galibiyet
+                                </span>
+                              )}
+                              {resultStatus === 'loss' && (
+                                <span className="bg-red-100 text-red-700 text-[9px] font-black uppercase px-2 py-0.5 rounded-full border border-red-300">
+                                  ✕ Mağlubiyet
+                                </span>
+                              )}
+                              {resultStatus === 'draw' && (
+                                <span className="bg-gray-100 text-gray-700 text-[9px] font-black uppercase px-2 py-0.5 rounded-full border border-gray-300">
+                                  – Beraberlik
+                                </span>
+                              )}
+                            </div>
+                            {(m as any).penaltyWinner && (
+                              <span className="text-[9px] font-bold text-amber-600 mt-0.5">
+                                (Penaltılarla)
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <span className="py-1 px-4 bg-brand-dark text-brand-gold font-black text-xs rounded-xl border border-brand-gold shadow-sm">
+                              VS
+                            </span>
+                            <span className="text-[9px] font-extrabold text-blue-600 mt-1 uppercase tracking-wider">
+                              ⏳ Planlandı
+                            </span>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Opponent Team */}
+                      <div className="flex flex-col items-center flex-1 min-w-0">
+                        <img
+                          src={teamLogos[oppTeamName] || 'https://via.placeholder.com/40?text=?'}
+                          className="w-11 h-11 rounded-full border border-gray-300 bg-white object-cover shadow-sm shrink-0"
+                          alt="opponent"
+                        />
+                        <span className="text-xs font-extrabold mt-1 text-brand-dark block truncate w-full text-center">
+                          {oppTeamName}
+                        </span>
                       </div>
                     </div>
-                  );
-                })
-              )}
-            </div>
+                  </div>
+                );
+              };
+
+              const hasNoMatchesAtAll = currentFilteredPlayed.length === 0 && currentFilteredUpcoming.length === 0;
+
+              if (hasNoMatchesAtAll) {
+                return (
+                  <div className="bg-brand-card p-8 rounded-3xl border border-brand-gold/40 text-center space-y-3">
+                    <span className="text-3xl block">{activeTabObj?.icon || '📋'}</span>
+                    <h3 className="text-base font-black text-brand-dark">
+                      {activeTabObj?.label} Kategorisinde Maç Bulunamadı
+                    </h3>
+                    <p className="text-xs text-gray-500 font-semibold max-w-md mx-auto">
+                      Bu takımın {activeTabObj?.label} kategorisinde henüz tamamlanmış veya planlanmış maçı bulunmamaktadır.
+                    </p>
+                    {selectedCompetition !== 'all' && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCompetition('all')}
+                        className="bg-brand-maroon text-white text-xs font-black px-4 py-2 rounded-xl uppercase tracking-wider hover:bg-red-900 transition-colors cursor-pointer"
+                      >
+                        Tüm Maçları Göster
+                      </button>
+                    )}
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-8">
+                  {/* Played Fixtures Section */}
+                  {showPlayed && (
+                    <div>
+                      <div className="flex justify-between items-center mb-3">
+                        <h3 className="text-sm font-black text-brand-dark uppercase tracking-wider flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 bg-green-500 rounded-full inline-block" />
+                          <span>{t.last} ({currentFilteredPlayed.length})</span>
+                        </h3>
+                        {selectedCompetition !== 'all' && (
+                          <span className="text-[11px] font-bold text-gray-500">
+                            Filtre: {activeTabObj?.shortLabel}
+                          </span>
+                        )}
+                      </div>
+
+                      {currentFilteredPlayed.length === 0 ? (
+                        <div className="text-gray-400 font-bold p-4 bg-brand-card rounded-2xl text-center text-xs">
+                          Bu kategoride oynanmış maç bulunmamaktadır.
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {currentFilteredPlayed.map((m, idx) => renderMatchCard(m, true, idx))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Upcoming Fixtures Section */}
+                  {showUpcoming && (
+                    <div>
+                      <div className="flex justify-between items-center mb-3">
+                        <h3 className="text-sm font-black text-brand-dark uppercase tracking-wider flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 bg-blue-500 rounded-full inline-block" />
+                          <span>{t.next} ({currentFilteredUpcoming.length})</span>
+                        </h3>
+                        {selectedCompetition !== 'all' && (
+                          <span className="text-[11px] font-bold text-gray-500">
+                            Filtre: {activeTabObj?.shortLabel}
+                          </span>
+                        )}
+                      </div>
+
+                      {currentFilteredUpcoming.length === 0 ? (
+                        <div className="text-gray-400 font-bold p-4 bg-brand-card rounded-2xl text-center text-xs">
+                          Bu kategoride planlanan gelecek maç bulunmamaktadır.
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {currentFilteredUpcoming.map((m, idx) => renderMatchCard(m, false, idx))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           {team?.insta && (

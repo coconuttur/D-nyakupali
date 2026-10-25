@@ -1,5 +1,6 @@
 import { collection, getDocs, doc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
+import { getMatchCompetitionType } from './playerStats';
 
 export async function recalculateStandings() {
   try {
@@ -73,22 +74,59 @@ export async function recalculateStandings() {
         teamData[t2] = { played: 0, wins: 0, draws: 0, losses: 0, atilan: 0, yenilen: 0, points: 0, kgw: 0, kgb: 0, kgl: 0, kgatilan: 0, kgyenilen: 0, kgpuan: 0 };
       }
 
-      // Is it a normal league match or World Peace Cup match?
-      // m.category options: "LİG MAÇI", "TURNUVA", "UCL", "UEL", "UECL" etc.
-      // If category is "TURNUVA", it is World Peace Cup (WPC).
-      // Otherwise, if ligm is true, or category is "LİG MAÇI", or if there is no category, it counts as league match.
-      const cat = (m.category || '').trim().toUpperCase();
+      // Turnuva ve Kupa maçlarının Lig puan durumunu etkilemesini kesin olarak engelle (Tam izolasyon)
+      const cat = String(m.category ?? '').trim().toUpperCase();
+      const hafta = String(m.hafta ?? '').trim().toUpperCase();
+
       const cleanCat = cat
         .replace(/İ/g, 'I')
-        .replace(/ı/g, 'i')
+        .replace(/ı/g, 'I')
         .replace(/Ğ/g, 'G')
         .replace(/Ş/g, 'S')
         .replace(/Ü/g, 'U')
         .replace(/Ö/g, 'O')
-        .replace(/Ç/g, 'C');
+        .replace(/Ç/g, 'C')
+        .toUpperCase();
 
-      const isWpc = cleanCat === 'TURNUVA';
-      const isLeague = !isWpc && cleanCat !== 'UCL' && cleanCat !== 'UEL' && cleanCat !== 'UECL';
+      const cleanHafta = hafta
+        .replace(/İ/g, 'I')
+        .replace(/ı/g, 'I')
+        .replace(/Ğ/g, 'G')
+        .replace(/Ş/g, 'S')
+        .replace(/Ü/g, 'U')
+        .replace(/Ö/g, 'O')
+        .replace(/Ç/g, 'C')
+        .toUpperCase();
+
+      // WPC / Ziraat Kupası / Turnuva tespiti (Sadece takım kg* verilerini günceller, lige işlemez)
+      const isWpc = 
+        cleanCat === 'TURNUVA' || 
+        cleanCat === 'WPC' || 
+        cleanCat.includes('WORLD PEACE') || 
+        cleanCat.includes('ZIRAAT') || 
+        cleanHafta.includes('WPC') || 
+        cleanHafta.includes('WORLD PEACE') || 
+        cleanHafta.includes('ZIRAAT') || 
+        cleanHafta.includes('GRUP A') || 
+        cleanHafta.includes('GRUP B') ||
+        (m as any).kgrup !== undefined;
+
+      // Avrupa Kupaları (BCL/UCL, BEL/UEL, BECL/UECL) veya Eleme Turnuvaları tespiti
+      const isTournament = 
+        m.ligm === false ||
+        (m as any).round !== undefined ||
+        (m as any).bracketId !== undefined ||
+        cleanCat === 'BCL' || cleanCat === 'UCL' || cleanCat.includes('CHAMPIONS') || cleanCat.includes('SAMPIYON') ||
+        cleanCat === 'BEL' || cleanCat === 'UEL' || cleanCat.includes('EUROPA') || cleanCat.includes('AVRUPA') ||
+        cleanCat === 'BECL' || cleanCat === 'UECL' || cleanCat.includes('CONFERENCE') || cleanCat.includes('KONFERANS') ||
+        cleanCat === 'WC' || cleanCat.includes('WORLD CUP') || cleanCat.includes('DUNYA KUPASI') ||
+        cleanHafta.includes('BCL') || cleanHafta.includes('UCL') || cleanHafta.includes('BEL') || cleanHafta.includes('UEL') || cleanHafta.includes('BECL') || cleanHafta.includes('UECL') ||
+        cleanHafta.includes('FINAL') || cleanHafta.includes('YARI FINAL') || cleanHafta.includes('CEYREK FINAL') || cleanHafta.includes('SON 16');
+
+      const compType = getMatchCompetitionType(m as any);
+
+      // Bir maç SADECE ve SADECE hiçbir turnuva/kupa veya ligm=false özelliği taşımıyorsa lig maçıdır
+      const isLeague = compType === 'league' && !isWpc && !isTournament && m.ligm !== false;
 
       const isT1Bob = t1Display.toLowerCase().trim() === 'bobblica' || t1.toLowerCase().trim() === 'bobblica' || t1.toLowerCase().trim() === 'hiyar city';
       const isT2Bob = t2Display.toLowerCase().trim() === 'bobblica' || t2.toLowerCase().trim() === 'bobblica' || t2.toLowerCase().trim() === 'hiyar city';
