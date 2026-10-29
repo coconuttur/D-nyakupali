@@ -102,6 +102,7 @@ export interface MatchTimelineEvent {
   subIn?: string;
   text?: string;
   score?: string;
+  reason?: string;
 }
 
 export interface Match {

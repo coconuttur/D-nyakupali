@@ -100,6 +100,7 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
   const [selectedCardPlayer, setSelectedCardPlayer] = useState('');
   const [cardColor, setCardColor] = useState<'Sarı' | 'Kırmızı' | 'Yeşil'>('Sarı');
   const [cardMinute, setCardMinute] = useState('');
+  const [cardReason, setCardReason] = useState<string>('');
 
   // Oyuncu Değişikliği (Substitution) States
   const [selectedSubTeam, setSelectedSubTeam] = useState<'team1' | 'team2'>('team1');
@@ -755,13 +756,15 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
       team: selectedCardTeam,
       player: selectedCardPlayer,
       cardColor: cardColor,
-      minute: min
+      minute: min,
+      reason: cardReason.trim() || undefined
     };
 
     const updated = [...(match?.timeline || []), newEvt];
     try {
       await handleSaveTimeline(updated);
       setCardMinute('');
+      setCardReason('');
       showToast('Kart başarıyla kaydedildi!', 'success');
     } catch (err) {
       console.error(err);
@@ -1242,13 +1245,20 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
                           {/* Left Col */}
                           {isT1 ? (
                             <div className="flex items-center gap-2.5 justify-end">
-                              <div className="text-right">
-                                <span className={`text-xs md:text-sm font-black text-brand-dark block uppercase truncate max-w-32 ${evt.isKK ? 'text-red-500' : ''}`}>
+                              <div className="text-right flex flex-col items-end">
+                                <span className={`text-xs md:text-sm font-black text-brand-dark block uppercase truncate max-w-44 md:max-w-56 ${evt.isKK ? 'text-red-500' : ''}`}>
                                   {evt.scorer} {evt.isKK ? '(K.K)' : ''} {evt.player}
                                 </span>
-                                <span className="text-[10px] text-gray-400 font-bold block truncate max-w-32">{evt.type === 'goal' ? `Asist: ${evt.assist}` : cardLabel}</span>
+                                <span className="text-[10px] text-gray-400 font-bold block truncate max-w-44 md:max-w-56">{evt.type === 'goal' ? `Asist: ${evt.assist}` : cardLabel}</span>
+                                {evt.type === 'card' && evt.reason && (
+                                  <div className="mt-0.5 flex items-center justify-end">
+                                    <span className="text-[9px] md:text-[10px] font-bold text-amber-900 bg-amber-50 border border-amber-200/90 px-1.5 py-0.5 rounded shadow-2xs max-w-44 md:max-w-56 truncate" title={`Kart Sebebi: ${evt.reason}`}>
+                                      📋 {evt.reason}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
-                              <span className="text-xl">{evt.type === 'goal' ? '⚽' : cardEmoji}</span>
+                              <span className="text-xl shrink-0">{evt.type === 'goal' ? '⚽' : cardEmoji}</span>
                             </div>
                           ) : <div />}
 
@@ -1263,12 +1273,19 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
                           {/* Right Col */}
                           {!isT1 ? (
                             <div className="flex items-center gap-2.5 justify-start">
-                              <span className="text-xl">{evt.type === 'goal' ? '⚽' : cardEmoji}</span>
-                              <div className="text-left">
-                                <span className={`text-xs md:text-sm font-black text-brand-dark block uppercase truncate max-w-32 ${evt.isKK ? 'text-red-500' : ''}`}>
+                              <span className="text-xl shrink-0">{evt.type === 'goal' ? '⚽' : cardEmoji}</span>
+                              <div className="text-left flex flex-col items-start">
+                                <span className={`text-xs md:text-sm font-black text-brand-dark block uppercase truncate max-w-44 md:max-w-56 ${evt.isKK ? 'text-red-500' : ''}`}>
                                   {evt.scorer} {evt.isKK ? '(K.K)' : ''} {evt.player}
                                 </span>
-                                <span className="text-[10px] text-gray-400 font-bold block truncate max-w-32">{evt.type === 'goal' ? `Asist: ${evt.assist}` : cardLabel}</span>
+                                <span className="text-[10px] text-gray-400 font-bold block truncate max-w-44 md:max-w-56">{evt.type === 'goal' ? `Asist: ${evt.assist}` : cardLabel}</span>
+                                {evt.type === 'card' && evt.reason && (
+                                  <div className="mt-0.5 flex items-center justify-start">
+                                    <span className="text-[9px] md:text-[10px] font-bold text-amber-900 bg-amber-50 border border-amber-200/90 px-1.5 py-0.5 rounded shadow-2xs max-w-44 md:max-w-56 truncate" title={`Kart Sebebi: ${evt.reason}`}>
+                                      📋 {evt.reason}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           ) : <div />}
@@ -1388,7 +1405,7 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
                             return (
                               <span
                                 key={cIdx}
-                                title={`${c.cardColor || 'Kart'} (${c.minute})`}
+                                title={`${c.cardColor || 'Kart'} (${c.minute})${c.reason ? ` - Sebep: ${c.reason}` : ''}`}
                                 className={`w-3.5 h-4 md:w-4 md:h-5 rounded-[2px] border shadow-md flex items-center justify-center text-[7px] font-black ${cardBg}`}
                               >
                                 <span className="scale-75 select-none">{cardEmoji}</span>
@@ -1960,6 +1977,46 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
                   </div>
                 </div>
 
+                {/* Kart Sebebi (Opsiyonel) */}
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-black text-gray-500 uppercase">📋 Kart Sebebi / Açıklaması</label>
+                    <span className="text-[9px] text-gray-400 font-bold">(İsteğe Bağlı)</span>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Örn: Hakeme İtiraz, Sert Müdahale, Zaman Geçirme..."
+                    value={cardReason}
+                    onChange={(e) => setCardReason(e.target.value)}
+                    className="w-full bg-white border border-gray-300 rounded p-2 text-xs font-bold"
+                  />
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {[
+                      'Hakeme İtiraz',
+                      'Sert Müdahale',
+                      'Taktik Faul',
+                      'Zaman Geçirme',
+                      'Elle Oynama',
+                      'Sportmenlik Dışı',
+                      '2. Sarıdan Kırmızı',
+                      'Son Adam / Bariz Gol Şansı'
+                    ].map((sample) => (
+                      <button
+                        key={sample}
+                        type="button"
+                        onClick={() => setCardReason(sample)}
+                        className={`text-[9px] font-bold px-2 py-0.5 rounded border cursor-pointer transition-colors ${
+                          cardReason === sample
+                            ? 'bg-brand-maroon text-brand-gold border-brand-maroon'
+                            : 'bg-white hover:bg-gray-100 text-gray-700 border-gray-300'
+                        }`}
+                      >
+                        {sample}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <button onClick={handleAddCard} className="w-full py-2.5 bg-green-700 text-white font-black rounded-lg text-xs">KARTI KAYDET</button>
               </div>
             )}
@@ -2416,7 +2473,7 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
                       desc = `⚽ [${e.minute}] ${e.scorer} - Asist: ${e.assist}`;
                     } else if (e.type === 'card') {
                       const cEmoji = e.cardColor === 'Sarı' ? '🟨' : e.cardColor === 'Yeşil' ? '🟩' : '🟥';
-                      desc = `${cEmoji} [${e.minute}] ${e.player} (${e.cardColor || 'Sarı'} Kart)`;
+                      desc = `${cEmoji} [${e.minute}] ${e.player} (${e.cardColor || 'Sarı'} Kart)${e.reason ? ` - Sebep: ${e.reason}` : ''}`;
                     } else if (e.type === 'sub') {
                       const parts = [];
                       if (e.subIn) parts.push(`▲ Giren: ${e.subIn}`);
