@@ -1,6 +1,7 @@
 import { collection, getDocs, doc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Player, Team, Match, MatchTimelineEvent } from '../types';
+import { mergeTournamentMatches } from './tournamentMatches';
 
 /**
  * Normalizes player name for reliable case-insensitive, whitespace-insensitive, and diacritic-insensitive comparison
@@ -160,6 +161,8 @@ export interface ComputedPlayerStats {
   ratingoy: number;
   ratingoyFormatted: string;
   mvp: number;
+  leagueMvp: number;
+  tournamentMvp: number;
   sari_kart: number;
   kirmizi_kart: number;
   yesil_kart: number;
@@ -281,6 +284,19 @@ export function doesCandidateMatchPlayer(
   const cleanedStripped = stripAllDiacritics(cleaned);
   if (cleanedStripped && identifiers.has(cleanedStripped)) return true;
 
+  // Strip any parenthetical suffix (e.g. "(T1)", "(New Hollands)", "(Kiralık)", etc.)
+  const withoutParens = normalizePlayerName(
+    candidate
+      .replace(/\([^)]*\)/g, '')
+      .replace(/kiralık/gi, '')
+      .replace(/kiralik/gi, '')
+      .replace(/🔄/g, '')
+      .trim()
+  );
+  if (withoutParens && identifiers.has(withoutParens)) return true;
+  const withoutParensStripped = stripAllDiacritics(withoutParens);
+  if (withoutParensStripped && identifiers.has(withoutParensStripped)) return true;
+
   return false;
 }
 
@@ -307,6 +323,8 @@ export function calculatePlayerStatsFromMatches(
       ratingoy: 0,
       ratingoyFormatted: '0.00',
       mvp: 0,
+      leagueMvp: 0,
+      tournamentMvp: 0,
       sari_kart: 0,
       kirmizi_kart: 0,
       yesil_kart: 0,
@@ -333,6 +351,8 @@ export function calculatePlayerStatsFromMatches(
   let redCards = 0;
   let greenCards = 0;
   let mvpCount = 0;
+  let leagueMvpCount = 0;
+  let tournamentMvpCount = 0;
   let totalRating = 0;
   let ratedMatchCount = 0;
   let matchesPlayed = 0;
@@ -425,10 +445,18 @@ export function calculatePlayerStatsFromMatches(
       }
     });
 
-    // 3. MVP check
-    if (m.mvp && doesCandidateMatchPlayer(m.mvp, identifiers)) {
+    // 3. MVP check (counts both league and all tournament matches!)
+    const rawMvp = m.mvp ? String(m.mvp).trim() : '';
+    if (rawMvp && rawMvp !== '-' && doesCandidateMatchPlayer(rawMvp, identifiers)) {
       mvpCount += 1;
       playedInThisMatch = true;
+      const comp = getMatchCompetitionType(m);
+      if (comp === 'league') {
+        leagueMvpCount += 1;
+      } else {
+        tournamentMvpCount += 1;
+      }
+
       if (!playerLineup && m.rating) {
         const mvpR = Number(m.rating);
         if (!isNaN(mvpR) && mvpR > 0) {
@@ -466,6 +494,8 @@ export function calculatePlayerStatsFromMatches(
     ratingoy: avgRating,
     ratingoyFormatted: avgRating > 0 ? avgRating.toFixed(2) : '0.00',
     mvp: mvpCount,
+    leagueMvp: leagueMvpCount,
+    tournamentMvp: tournamentMvpCount,
     sari_kart: yellowCards,
     kirmizi_kart: redCards,
     yesil_kart: greenCards,
@@ -764,6 +794,9 @@ export async function syncPlayerStatsToFirestore(): Promise<{ updatedCount: numb
       matchesList.push({ id: mdoc.id, ...mdoc.data() } as Match);
     });
 
+    // Merge tournament matches (from local storage, brackets, and defaults)
+    const mergedMatchesList = mergeTournamentMatches(matchesList);
+
     const playersList: Player[] = [];
     playersSnap.forEach((pdoc) => {
       playersList.push({ id: pdoc.id, docId: pdoc.id, ...pdoc.data() } as Player);
@@ -780,7 +813,7 @@ export async function syncPlayerStatsToFirestore(): Promise<{ updatedCount: numb
       const pItem = playersList[i];
       if (!pItem.pname) continue;
 
-      const stats = calculatePlayerStatsFromMatches(pItem, matchesList, aliasMap);
+      const stats = calculatePlayerStatsFromMatches(pItem, mergedMatchesList, aliasMap);
 
       batch.update(pdoc.ref, {
         goals: stats.goals,

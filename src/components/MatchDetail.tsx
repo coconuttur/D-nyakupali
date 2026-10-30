@@ -900,11 +900,34 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
     const targetDocId = docId || matchId;
     if (!targetDocId) return;
     try {
-      await setDoc(doc(db, 'matches', targetDocId), {
-        mvp: selectedMvp,
-        rating: mvpRating.trim() || '0.0',
+      const trimmedMvp = selectedMvp.trim();
+      const trimmedRating = mvpRating.trim() || '0.0';
+
+      const updateData: any = {
+        mvp: trimmedMvp,
+        rating: trimmedRating,
         played: true
-      }, { merge: true });
+      };
+
+      if (match?.team1 || team1Name) updateData.team1 = match?.team1 || team1Name;
+      if (match?.team2 || team2Name) updateData.team2 = match?.team2 || team2Name;
+      if (match?.datejav || currentMatchDatejav) updateData.datejav = match?.datejav || currentMatchDatejav || Date.now();
+      if (match?.date || matchDateText) updateData.date = match?.date || matchDateText || new Date().toLocaleDateString('tr-TR');
+      if (match?.category || matchCategory) updateData.category = match?.category || matchCategory || 'LİG MAÇI';
+
+      await setDoc(doc(db, 'matches', targetDocId), updateData, { merge: true });
+
+      // Update local match state immediately
+      setMatch(prev => prev ? { ...prev, ...updateData, id: targetDocId } : { id: targetDocId, ...updateData } as Match);
+
+      // Synchronize locally if it's a tournament match so local overlay never wipes it out
+      const fullMatch: Match = {
+        ...(match || {}),
+        ...updateData,
+        id: targetDocId
+      };
+      saveStoredTournamentMatch(fullMatch);
+
       await recalculateStandings();
       showToast('MVP başarıyla güncellendi!', 'success');
     } catch (e) {

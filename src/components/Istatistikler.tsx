@@ -173,6 +173,8 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
           ratingoy: stats.ratingoy,
           ratingoyFormatted: stats.ratingoyFormatted,
           mvp: stats.mvp,
+          leagueMvp: stats.leagueMvp,
+          tournamentMvp: stats.tournamentMvp,
           sari_kart: stats.sari_kart,
           kirmizi_kart: stats.kirmizi_kart,
           yesil_kart: stats.yesil_kart,
@@ -201,6 +203,13 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
       }
       if (activeStat === 'kupa') {
         return b.totalKupa - a.totalKupa;
+      }
+      if (activeStat === 'mvp') {
+        if (b.mvp !== a.mvp) return b.mvp - a.mvp;
+        if (b.tournamentMvp !== a.tournamentMvp) return b.tournamentMvp - a.tournamentMvp;
+        if (b.ratingoy !== a.ratingoy) return b.ratingoy - a.ratingoy;
+        if (b.goals !== a.goals) return b.goals - a.goals;
+        return a.mac - b.mac;
       }
       const valA = (a as any)[activeStat] || 0;
       const valB = (b as any)[activeStat] || 0;
@@ -1028,7 +1037,9 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
                 break;
               case 'mvp':
                 displayVal = p.mvp;
-                subInfo = `⭐ ${p.ratingoyFormatted} Ort. • ${p.mac} Maç`;
+                subInfo = p.mvp > 0
+                  ? `${p.tournamentMvp > 0 ? `🏆 ${p.tournamentMvp} Turnuva` : ''}${p.tournamentMvp > 0 && p.leagueMvp > 0 ? ' • ' : ''}${p.leagueMvp > 0 ? `⚽ ${p.leagueMvp} Lig` : ''}${p.ratingoy > 0 ? ` • ⭐ ${p.ratingoyFormatted} Ort.` : ''}`
+                  : `0 MVP • ${p.mac} Maç`;
                 break;
               case 'sari_kart':
                 displayVal = p.sari_kart;
@@ -1138,6 +1149,11 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
                       {activeStat === 'mvp' && <span className="text-base mr-1">🏆</span>}
                       {displayVal}
                     </span>
+                    {activeStat === 'mvp' && p.tournamentMvp > 0 && (
+                      <span className="text-[10px] font-black text-amber-900 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded shadow-sm shrink-0 select-none">
+                        🏆 {p.tournamentMvp} Turnuva
+                      </span>
+                    )}
                     {activeStat === 'ratingoy' && p.mvp > 0 && (
                       <span className="text-[10px] font-black text-brand-gold bg-brand-dark px-1.5 py-0.5 rounded shadow-sm shrink-0 select-none">
                         🏆 {p.mvp} MVP

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { collection, onSnapshot, doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Team, UserProfile, Match } from '../types';
+import { Team, UserProfile, Match, Player } from '../types';
 import WorldCup from './WorldCup';
 
 interface TurnuvalarProps {
@@ -158,7 +158,10 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
   const [qsPlayed, setQsPlayed] = useState<boolean>(true);
   const [qsDate, setQsDate] = useState<string>('');
   const [qsPenaltyWinner, setQsPenaltyWinner] = useState<string>('');
+  const [qsMvp, setQsMvp] = useState<string>('');
+  const [qsMvpRating, setQsMvpRating] = useState<string>('7.5');
   const [savingQuickScore, setSavingQuickScore] = useState<boolean>(false);
+  const [allPlayers, setAllPlayers] = useState<Player[]>([]);
 
   // Change Teams Modal state
   const [changeTeamsModalOpen, setChangeTeamsModalOpen] = useState(false);
@@ -224,10 +227,20 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
       setMatches(mList);
     });
 
+    // 4. Fetch Players for MVP selection
+    const unsubPlayers = onSnapshot(collection(db, 'players'), (pSnap) => {
+      const pList: Player[] = [];
+      pSnap.forEach((d) => {
+        pList.push({ id: d.id, docId: d.id, ...d.data() } as unknown as Player);
+      });
+      setAllPlayers(pList);
+    });
+
     return () => {
       unsubTeams();
       unsubBrackets();
       unsubMatches();
+      unsubPlayers();
     };
   }, []);
 
@@ -568,6 +581,8 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
     setQsScore2(foundMatch ? String(foundMatch.score2 ?? '0') : '0');
     setQsPlayed(foundMatch ? Boolean(foundMatch.played) : true);
     setQsPenaltyWinner((foundMatch as any)?.penaltyWinner || '');
+    setQsMvp(foundMatch?.mvp || '');
+    setQsMvpRating(foundMatch?.rating || '7.5');
 
     const todayStr = new Date().toLocaleDateString('tr-TR');
     setQsDate(foundMatch?.date || todayStr);
@@ -628,7 +643,9 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
         ligm: false,
         timeline: existingMatch?.timeline || [],
         lineup: existingMatch?.lineup || {},
-        penaltyWinner: qsPenaltyWinner || undefined
+        penaltyWinner: qsPenaltyWinner || undefined,
+        mvp: qsMvp ? qsMvp.trim() : (existingMatch?.mvp || undefined),
+        rating: qsMvp ? (qsMvpRating.trim() || '7.5') : (existingMatch?.rating || undefined)
       };
 
       // 1. Optimistic state update in React
@@ -1069,6 +1086,21 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
                   {delta2 >= 0 ? `+${delta2}` : delta2}
                 </span>
               </div>
+            </div>
+          )}
+
+          {/* MVP Badge on bracket card if assigned */}
+          {isPlayed && match.mvp && (
+            <div className="flex items-center justify-between text-[9px] font-black px-2 py-1 rounded-lg bg-amber-100 border border-amber-300 text-amber-950 shadow-2xs">
+              <span className="flex items-center gap-1 truncate max-w-[150px]">
+                <span>👑 MVP:</span>
+                <strong className="truncate">{match.mvp}</strong>
+              </span>
+              {match.rating && (
+                <span className="bg-amber-500 text-black px-1.5 py-0.2 rounded font-mono text-[8px] shrink-0 font-extrabold">
+                  ⭐ {match.rating}
+                </span>
+              )}
             </div>
           )}
 
@@ -1667,6 +1699,11 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
                         </div>
                       );
                     })()}
+                    {m.played && m.mvp && (
+                      <div className="text-[8px] md:text-[9px] font-black text-amber-900 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded mt-1 text-center shadow-2xs truncate max-w-[140px]">
+                        👑 MVP: <strong>{m.mvp}</strong>{m.rating ? ` (${m.rating})` : ''}
+                      </div>
+                    )}
                     <span className="text-[8px] md:text-[9px] font-bold text-gray-400 mt-0.5 truncate max-w-[90px]">
                       {m.date || 'Tarih Belirsiz'}
                     </span>
@@ -2198,6 +2235,69 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
                   </div>
                 </div>
               )}
+
+              {/* Optional MVP Selection */}
+              <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-black text-amber-900 uppercase flex items-center gap-1">
+                    <span>👑</span>
+                    <span>Maçın Oyuncusu (MVP)</span>
+                  </label>
+                  <span className="text-[9px] font-bold text-gray-400">(İsteğe Bağlı)</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_85px] gap-2">
+                  <select
+                    value={qsMvp}
+                    onChange={(e) => setQsMvp(e.target.value)}
+                    className="w-full bg-white border border-gray-300 rounded-xl p-2 text-xs font-bold text-gray-800"
+                  >
+                    <option value="">-- MVP Seçilmedi --</option>
+                    {(() => {
+                      const t1Lower = qsTeam1.toLowerCase().trim();
+                      const t2Lower = qsTeam2.toLowerCase().trim();
+                      const t1List = allPlayers.filter(p => (p.pteam || '').toLowerCase().trim() === t1Lower || (p.kiralikTakim || '').toLowerCase().trim() === t1Lower);
+                      const t2List = allPlayers.filter(p => (p.pteam || '').toLowerCase().trim() === t2Lower || (p.kiralikTakim || '').toLowerCase().trim() === t2Lower);
+                      const otherList = allPlayers.filter(p => !t1List.includes(p) && !t2List.includes(p));
+
+                      return (
+                        <>
+                          {t1List.length > 0 && (
+                            <optgroup label={`${qsTeam1} Oyuncuları`}>
+                              {t1List.map(p => (
+                                <option key={p.pname} value={p.pname}>{p.pname} ({qsTeam1})</option>
+                              ))}
+                            </optgroup>
+                          )}
+                          {t2List.length > 0 && (
+                            <optgroup label={`${qsTeam2} Oyuncuları`}>
+                              {t2List.map(p => (
+                                <option key={p.pname} value={p.pname}>{p.pname} ({qsTeam2})</option>
+                              ))}
+                            </optgroup>
+                          )}
+                          {otherList.length > 0 && (
+                            <optgroup label="Tüm Diğer Oyuncular">
+                              {otherList.map(p => (
+                                <option key={p.pname} value={p.pname}>{p.pname} ({p.pteam || 'Takımsız'})</option>
+                              ))}
+                            </optgroup>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </select>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] font-black text-gray-500">⭐</span>
+                    <input
+                      type="text"
+                      placeholder="Reyting"
+                      value={qsMvpRating}
+                      onChange={(e) => setQsMvpRating(e.target.value)}
+                      className="w-full bg-white border border-gray-300 rounded-xl p-2 text-xs font-bold text-gray-800 text-center"
+                    />
+                  </div>
+                </div>
+              </div>
 
               {/* ELO Notice */}
               <div className="bg-amber-50 border border-amber-300 rounded-xl p-2.5 text-center flex items-center justify-center gap-2 text-xs font-black text-amber-900 shadow-2xs">

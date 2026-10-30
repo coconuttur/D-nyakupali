@@ -4,6 +4,7 @@ import { db } from '../firebase';
 import { Player, Match, UserProfile } from '../types';
 import { TrophiesShowcase, TrophyAdminModal } from './TrophiesShowcase';
 import { calculatePlayerStatsFromMatches, buildPlayerAliasMap, getPlayerIdentifierSet, doesCandidateMatchPlayer, normalizePlayerName, stripAllDiacritics } from '../lib/playerStats';
+import { mergeTournamentMatches } from '../lib/tournamentMatches';
 
 interface PlayerProfileProps {
   playerName: string;
@@ -33,13 +34,28 @@ export default function PlayerProfile({ playerName, playerId, currentUser, curre
   const [loadingVoters, setLoadingVoters] = useState(false);
 
   useEffect(() => {
+    let latestFirestoreMatches: Match[] = [];
+
+    const updateMatches = (snapList: Match[]) => {
+      setMatches(mergeTournamentMatches(snapList));
+    };
+
     const unsubMatches = onSnapshot(collection(db, 'matches'), (snap) => {
       const list: Match[] = [];
       snap.forEach((d) => {
         list.push({ id: d.id, ...d.data() } as Match);
       });
-      setMatches(list);
+      latestFirestoreMatches = list;
+      updateMatches(list);
     });
+
+    const handleTournamentUpdate = () => {
+      updateMatches(latestFirestoreMatches);
+    };
+
+    window.addEventListener('tournament_matches_updated', handleTournamentUpdate);
+    window.addEventListener('storage', handleTournamentUpdate);
+
     const unsubTeams = onSnapshot(collection(db, 'teams'), (snap) => {
       const dict: Record<string, string> = {};
       snap.forEach((d) => {
@@ -50,9 +66,12 @@ export default function PlayerProfile({ playerName, playerId, currentUser, curre
       });
       setTeamLogos(dict);
     });
+
     return () => {
       unsubMatches();
       unsubTeams();
+      window.removeEventListener('tournament_matches_updated', handleTournamentUpdate);
+      window.removeEventListener('storage', handleTournamentUpdate);
     };
   }, []);
 

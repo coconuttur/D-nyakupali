@@ -185,15 +185,55 @@ export function mergeTournamentMatches(firestoreMatches: Match[]): Match[] {
       team1: normalizeTeamName(lm.team1),
       team2: normalizeTeamName(lm.team2)
     };
-    const existing = map.get(id);
-    if (!existing || (!existing.played && cleanLM.played) || (Number(cleanLM.datejav) || 0) >= (Number(existing.datejav) || 0)) {
-      map.set(id, cleanLM);
-      const cup = normalizeCupKey(cleanLM.category, cleanLM.hafta);
-      const season = (cleanLM as any).season;
-      const round = (cleanLM as any).round;
-      if (cup && season && round) {
-        slotToMatch.set(`${cup}_${season}_${round}`, cleanLM);
-      }
+
+    const cup = normalizeCupKey(cleanLM.category, cleanLM.hafta);
+    const season = (cleanLM as any).season;
+    const round = (cleanLM as any).round;
+    const slotKey = (cup && season && round) ? `${cup}_${season}_${round}` : '';
+
+    const existing = map.get(id) || (slotKey ? slotToMatch.get(slotKey) : undefined);
+
+    // Deep merge: preserve mvp, rating, timeline, and lineup from whichever source has them!
+    const effectiveMvp = (cleanLM.mvp && String(cleanLM.mvp).trim() !== '' && String(cleanLM.mvp).trim() !== '-')
+      ? String(cleanLM.mvp).trim()
+      : (existing?.mvp && String(existing.mvp).trim() !== '' && String(existing.mvp).trim() !== '-')
+      ? String(existing.mvp).trim()
+      : undefined;
+
+    const effectiveRating = (cleanLM.rating && String(cleanLM.rating).trim() !== '')
+      ? String(cleanLM.rating).trim()
+      : existing?.rating;
+
+    const effectiveTimeline = (cleanLM.timeline && cleanLM.timeline.length > 0)
+      ? cleanLM.timeline
+      : (existing?.timeline && existing.timeline.length > 0)
+      ? existing.timeline
+      : [];
+
+    const effectiveLineup = (cleanLM.lineup && Object.keys(cleanLM.lineup).length > 0)
+      ? cleanLM.lineup
+      : (existing?.lineup && Object.keys(existing.lineup).length > 0)
+      ? existing.lineup
+      : {};
+
+    const mergedMatch: Match = {
+      ...(existing || {}),
+      ...cleanLM,
+      id: cleanLM.id || existing?.id || id,
+      team1: normalizeTeamName(cleanLM.team1 || existing?.team1),
+      team2: normalizeTeamName(cleanLM.team2 || existing?.team2),
+      mvp: effectiveMvp,
+      rating: effectiveRating,
+      timeline: effectiveTimeline,
+      lineup: effectiveLineup,
+      played: cleanLM.played !== undefined ? Boolean(cleanLM.played) : Boolean(existing?.played),
+      score1: cleanLM.score1 !== undefined ? String(cleanLM.score1) : existing?.score1 !== undefined ? String(existing.score1) : '0',
+      score2: cleanLM.score2 !== undefined ? String(cleanLM.score2) : existing?.score2 !== undefined ? String(existing.score2) : '0',
+    };
+
+    map.set(mergedMatch.id || id, mergedMatch);
+    if (slotKey) {
+      slotToMatch.set(slotKey, mergedMatch);
     }
   });
 
