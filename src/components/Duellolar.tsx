@@ -3,6 +3,12 @@ import ReactDOM from 'react-dom';
 import { collection, onSnapshot, setDoc, doc, deleteDoc, getDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { Player, DuelMatch, DuelPlayerStanding, UserProfile } from '../types';
+import {
+  calculateAllDuelElo,
+  DuelPlayerEloStanding,
+  DuelEloMatchDelta,
+  INITIAL_DUEL_ELO
+} from '../lib/duelElo';
 
 interface DuellolarProps {
   currentLang: 'tr' | 'en' | 'pt';
@@ -43,11 +49,16 @@ export default function Duellolar({
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
 
+  // Tab: Standings (Lig Puan Durumu) vs ELO (1v1 ELO Sıralaması)
+  const [activeTab, setActiveTab] = useState<'standings' | 'elo'>('standings');
+
   // Search / Filter
   const [searchTerm, setSearchTerm] = useState('');
   const [onlyPlayed, setOnlyPlayed] = useState(true);
 
   // Add duel form state
+  const [matchNumber, setMatchNumber] = useState<string>('');
+  const [userHasCustomMatchNumber, setUserHasCustomMatchNumber] = useState(false);
   const [player1Name, setPlayer1Name] = useState('');
   const [player2Name, setPlayer2Name] = useState('');
   const [score1, setScore1] = useState('0');
@@ -59,6 +70,7 @@ export default function Duellolar({
   // Edit duel modal state
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingDuel, setEditingDuel] = useState<DuelMatch | null>(null);
+  const [editMatchNumber, setEditMatchNumber] = useState<string>('');
   const [editPlayer1Name, setEditPlayer1Name] = useState('');
   const [editPlayer2Name, setEditPlayer2Name] = useState('');
   const [editScore1, setEditScore1] = useState('0');
@@ -278,6 +290,33 @@ export default function Duellolar({
     return list;
   }, [players, duels]);
 
+  // Calculate complete 1v1 ELO, match deltas, and player ELO standings
+  const { matchDeltas, standings: eloStandings, maxMatchNumber } = useMemo(() => {
+    return calculateAllDuelElo(players, duels, playerMap);
+  }, [players, duels, playerMap]);
+
+  // Auto-fill next matchNumber for convenience if user has not typed a custom number
+  useEffect(() => {
+    if (!userHasCustomMatchNumber) {
+      setMatchNumber(String(maxMatchNumber + 1));
+    }
+  }, [maxMatchNumber, userHasCustomMatchNumber]);
+
+  // Filter ELO standings based on search and played status
+  const filteredEloStandings = useMemo(() => {
+    let list = eloStandings;
+    if (onlyPlayed) {
+      list = list.filter((s) => s.played > 0);
+    }
+    if (!searchTerm.trim()) return list;
+    const term = searchTerm.toLowerCase().trim();
+    return list.filter(
+      (s) =>
+        s.playerName.toLowerCase().includes(term) ||
+        s.playerTeam.toLowerCase().includes(term)
+    );
+  }, [eloStandings, searchTerm, onlyPlayed]);
+
   // Filter standings based on search and played status (defaults to only players with played > 0)
   const filteredStandings = useMemo(() => {
     let list = standings;
@@ -323,8 +362,14 @@ export default function Duellolar({
       const sc1 = Math.max(0, parseInt(score1, 10) || 0);
       const sc2 = Math.max(0, parseInt(score2, 10) || 0);
 
+      const parsedMatchNum = matchNumber.trim() ? parseInt(matchNumber.trim(), 10) : (maxMatchNumber + 1);
+      const finalMatchNum = (parsedMatchNum !== undefined && !isNaN(parsedMatchNum) && parsedMatchNum > 0)
+        ? parsedMatchNum
+        : (maxMatchNumber + 1);
+
       const newDuel: DuelMatch = {
         id: docId,
+        matchNumber: finalMatchNum,
         player1Id: p1Obj?.docId || p1Obj?.id || player1Name,
         player1Name: player1Name,
         player1Photo: p1Obj?.foto || '',
@@ -352,9 +397,10 @@ export default function Duellolar({
         console.warn('Firestore duels write notice (saved locally):', fbErr);
       }
 
-      setToastMessage(`⚔️ Düello kaydedildi: ${player1Name} ${sc1} - ${sc2} ${player2Name}`);
+      setToastMessage(`⚔️ Düello #${finalMatchNum} kaydedildi: ${player1Name} ${sc1} - ${sc2} ${player2Name}`);
       setScore1('0');
       setScore2('0');
+      setUserHasCustomMatchNumber(false);
     } catch (err: any) {
       console.error('Error saving duel:', err);
       alert('Düello kaydedilirken hata: ' + (err?.message || 'Bilinmeyen hata'));
@@ -370,6 +416,7 @@ export default function Duellolar({
       return;
     }
     setEditingDuel(duel);
+    setEditMatchNumber(duel.matchNumber !== undefined && duel.matchNumber !== null ? String(duel.matchNumber) : '');
     setEditPlayer1Name(duel.player1Name);
     setEditPlayer2Name(duel.player2Name);
     setEditScore1(String(duel.score1 ?? '0'));
@@ -407,8 +454,14 @@ export default function Duellolar({
       const sc1 = Math.max(0, parseInt(editScore1, 10) || 0);
       const sc2 = Math.max(0, parseInt(editScore2, 10) || 0);
 
+      const parsedEditNum = editMatchNumber.trim() ? parseInt(editMatchNumber.trim(), 10) : undefined;
+      const finalEditNum = (parsedEditNum !== undefined && !isNaN(parsedEditNum) && parsedEditNum > 0)
+        ? parsedEditNum
+        : undefined;
+
       const updatedDuel: DuelMatch = {
         ...editingDuel,
+        matchNumber: finalEditNum,
         player1Id: p1Obj?.docId || p1Obj?.id || editPlayer1Name,
         player1Name: editPlayer1Name,
         player1Photo: p1Obj?.foto || editingDuel.player1Photo || '',
@@ -548,23 +601,72 @@ export default function Duellolar({
 
         {/* Rules Pill */}
         <div className="mt-5 pt-4 border-t border-white/10 flex flex-wrap items-center gap-4 text-[11px] font-black text-brand-gold">
-          <span className="flex items-center gap-1.5 bg-black/30 px-3 py-1 rounded-xl">
-            <span>🏆</span> Galibiyet: 3 Puan
-          </span>
-          <span className="flex items-center gap-1.5 bg-black/30 px-3 py-1 rounded-xl">
-            <span>⚖️</span> Beraberlik: 1 Puan
-          </span>
-          <span className="flex items-center gap-1.5 bg-black/30 px-3 py-1 rounded-xl">
-            <span>❌</span> Mağlubiyet: 0 Puan
-          </span>
+          {activeTab === 'standings' ? (
+            <>
+              <span className="flex items-center gap-1.5 bg-black/30 px-3 py-1 rounded-xl">
+                <span>🏆</span> Galibiyet: 3 Puan
+              </span>
+              <span className="flex items-center gap-1.5 bg-black/30 px-3 py-1 rounded-xl">
+                <span>⚖️</span> Beraberlik: 1 Puan
+              </span>
+              <span className="flex items-center gap-1.5 bg-black/30 px-3 py-1 rounded-xl">
+                <span>❌</span> Mağlubiyet: 0 Puan
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="flex items-center gap-1.5 bg-black/30 px-3 py-1 rounded-xl">
+                <span>⚡</span> Başlangıç: 100 ELO
+              </span>
+              <span className="flex items-center gap-1.5 bg-black/30 px-3 py-1 rounded-xl">
+                <span>♟️</span> Dengeli Maç: ±8 ELO (Beraberlikte 0)
+              </span>
+              <span className="flex items-center gap-1.5 bg-black/30 px-3 py-1 rounded-xl">
+                <span>📈</span> ELO Farkına Göre Dinamik Değişim
+              </span>
+            </>
+          )}
           <span className="flex items-center gap-1.5 bg-black/30 px-3 py-1 rounded-xl text-brand-cream">
             <span>📊</span> Toplam Düello: {duels.length} Maç
           </span>
         </div>
       </div>
 
+      {/* Tab Switcher: Düello Ligi vs 1v1 ELO Sıralaması */}
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => setActiveTab('standings')}
+          className={`py-3 px-6 rounded-2xl font-black text-xs md:text-sm uppercase tracking-wider transition-all duration-150 cursor-pointer border-2 flex items-center gap-2 ${
+            activeTab === 'standings'
+              ? 'bg-brand-maroon text-white border-[#5c0101] shadow-[0_4px_0_0_#5c0101] translate-y-0.5'
+              : 'bg-[#d7cdb7] text-brand-maroon border-brand-maroon shadow-[0_4px_0_0_#800000] hover:bg-[#c9bea9] active:translate-y-0.5'
+          }`}
+        >
+          <span>🏆</span>
+          <span>DÜELLO LİGİ (PUAN DURUMU)</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('elo')}
+          className={`py-3 px-6 rounded-2xl font-black text-xs md:text-sm uppercase tracking-wider transition-all duration-150 cursor-pointer border-2 flex items-center gap-2 ${
+            activeTab === 'elo'
+              ? 'bg-brand-maroon text-white border-[#5c0101] shadow-[0_4px_0_0_#5c0101] translate-y-0.5'
+              : 'bg-[#d7cdb7] text-brand-maroon border-brand-maroon shadow-[0_4px_0_0_#800000] hover:bg-[#c9bea9] active:translate-y-0.5'
+          }`}
+        >
+          <span>⚡</span>
+          <span>1v1 ELO SIRALAMASI</span>
+          <span className="bg-brand-gold text-brand-dark px-1.5 py-0.2 rounded-full text-[9px] font-black">
+            CHESS.COM
+          </span>
+        </button>
+      </div>
+
       {/* Standings Table Card */}
-      <div className="bg-brand-card rounded-3xl overflow-hidden border-b-8 border-brand-maroon shadow-md">
+      {activeTab === 'standings' && (
+      <div className="bg-brand-card rounded-3xl overflow-hidden border-b-8 border-brand-maroon shadow-md animate-fade-in">
         {/* Table Controls (Search, Only Played Toggle & Counter) */}
         <div className="p-4 bg-brand-maroon/5 border-b border-brand-maroon/10 flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-brand-maroon font-black text-xs md:text-sm uppercase tracking-wide">
@@ -761,6 +863,247 @@ export default function Duellolar({
           </div>
         )}
       </div>
+      )}
+
+      {/* 1v1 ELO Standings Table Card */}
+      {activeTab === 'elo' && (
+        <div className="bg-brand-card rounded-3xl overflow-hidden border-b-8 border-brand-maroon shadow-md animate-fade-in">
+          {/* ELO Concept Explainer Banner */}
+          <div className="bg-gradient-to-r from-brand-maroon/10 via-amber-100/50 to-brand-maroon/10 p-4 border-b border-brand-maroon/15 text-xs text-brand-dark flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl shrink-0">♟️</span>
+              <div>
+                <span className="font-black text-brand-maroon uppercase tracking-wide block text-xs md:text-sm">
+                  CHESS.COM 1V1 ELO DERECELENDİRME SİSTEMİ
+                </span>
+                <p className="text-[11px] text-gray-700 font-medium mt-0.5 max-w-3xl">
+                  Her oyuncu <strong>100 ELO</strong> ile başlar. Denk maçlarda galibiyet <strong>±8 ELO</strong> kazandırır/kaybettirir (beraberlikte 0 ELO). ELO farkı büyüdükçe sürpriz galibiyetlerde kazanç ve kayıp artar. Düşük ELO'lu oyuncu yüksek ELO'luya karşı berabere kaldığında ELO kazanır, yüksek ELO'lu aynı oranda kaybeder.
+                </p>
+              </div>
+            </div>
+            <div className="shrink-0 flex items-center gap-1.5 text-[10px] font-black bg-white px-3 py-1.5 rounded-xl border border-brand-maroon/20 text-brand-maroon shadow-2xs">
+              <span>🔢</span>
+              <span>Maç Sırasına Göre Kronolojik</span>
+            </div>
+          </div>
+
+          {/* Table Controls (Search, Only Played Toggle & Counter) */}
+          <div className="p-4 bg-brand-maroon/5 border-b border-brand-maroon/10 flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-brand-maroon font-black text-xs md:text-sm uppercase tracking-wide">
+              <span>⚡</span>
+              <span>
+                1V1 ELO SIRALAMASI ({filteredEloStandings.length} {onlyPlayed ? 'Maç Yapan Oyuncu' : 'Oyuncu'})
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => setOnlyPlayed(!onlyPlayed)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 border cursor-pointer ${
+                  onlyPlayed
+                    ? 'bg-brand-maroon text-brand-gold border-brand-maroon shadow-xs'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+                title="Sadece maç yapmış oyuncuları göster / gizle"
+              >
+                <span>{onlyPlayed ? '✓' : '○'}</span>
+                <span>Sadece Oynayanlar ({eloStandings.filter((s) => s.played > 0).length})</span>
+              </button>
+
+              <div className="relative w-full sm:w-60">
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Oyuncu veya takım ara..."
+                  className="w-full bg-white border border-gray-300 rounded-xl px-3 py-1.5 pl-8 text-xs font-bold text-brand-dark focus:outline-none focus:border-brand-maroon"
+                />
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-brand-maroon text-xs"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="text-center p-12 text-brand-maroon font-black text-sm">
+              Yükleniyor...
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-brand-dark border-collapse">
+                <thead>
+                  <tr className="bg-brand-maroon text-brand-gold border-b-2 border-brand-gold text-[11px] font-black uppercase tracking-wider">
+                    <th className="py-4 px-3 text-center w-14">#</th>
+                    <th className="py-4 px-4 text-left">OYUNCU</th>
+                    <th className="py-4 px-3 text-center w-28">GÜNCEL ELO</th>
+                    <th className="py-4 px-3 text-center">NET DEĞİŞİM</th>
+                    <th className="py-4 px-3 text-center">O</th>
+                    <th className="py-4 px-3 text-center">G</th>
+                    <th className="py-4 px-3 text-center">B</th>
+                    <th className="py-4 px-3 text-center">M</th>
+                    <th className="py-4 px-3 text-center">KAZANMA %</th>
+                    <th className="py-4 px-3 text-center">ZİRVE</th>
+                    <th className="py-4 px-4 text-center w-28">SON MAÇ ELO</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredEloStandings.length === 0 ? (
+                    <tr>
+                      <td colSpan={11} className="py-10 text-center text-gray-500 font-bold text-xs">
+                        {searchTerm ? (
+                          'Aramanıza uygun oyuncu bulunamadı.'
+                        ) : (
+                          <div className="flex flex-col items-center justify-center gap-2 p-4">
+                            <span className="text-3xl">⚡</span>
+                            <span className="font-black text-sm text-brand-maroon">
+                              Henüz ELO puanı hesaplanan maç bulunmuyor.
+                            </span>
+                            <p className="text-gray-500 max-w-md text-xs">
+                              {isAdmin
+                                ? 'Aşağıdaki formdan düello maçı eklediğinizde ELO sıralaması otomatik hesaplanacaktır.'
+                                : 'Yöneticiler düello maçı eklediğinde ELO tablosu burada listelenecektir.'}
+                            </p>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredEloStandings.map((st, i) => {
+                      let rankBadge = (
+                        <span className="font-black text-brand-maroon text-base">{i + 1}</span>
+                      );
+                      let borderClass = 'border-l-[6px] border-l-transparent';
+
+                      if (i === 0 && st.played > 0) {
+                        borderClass = 'border-l-[6px] border-l-brand-gold bg-amber-50/40';
+                        rankBadge = (
+                          <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-brand-gold text-brand-dark font-black text-xs shadow-xs">
+                            👑 1
+                          </span>
+                        );
+                      } else if (i === 1 && st.played > 0) {
+                        borderClass = 'border-l-[6px] border-l-gray-300';
+                        rankBadge = (
+                          <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-gray-200 text-gray-800 font-black text-xs shadow-xs">
+                            🥈 2
+                          </span>
+                        );
+                      } else if (i === 2 && st.played > 0) {
+                        borderClass = 'border-l-[6px] border-l-amber-600/40';
+                        rankBadge = (
+                          <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-amber-100 text-amber-900 font-black text-xs shadow-xs">
+                            🥉 3
+                          </span>
+                        );
+                      }
+
+                      const netColor =
+                        st.totalChange > 0
+                          ? 'text-green-700 bg-green-50 border-green-300'
+                          : st.totalChange < 0
+                          ? 'text-red-700 bg-red-50 border-red-300'
+                          : 'text-gray-500 bg-gray-50 border-gray-300';
+
+                      const lastDeltaColor =
+                        st.lastDelta > 0
+                          ? 'text-green-700 bg-green-100 border-green-300'
+                          : st.lastDelta < 0
+                          ? 'text-red-700 bg-red-100 border-red-300'
+                          : 'text-gray-600 bg-gray-100 border-gray-300';
+
+                      return (
+                        <tr
+                          key={st.playerName}
+                          onClick={() =>
+                            onNavigate({
+                              type: 'player-profile',
+                              playerName: st.playerName,
+                              playerId: st.playerId
+                            })
+                          }
+                          className={`border-b border-brand-cream hover:bg-brand-cream/50 cursor-pointer transition-colors ${borderClass}`}
+                        >
+                          <td className="py-3 px-3 text-center">{rankBadge}</td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-3">
+                              <img
+                                src={
+                                  st.playerPhoto ||
+                                  `https://ui-avatars.com/api/?name=${encodeURIComponent(st.playerName)}&background=800000&color=ffd700&size=64`
+                                }
+                                className="w-10 h-10 rounded-full bg-white object-cover border-2 border-brand-gold shrink-0 shadow-sm"
+                                alt={st.playerName}
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(st.playerName)}&background=800000&color=ffd700&size=64`;
+                                }}
+                              />
+                              <div className="min-w-0">
+                                <span className="font-extrabold text-sm tracking-wide text-brand-dark truncate block">
+                                  {st.playerName}
+                                </span>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  {teamLogos[st.playerTeam] && (
+                                    <img
+                                      src={teamLogos[st.playerTeam]}
+                                      className="w-3.5 h-3.5 rounded-full object-cover shrink-0"
+                                      alt=""
+                                    />
+                                  )}
+                                  <span className="text-[10px] font-bold text-gray-500 truncate">
+                                    {st.playerTeam}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            <span className="font-black text-2xl text-brand-maroon tracking-tight">
+                              {st.elo}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-black border ${netColor}`}>
+                              {st.totalChange > 0 ? `+${st.totalChange}` : st.totalChange}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-center font-bold text-sm text-brand-dark">{st.played}</td>
+                          <td className="py-3 px-3 text-center font-bold text-sm text-green-600">{st.wins}</td>
+                          <td className="py-3 px-3 text-center font-bold text-sm text-gray-500">{st.draws}</td>
+                          <td className="py-3 px-3 text-center font-bold text-sm text-red-600">{st.losses}</td>
+                          <td className="py-3 px-3 text-center font-black text-xs text-brand-dark">
+                            %{st.winRate}
+                          </td>
+                          <td className="py-3 px-3 text-center font-black text-xs text-amber-700">
+                            ⭐ {st.peakElo}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            {st.played > 0 ? (
+                              <span className={`inline-block px-2 py-0.5 rounded-md text-[11px] font-black border ${lastDeltaColor}`}>
+                                {st.lastDelta > 0 ? `+${st.lastDelta}` : st.lastDelta}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 text-xs">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ADD DUEL SECTION (En alttaki maç ekleme yeri - ONLY ADMINS) */}
       {isAdmin ? (
@@ -882,9 +1225,33 @@ export default function Duellolar({
               </div>
             </div>
 
-            {/* Date & Submit */}
+            {/* Number, Date & Submit */}
             <div className="flex flex-col sm:flex-row items-center gap-4">
-              <div className="w-full sm:w-48 flex flex-col gap-1">
+              <div className="w-full sm:w-36 flex flex-col gap-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-black text-brand-maroon uppercase">
+                    🔢 Maç Sırası
+                  </label>
+                  <span className="text-[9px] text-gray-400 font-bold">
+                    #{maxMatchNumber + 1}
+                  </span>
+                </div>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={matchNumber}
+                  onChange={(e) => {
+                    setUserHasCustomMatchNumber(true);
+                    setMatchNumber(e.target.value);
+                  }}
+                  placeholder={String(maxMatchNumber + 1)}
+                  className="w-full bg-white border-2 border-brand-maroon/30 focus:border-brand-maroon rounded-xl p-2.5 text-xs font-black text-brand-maroon text-center shadow-inner"
+                  title="ELO hesaplaması bu maç numarasına göre sırayla yapılır (1, 2, 3...)"
+                />
+              </div>
+
+              <div className="w-full sm:w-44 flex flex-col gap-1">
                 <label className="text-[10px] font-black text-brand-maroon uppercase">Maç Tarihi</label>
                 <input
                   type="text"
@@ -901,7 +1268,7 @@ export default function Duellolar({
                 className="flex-1 w-full mt-auto py-3.5 px-6 bg-brand-maroon hover:bg-black text-brand-gold font-black text-xs md:text-sm uppercase tracking-wider rounded-xl transition-all shadow-md cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 <span>💾</span>
-                <span>{savingDuel ? 'Kaydediliyor...' : 'Düello Sonucunu Kaydet ve Tabloyu Güncelle'}</span>
+                <span>{savingDuel ? 'Kaydediliyor...' : "Düello Sonucunu Kaydet ve ELO'yu Güncelle"}</span>
               </button>
             </div>
           </form>
@@ -944,69 +1311,112 @@ export default function Duellolar({
 
               const p1 = playerMap.get(d.player1Name.toLowerCase().trim());
               const p2 = playerMap.get(d.player2Name.toLowerCase().trim());
+              const deltaInfo = matchDeltas.get(d.id);
 
               return (
                 <div
                   key={d.id}
-                  className="bg-[#fbf9f4] hover:bg-[#f6f2e8] rounded-2xl p-3.5 border border-brand-maroon/20 shadow-xs flex items-center justify-between gap-3 transition-colors select-text"
+                  className="bg-[#fbf9f4] hover:bg-[#f6f2e8] rounded-2xl p-3.5 border border-brand-maroon/20 shadow-xs flex flex-col justify-between gap-2.5 transition-colors select-text"
                 >
-                  {/* Player 1 */}
-                  <div className={`flex-1 flex items-center justify-end gap-2 text-right min-w-0 ${p1Win ? 'font-black text-brand-maroon' : 'text-gray-700'}`}>
-                    <div className="truncate">
-                      <span className="text-xs truncate block">{d.player1Name}</span>
-                      <span className="text-[9px] text-gray-400 block truncate">{d.player1Team || p1?.pteam || ''}</span>
+                  {/* Top: Match Info & Admin Actions */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className="bg-brand-maroon text-brand-gold px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider shadow-2xs">
+                        {d.matchNumber ? `Maç #${d.matchNumber}` : 'Düello'}
+                      </span>
+                      <span className="text-[10px] font-bold text-gray-500">
+                        {d.date || 'Tarihsiz'}
+                      </span>
                     </div>
-                    <img
-                      src={d.player1Photo || p1?.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(d.player1Name)}&background=800000&color=ffd700&size=40`}
-                      className={`w-8 h-8 rounded-full object-cover bg-white shrink-0 border ${p1Win ? 'border-brand-gold ring-2 ring-brand-maroon' : 'border-gray-200'}`}
-                      alt={d.player1Name}
-                    />
+
+                    {isAdmin && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEdit(d)}
+                          title="Düelloyu Düzenle"
+                          className="w-7 h-7 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 flex items-center justify-center text-xs shrink-0 cursor-pointer transition-colors shadow-xs"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDuel(d.id)}
+                          title="Düelloyu Sil"
+                          className="w-7 h-7 rounded-lg bg-red-100 hover:bg-red-200 text-red-700 flex items-center justify-center text-xs shrink-0 cursor-pointer transition-colors shadow-xs"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Score */}
-                  <div className="flex flex-col items-center shrink-0 min-w-[70px]">
-                    <div className="px-3 py-1 bg-brand-maroon text-brand-gold rounded-xl font-black text-xs md:text-sm text-center border border-brand-gold shadow-xs">
-                      {d.score1} - {d.score2}
+                  {/* Middle: Teams & Score */}
+                  <div className="flex items-center justify-between gap-2">
+                    {/* Player 1 */}
+                    <div className={`flex-1 flex items-center justify-end gap-2 text-right min-w-0 ${p1Win ? 'font-black text-brand-maroon' : 'text-gray-700'}`}>
+                      <div className="truncate">
+                        <span className="text-xs truncate block">{d.player1Name}</span>
+                        <span className="text-[9px] text-gray-400 block truncate">{d.player1Team || p1?.pteam || ''}</span>
+                      </div>
+                      <img
+                        src={d.player1Photo || p1?.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(d.player1Name)}&background=800000&color=ffd700&size=40`}
+                        className={`w-9 h-9 rounded-full object-cover bg-white shrink-0 border ${p1Win ? 'border-brand-gold ring-2 ring-brand-maroon' : 'border-gray-200'}`}
+                        alt={d.player1Name}
+                      />
                     </div>
-                    <span className="text-[8px] font-bold text-gray-400 mt-1">
-                      {d.date || 'Tarihsiz'}
-                    </span>
+
+                    {/* Score */}
+                    <div className="flex flex-col items-center shrink-0 min-w-[70px]">
+                      <div className="px-3.5 py-1 bg-brand-maroon text-brand-gold rounded-xl font-black text-xs md:text-sm text-center border border-brand-gold shadow-xs">
+                        {d.score1} - {d.score2}
+                      </div>
+                    </div>
+
+                    {/* Player 2 */}
+                    <div className={`flex-1 flex items-center justify-start gap-2 text-left min-w-0 ${p2Win ? 'font-black text-brand-maroon' : 'text-gray-700'}`}>
+                      <img
+                        src={d.player2Photo || p2?.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(d.player2Name)}&background=800000&color=ffd700&size=40`}
+                        className={`w-9 h-9 rounded-full object-cover bg-white shrink-0 border ${p2Win ? 'border-brand-gold ring-2 ring-brand-maroon' : 'border-gray-200'}`}
+                        alt={d.player2Name}
+                      />
+                      <div className="truncate">
+                        <span className="text-xs truncate block">{d.player2Name}</span>
+                        <span className="text-[9px] text-gray-400 block truncate">{d.player2Team || p2?.pteam || ''}</span>
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Player 2 */}
-                  <div className={`flex-1 flex items-center justify-start gap-2 text-left min-w-0 ${p2Win ? 'font-black text-brand-maroon' : 'text-gray-700'}`}>
-                    <img
-                      src={d.player2Photo || p2?.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(d.player2Name)}&background=800000&color=ffd700&size=40`}
-                      className={`w-8 h-8 rounded-full object-cover bg-white shrink-0 border ${p2Win ? 'border-brand-gold ring-2 ring-brand-maroon' : 'border-gray-200'}`}
-                      alt={d.player2Name}
-                    />
-                    <div className="truncate">
-                      <span className="text-xs truncate block">{d.player2Name}</span>
-                      <span className="text-[9px] text-gray-400 block truncate">{d.player2Team || p2?.pteam || ''}</span>
-                    </div>
-                  </div>
+                  {/* Bottom: ELO Won / Lost Footer */}
+                  <div className="mt-1 pt-2 border-t border-brand-maroon/15 flex items-center justify-between gap-1.5 text-[10px] md:text-[11px] font-bold">
+                    {deltaInfo ? (
+                      <>
+                        <div className={`flex items-center gap-1 min-w-0 truncate ${deltaInfo.p1Delta > 0 ? 'text-green-700 font-black' : deltaInfo.p1Delta < 0 ? 'text-red-700 font-bold' : 'text-gray-500 font-bold'}`}>
+                          <span className="truncate max-w-[85px] sm:max-w-[120px]">{d.player1Name}:</span>
+                          <span className={`px-1.5 py-0.2 rounded font-black border ${deltaInfo.p1Delta > 0 ? 'bg-green-100 border-green-300' : deltaInfo.p1Delta < 0 ? 'bg-red-100 border-red-300' : 'bg-gray-100 border-gray-300'}`}>
+                            {deltaInfo.p1Delta > 0 ? `+${deltaInfo.p1Delta}` : deltaInfo.p1Delta} ELO
+                          </span>
+                          <span className="text-[9px] text-gray-400 font-normal">({deltaInfo.p1After})</span>
+                        </div>
 
-                  {/* Admin Actions (Düzenle & Sil) */}
-                  {isAdmin && (
-                    <div className="flex items-center gap-1 shrink-0 pl-1 border-l border-gray-200">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEdit(d)}
-                        title="Düelloyu Düzenle"
-                        className="w-7 h-7 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 flex items-center justify-center text-xs shrink-0 cursor-pointer transition-colors shadow-xs"
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteDuel(d.id)}
-                        title="Düelloyu Sil"
-                        className="w-7 h-7 rounded-lg bg-red-100 hover:bg-red-200 text-red-700 flex items-center justify-center text-xs shrink-0 cursor-pointer transition-colors shadow-xs"
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  )}
+                        <span className="shrink-0 text-[8px] font-black uppercase tracking-wider text-brand-maroon bg-brand-gold/30 px-1.5 py-0.5 rounded border border-brand-gold/50">
+                          ⚡ ELO
+                        </span>
+
+                        <div className={`flex items-center gap-1 min-w-0 justify-end truncate ${deltaInfo.p2Delta > 0 ? 'text-green-700 font-black' : deltaInfo.p2Delta < 0 ? 'text-red-700 font-bold' : 'text-gray-500 font-bold'}`}>
+                          <span className="text-[9px] text-gray-400 font-normal">({deltaInfo.p2After})</span>
+                          <span className={`px-1.5 py-0.2 rounded font-black border ${deltaInfo.p2Delta > 0 ? 'bg-green-100 border-green-300' : deltaInfo.p2Delta < 0 ? 'bg-red-100 border-red-300' : 'bg-gray-100 border-gray-300'}`}>
+                            {deltaInfo.p2Delta > 0 ? `+${deltaInfo.p2Delta}` : deltaInfo.p2Delta} ELO
+                          </span>
+                          <span className="truncate max-w-[85px] sm:max-w-[120px]">{d.player2Name}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="w-full text-center text-[10px] text-gray-400">
+                        {d.matchNumber ? `Maç #${d.matchNumber} • ` : ''}ELO hesaplanıyor...
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -1099,16 +1509,39 @@ export default function Duellolar({
                 </div>
               </div>
 
-              {/* Date */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-black text-brand-maroon uppercase">Maç Tarihi</label>
-                <input
-                  type="text"
-                  value={editDuelDate}
-                  onChange={(e) => setEditDuelDate(e.target.value)}
-                  placeholder="GG.AA.YYYY"
-                  className="w-full bg-white border border-gray-300 rounded-xl p-2.5 text-xs font-bold text-gray-800"
-                />
+              {/* Match Number & Date Row */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-black text-brand-maroon uppercase">
+                      🔢 Maç Sırası (No)
+                    </label>
+                    <span className="text-[9px] text-gray-400 font-bold">
+                      ELO Sıralaması
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={editMatchNumber}
+                    onChange={(e) => setEditMatchNumber(e.target.value)}
+                    placeholder="Örn: 1, 2, 3..."
+                    className="w-full bg-white border border-gray-300 focus:border-brand-maroon rounded-xl p-2.5 text-xs font-black text-brand-maroon text-center shadow-xs"
+                    title="ELO hesaplaması bu maç numarasına göre sırayla yapılır"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-black text-brand-maroon uppercase">Maç Tarihi</label>
+                  <input
+                    type="text"
+                    value={editDuelDate}
+                    onChange={(e) => setEditDuelDate(e.target.value)}
+                    placeholder="GG.AA.YYYY"
+                    className="w-full bg-white border border-gray-300 rounded-xl p-2.5 text-xs font-bold text-gray-800"
+                  />
+                </div>
               </div>
 
               {/* Action Buttons */}

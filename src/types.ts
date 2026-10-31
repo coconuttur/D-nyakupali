@@ -254,6 +254,7 @@ export interface WcBracket {
 
 export interface DuelMatch {
   id: string;
+  matchNumber?: number; // Maç sırası / numarası (ELO hesaplama sırası için)
   player1Id?: string;
   player1Name: string;
   player1Photo?: string;
