@@ -3,6 +3,7 @@ import { doc, getDoc, updateDoc, setDoc, collection, onSnapshot, query, where, g
 import { db } from '../firebase';
 import { Match, MatchTimelineEvent, Player, Team, UserProfile } from '../types';
 import { recalculateStandings, recalculatePlayerRatings } from '../lib/standings';
+import { syncPlayerStatsToFirestore } from '../lib/playerStats';
 import { getStoredTournamentMatches, DEFAULT_TOURNAMENT_MATCHES, saveStoredTournamentMatch, saveStoredBracketData, normalizeCupKey } from '../lib/tournamentMatches';
 
 interface MatchDetailProps {
@@ -236,6 +237,7 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
         lineup: updatedLineup
       }, { merge: true });
       await recalculatePlayerRatings();
+      syncPlayerStatsToFirestore().catch(() => {});
       showToast('Oyuncu kadro ve rating bilgisi başarıyla kaydedildi!', 'success');
     } catch (err) {
       console.error(err);
@@ -254,6 +256,7 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
         lineup: updatedLineup
       }, { merge: true });
       await recalculatePlayerRatings();
+      syncPlayerStatsToFirestore().catch(() => {});
       showToast('Oyuncu kadrodan çıkarıldı!', 'info');
       if (selectedLineupPlayer === pname) {
         setSelectedLineupPlayer('');
@@ -291,6 +294,8 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
         played: true
       }, { merge: true });
       await recalculateStandings();
+      syncPlayerStatsToFirestore().catch(() => {});
+      window.dispatchEvent(new CustomEvent('tournament_matches_updated'));
       showToast('Maç skoru başarıyla güncellendi!', 'success');
       setQuickInputString('');
       setQuickIyInputString('');
@@ -659,6 +664,8 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
 
       try {
         await recalculateStandings();
+        syncPlayerStatsToFirestore().catch(() => {});
+        window.dispatchEvent(new CustomEvent('tournament_matches_updated', { detail: fullMatch }));
       } catch (stErr) {
         console.warn('recalculateStandings notice:', stErr);
       }
@@ -929,6 +936,7 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
       saveStoredTournamentMatch(fullMatch);
 
       await recalculateStandings();
+      window.dispatchEvent(new CustomEvent('tournament_matches_updated', { detail: fullMatch }));
       showToast('MVP başarıyla güncellendi!', 'success');
     } catch (e) {
       console.error(e);
@@ -1900,11 +1908,33 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
                     onChange={(e) => setSelectedScorer(e.target.value)}
                     className="w-full bg-white border border-gray-300 rounded p-2 font-bold text-xs"
                   >
-                    {[...team1Players, ...team2Players].map((p, idx) => (
-                      <option key={idx} value={p.pname} data-team={p.pteam}>
-                        {p.pname} ({p.pteam === team1Name || p.kiralikTakim === team1Name ? 'T1' : 'T2'}{p.kiralik || p.kiralikTakim ? ' 🔄 Kiralık' : ''})
-                      </option>
-                    ))}
+                    {team1Players.length > 0 && (
+                      <optgroup label={`${team1Name} Oyuncuları (T1)`}>
+                        {team1Players.map((p, idx) => (
+                          <option key={`t1-${idx}`} value={p.pname} data-team={p.pteam}>
+                            {p.pname} (T1{p.kiralik || p.kiralikTakim ? ' 🔄 Kiralık' : ''})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {team2Players.length > 0 && (
+                      <optgroup label={`${team2Name} Oyuncuları (T2)`}>
+                        {team2Players.map((p, idx) => (
+                          <option key={`t2-${idx}`} value={p.pname} data-team={p.pteam}>
+                            {p.pname} (T2{p.kiralik || p.kiralikTakim ? ' 🔄 Kiralık' : ''})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <optgroup label="Tüm Diğer Oyuncular">
+                      {allGlobalPlayers
+                        .filter(p => !team1Players.some(t => t.pname === p.pname) && !team2Players.some(t => t.pname === p.pname))
+                        .map((p, idx) => (
+                          <option key={`other-${idx}`} value={p.pname}>
+                            {p.pname} ({p.pteam || 'Takımsız'})
+                          </option>
+                        ))}
+                    </optgroup>
                   </select>
                 </div>
 
@@ -1916,11 +1946,33 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
                     className="w-full bg-white border border-gray-300 rounded p-2 text-xs font-bold"
                   >
                     <option value="">Asist Yok (Şut)</option>
-                    {[...team1Players, ...team2Players].map((p, idx) => (
-                      <option key={idx} value={p.pname}>
-                        {p.pname} ({p.pteam === team1Name || p.kiralikTakim === team1Name ? 'T1' : 'T2'}{p.kiralik || p.kiralikTakim ? ' 🔄 Kiralık' : ''})
-                      </option>
-                    ))}
+                    {team1Players.length > 0 && (
+                      <optgroup label={`${team1Name} Oyuncuları (T1)`}>
+                        {team1Players.map((p, idx) => (
+                          <option key={`as-t1-${idx}`} value={p.pname}>
+                            {p.pname} (T1{p.kiralik || p.kiralikTakim ? ' 🔄 Kiralık' : ''})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {team2Players.length > 0 && (
+                      <optgroup label={`${team2Name} Oyuncuları (T2)`}>
+                        {team2Players.map((p, idx) => (
+                          <option key={`as-t2-${idx}`} value={p.pname}>
+                            {p.pname} (T2{p.kiralik || p.kiralikTakim ? ' 🔄 Kiralık' : ''})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <optgroup label="Tüm Diğer Oyuncular">
+                      {allGlobalPlayers
+                        .filter(p => !team1Players.some(t => t.pname === p.pname) && !team2Players.some(t => t.pname === p.pname))
+                        .map((p, idx) => (
+                          <option key={`as-other-${idx}`} value={p.pname}>
+                            {p.pname} ({p.pteam || 'Takımsız'})
+                          </option>
+                        ))}
+                    </optgroup>
                   </select>
                 </div>
 
@@ -1977,11 +2029,33 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
                     onChange={(e) => setSelectedCardPlayer(e.target.value)}
                     className="w-full bg-white border border-gray-300 rounded p-2 text-xs font-bold"
                   >
-                    {[...team1Players, ...team2Players].map((p, idx) => (
-                      <option key={idx} value={p.pname}>
-                        {p.pname} ({p.pteam === team1Name || p.kiralikTakim === team1Name ? 'T1' : 'T2'}{p.kiralik || p.kiralikTakim ? ' 🔄 Kiralık' : ''})
-                      </option>
-                    ))}
+                    {team1Players.length > 0 && (
+                      <optgroup label={`${team1Name} Oyuncuları (T1)`}>
+                        {team1Players.map((p, idx) => (
+                          <option key={`c-t1-${idx}`} value={p.pname}>
+                            {p.pname} (T1{p.kiralik || p.kiralikTakim ? ' 🔄 Kiralık' : ''})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {team2Players.length > 0 && (
+                      <optgroup label={`${team2Name} Oyuncuları (T2)`}>
+                        {team2Players.map((p, idx) => (
+                          <option key={`c-t2-${idx}`} value={p.pname}>
+                            {p.pname} (T2{p.kiralik || p.kiralikTakim ? ' 🔄 Kiralık' : ''})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <optgroup label="Tüm Diğer Oyuncular">
+                      {allGlobalPlayers
+                        .filter(p => !team1Players.some(t => t.pname === p.pname) && !team2Players.some(t => t.pname === p.pname))
+                        .map((p, idx) => (
+                          <option key={`c-other-${idx}`} value={p.pname}>
+                            {p.pname} ({p.pteam || 'Takımsız'})
+                          </option>
+                        ))}
+                    </optgroup>
                   </select>
                 </div>
 

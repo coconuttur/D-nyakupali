@@ -2,8 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { collection, onSnapshot, doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Team, UserProfile, Match, Player } from '../types';
+import { Team, UserProfile, Match, Player, MatchTimelineEvent } from '../types';
 import WorldCup from './WorldCup';
+import { recalculateStandings, recalculatePlayerStats } from '../lib/standings';
 
 interface TurnuvalarProps {
   currentLang: 'tr' | 'en' | 'pt';
@@ -71,13 +72,33 @@ export const resolveMatchRound = (
   const r = String((m as any).round || '').toLowerCase().trim();
   const h = String(m.hafta || '').toLowerCase().trim();
 
+  // WPC Quarter Finals (2 Legs)
+  if (r === 'wpc_qf1_1' || r === 'qf1_1' || h.includes('çeyrek final 1 (1') || h.includes('ceyrek final 1 (1')) return { roundKey: 'wpc_qf1_1', roundTitle: '⚔️ Çeyrek Final 1 (1. Maç)' };
+  if (r === 'wpc_qf1_2' || r === 'qf1_2' || h.includes('çeyrek final 1 (r') || h.includes('ceyrek final 1 (r') || h.includes('çeyrek final 1 (2') || h.includes('ceyrek final 1 (2')) return { roundKey: 'wpc_qf1_2', roundTitle: '⚔️ Çeyrek Final 1 (Rövanş)' };
+  if (r === 'wpc_qf2_1' || r === 'qf2_1' || h.includes('çeyrek final 2 (1') || h.includes('ceyrek final 2 (1')) return { roundKey: 'wpc_qf2_1', roundTitle: '⚔️ Çeyrek Final 2 (1. Maç)' };
+  if (r === 'wpc_qf2_2' || r === 'qf2_2' || h.includes('çeyrek final 2 (r') || h.includes('ceyrek final 2 (r') || h.includes('çeyrek final 2 (2') || h.includes('ceyrek final 2 (2')) return { roundKey: 'wpc_qf2_2', roundTitle: '⚔️ Çeyrek Final 2 (Rövanş)' };
+  if (r === 'wpc_qf3_1' || r === 'qf3_1' || h.includes('çeyrek final 3 (1') || h.includes('ceyrek final 3 (1')) return { roundKey: 'wpc_qf3_1', roundTitle: '⚔️ Çeyrek Final 3 (1. Maç)' };
+  if (r === 'wpc_qf3_2' || r === 'qf3_2' || h.includes('çeyrek final 3 (r') || h.includes('ceyrek final 3 (r') || h.includes('çeyrek final 3 (2') || h.includes('ceyrek final 3 (2')) return { roundKey: 'wpc_qf3_2', roundTitle: '⚔️ Çeyrek Final 3 (Rövanş)' };
+  if (r === 'wpc_qf4_1' || r === 'qf4_1' || h.includes('çeyrek final 4 (1') || h.includes('ceyrek final 4 (1')) return { roundKey: 'wpc_qf4_1', roundTitle: '⚔️ Çeyrek Final 4 (1. Maç)' };
+  if (r === 'wpc_qf4_2' || r === 'qf4_2' || h.includes('çeyrek final 4 (r') || h.includes('ceyrek final 4 (r') || h.includes('çeyrek final 4 (2') || h.includes('ceyrek final 4 (2')) return { roundKey: 'wpc_qf4_2', roundTitle: '⚔️ Çeyrek Final 4 (Rövanş)' };
+
+  // WPC Semi Finals (2 Legs)
+  if (r === 'wpc_sf1_1' || r === 'sf1_1' || h.includes('wpc yarı final 1 (1') || h.includes('yarı final 1 (1') || h.includes('yari final 1 (1')) return { roundKey: 'wpc_sf1_1', roundTitle: '⚔️ Yarı Final 1 (1. Maç)' };
+  if (r === 'wpc_sf1_2' || r === 'sf1_2' || h.includes('wpc yarı final 1 (r') || h.includes('yarı final 1 (r') || h.includes('yari final 1 (r') || h.includes('yarı final 1 (2') || h.includes('yari final 1 (2')) return { roundKey: 'wpc_sf1_2', roundTitle: '⚔️ Yarı Final 1 (Rövanş)' };
+  if (r === 'wpc_sf2_1' || r === 'sf2_1' || h.includes('wpc yarı final 2 (1') || h.includes('yarı final 2 (1') || h.includes('yari final 2 (1')) return { roundKey: 'wpc_sf2_1', roundTitle: '⚔️ Yarı Final 2 (1. Maç)' };
+  if (r === 'wpc_sf2_2' || r === 'sf2_2' || h.includes('wpc yarı final 2 (r') || h.includes('yarı final 2 (r') || h.includes('yari final 2 (r') || h.includes('yarı final 2 (2') || h.includes('yari final 2 (2')) return { roundKey: 'wpc_sf2_2', roundTitle: '⚔️ Yarı Final 2 (Rövanş)' };
+
+  // WPC Groups
+  if (r === 'groupa' || h.includes('a grubu')) return { roundKey: 'groupA', roundTitle: 'A Grubu' };
+  if (r === 'groupb' || h.includes('b grubu')) return { roundKey: 'groupB', roundTitle: 'B Grubu' };
+
   if (r === 'semi1' || h.includes('yarı final 1') || h.includes('semi 1') || h === 'yf1') {
     return { roundKey: 'semi1', roundTitle: '⚔️ Yarı Final 1' };
   }
   if (r === 'semi2' || h.includes('yarı final 2') || h.includes('semi 2') || h === 'yf2') {
     return { roundKey: 'semi2', roundTitle: '⚔️ Yarı Final 2' };
   }
-  if (r === 'final' || h.includes('büyük final') || (h === 'final' && !h.includes('yarı') && !h.includes('semi'))) {
+  if (r === 'final' || r === 'wpc_final' || h.includes('büyük final') || (h === 'final' && !h.includes('yarı') && !h.includes('semi'))) {
     return { roundKey: 'final', roundTitle: '🏆 Büyük Final' };
   }
 
@@ -160,6 +181,8 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
   const [qsPenaltyWinner, setQsPenaltyWinner] = useState<string>('');
   const [qsMvp, setQsMvp] = useState<string>('');
   const [qsMvpRating, setQsMvpRating] = useState<string>('7.5');
+  const [qsTeam1Goals, setQsTeam1Goals] = useState<{ scorer: string; assist: string }[]>([]);
+  const [qsTeam2Goals, setQsTeam2Goals] = useState<{ scorer: string; assist: string }[]>([]);
   const [savingQuickScore, setSavingQuickScore] = useState<boolean>(false);
   const [allPlayers, setAllPlayers] = useState<Player[]>([]);
 
@@ -448,9 +471,21 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
       let roundLabel = '';
       if (modalRound === 'semi1') roundLabel = 'Yarı Final 1';
       else if (modalRound === 'semi2') roundLabel = 'Yarı Final 2';
-      else if (modalRound === 'final') roundLabel = 'Büyük Final';
+      else if (modalRound === 'final' || modalRound === 'wpc_final') roundLabel = 'Büyük Final';
       else if (modalRound === 'groupA') roundLabel = 'A Grubu';
       else if (modalRound === 'groupB') roundLabel = 'B Grubu';
+      else if (modalRound === 'wpc_qf1_1') roundLabel = 'Çeyrek Final 1 (1. Maç)';
+      else if (modalRound === 'wpc_qf1_2') roundLabel = 'Çeyrek Final 1 (Rövanş)';
+      else if (modalRound === 'wpc_qf2_1') roundLabel = 'Çeyrek Final 2 (1. Maç)';
+      else if (modalRound === 'wpc_qf2_2') roundLabel = 'Çeyrek Final 2 (Rövanş)';
+      else if (modalRound === 'wpc_qf3_1') roundLabel = 'Çeyrek Final 3 (1. Maç)';
+      else if (modalRound === 'wpc_qf3_2') roundLabel = 'Çeyrek Final 3 (Rövanş)';
+      else if (modalRound === 'wpc_qf4_1') roundLabel = 'Çeyrek Final 4 (1. Maç)';
+      else if (modalRound === 'wpc_qf4_2') roundLabel = 'Çeyrek Final 4 (Rövanş)';
+      else if (modalRound === 'wpc_sf1_1') roundLabel = 'Yarı Final 1 (1. Maç)';
+      else if (modalRound === 'wpc_sf1_2') roundLabel = 'Yarı Final 1 (Rövanş)';
+      else if (modalRound === 'wpc_sf2_1') roundLabel = 'Yarı Final 2 (1. Maç)';
+      else if (modalRound === 'wpc_sf2_2') roundLabel = 'Yarı Final 2 (Rövanş)';
       else roundLabel = modalRound;
 
       const s1 = Number(modalScore1) || 0;
@@ -530,6 +565,9 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
         if (Object.keys(bracketUpdates).length > 0) {
           await setDoc(doc(db, 'brackets', 'data'), bracketUpdates, { merge: true });
         }
+        await recalculateStandings().catch(console.error);
+        await recalculatePlayerStats().catch(console.error);
+        window.dispatchEvent(new CustomEvent('tournament_matches_updated', { detail: matchData }));
       } catch (fbErr: any) {
         console.warn('Firestore write notice (saved locally):', fbErr);
       }
@@ -577,16 +615,60 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
     setQsTeam1(t1);
     setQsTeam2(t2);
 
-    setQsScore1(foundMatch ? String(foundMatch.score1 ?? '0') : '0');
-    setQsScore2(foundMatch ? String(foundMatch.score2 ?? '0') : '0');
+    const score1Val = foundMatch ? String(foundMatch.score1 ?? '0') : '0';
+    const score2Val = foundMatch ? String(foundMatch.score2 ?? '0') : '0';
+    setQsScore1(score1Val);
+    setQsScore2(score2Val);
     setQsPlayed(foundMatch ? Boolean(foundMatch.played) : true);
     setQsPenaltyWinner((foundMatch as any)?.penaltyWinner || '');
     setQsMvp(foundMatch?.mvp || '');
     setQsMvpRating(foundMatch?.rating || '7.5');
 
+    // Populate existing goals or allocate goal slots
+    const t1Goals: { scorer: string; assist: string }[] = [];
+    const t2Goals: { scorer: string; assist: string }[] = [];
+    if (foundMatch && Array.isArray(foundMatch.timeline)) {
+      foundMatch.timeline.forEach(evt => {
+        if (evt.type === 'goal') {
+          if (evt.team === 'team1') {
+            t1Goals.push({ scorer: evt.scorer || '', assist: evt.assist || '' });
+          } else if (evt.team === 'team2') {
+            t2Goals.push({ scorer: evt.scorer || '', assist: evt.assist || '' });
+          }
+        }
+      });
+    }
+    const s1Target = Math.max(0, parseInt(score1Val) || 0);
+    while (t1Goals.length < s1Target) t1Goals.push({ scorer: '', assist: '' });
+    const s2Target = Math.max(0, parseInt(score2Val) || 0);
+    while (t2Goals.length < s2Target) t2Goals.push({ scorer: '', assist: '' });
+
+    setQsTeam1Goals(t1Goals.slice(0, s1Target));
+    setQsTeam2Goals(t2Goals.slice(0, s2Target));
+
     const todayStr = new Date().toLocaleDateString('tr-TR');
     setQsDate(foundMatch?.date || todayStr);
     setQuickScoreModalOpen(true);
+  };
+
+  const handleScore1Change = (val: string) => {
+    setQsScore1(val);
+    const count = Math.max(0, parseInt(val) || 0);
+    setQsTeam1Goals(prev => {
+      const next = [...prev];
+      while (next.length < count) next.push({ scorer: '', assist: '' });
+      return next.slice(0, count);
+    });
+  };
+
+  const handleScore2Change = (val: string) => {
+    setQsScore2(val);
+    const count = Math.max(0, parseInt(val) || 0);
+    setQsTeam2Goals(prev => {
+      const next = [...prev];
+      while (next.length < count) next.push({ scorer: '', assist: '' });
+      return next.slice(0, count);
+    });
   };
 
   // Helper to save quick score directly with instant optimistic UI and automatic bracket progression
@@ -627,6 +709,38 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
         else winner = qsPenaltyWinner || qsTeam1;
       }
 
+      // Generate timeline goal events from Quick Score inputs
+      const nonGoalEvents = (existingMatch?.timeline || []).filter(e => e.type !== 'goal');
+      const generatedTimeline: MatchTimelineEvent[] = [...nonGoalEvents];
+
+      qsTeam1Goals.forEach((g, idx) => {
+        const scorerName = g.scorer.trim();
+        if (scorerName) {
+          generatedTimeline.push({
+            id: `evt_qs_t1_${idx}_${now}`,
+            type: 'goal',
+            team: 'team1',
+            scorer: scorerName,
+            assist: g.assist.trim() || 'Şut',
+            minute: `${(idx + 1) * 15}'`
+          });
+        }
+      });
+
+      qsTeam2Goals.forEach((g, idx) => {
+        const scorerName = g.scorer.trim();
+        if (scorerName) {
+          generatedTimeline.push({
+            id: `evt_qs_t2_${idx}_${now}`,
+            type: 'goal',
+            team: 'team2',
+            scorer: scorerName,
+            assist: g.assist.trim() || 'Şut',
+            minute: `${(idx + 1) * 20}'`
+          });
+        }
+      });
+
       const matchPayload: Match = {
         id: docId,
         team1: qsTeam1,
@@ -641,7 +755,7 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
         date: qsDate.trim() || new Date().toLocaleDateString('tr-TR'),
         datejav: existingMatch?.datejav || now,
         ligm: false,
-        timeline: existingMatch?.timeline || [],
+        timeline: generatedTimeline,
         lineup: existingMatch?.lineup || {},
         penaltyWinner: qsPenaltyWinner || undefined,
         mvp: qsMvp ? qsMvp.trim() : (existingMatch?.mvp || undefined),
@@ -714,6 +828,9 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
         if (Object.keys(bUpdates).length > 0) {
           await setDoc(doc(db, 'brackets', 'data'), bUpdates, { merge: true });
         }
+        await recalculateStandings().catch(console.error);
+        await recalculatePlayerStats().catch(console.error);
+        window.dispatchEvent(new CustomEvent('tournament_matches_updated', { detail: matchPayload }));
       } catch (fbErr: any) {
         console.warn('Firestore write notice (saved locally):', fbErr);
       }
@@ -855,16 +972,36 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
     }
   };
 
+  // Helper to check if a team is Bobblica (for averaj exclusion rule)
+  const isBobblica = (name?: string): boolean => {
+    if (!name) return false;
+    const n = name.trim().toLowerCase();
+    return n === 'bobblica' || n === 'hiyar city' || n === 'bobbli̇ca' || n.includes('bobblica');
+  };
+
   // Helper to filter matches by cup and season
   const getCupSeasonMatches = (cupFilter: 'wpc' | 'bcl' | 'bel' | 'becl', season?: 4 | 5) => {
     return allTournamentMatches.filter((m) => {
       const cat = String(m.category || '').toUpperCase().trim();
       const hStr = String(m.hafta || '').toUpperCase().trim();
       const mSeason = (m as any).season;
+      const mRound = String((m as any).round || '').toLowerCase();
       
       let matchesCup = false;
       if (cupFilter === 'wpc') {
-        matchesCup = cat.includes('WPC') || cat.includes('WORLD PEACE') || cat.includes('TURNUVA') || hStr.includes('WPC');
+        matchesCup = 
+          cat.includes('WPC') || 
+          cat.includes('WORLD PEACE') || 
+          cat.includes('TURNUVA') || 
+          hStr.includes('WPC') || 
+          hStr.includes('WORLD PEACE') || 
+          hStr.includes('ÇEYREK') || 
+          hStr.includes('CEYREK') || 
+          hStr.includes('YARI') || 
+          hStr.includes('SEMI') || 
+          mRound.startsWith('wpc_') || 
+          mRound.includes('group') || 
+          (m as any).kgrup !== undefined;
       } else if (cupFilter === 'bcl') {
         matchesCup = cat.includes('BCL') || cat.includes('UCL') || cat.includes('CHAMPIONS') || hStr.includes('BCL') || hStr.includes('UCL');
       } else if (cupFilter === 'bel') {
@@ -887,30 +1024,842 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
     });
   };
 
-  // Helper to render WPC Group
+  // Helper to compute live WPC Group Standings from all matches (with Bobblica averaj exclusion)
+  const getWpcGroupStandings = (groupLetter: 'A' | 'B') => {
+    // 1. Filter teams belonging to this group
+    const groupTeams = teams.filter((t: any) => t.kgrup === groupLetter);
+    const teamStats: Record<string, {
+      name: string;
+      logo?: string;
+      played: number;
+      wins: number;
+      draws: number;
+      losses: number;
+      atilan: number;
+      yenilen: number;
+      points: number;
+    }> = {};
+
+    groupTeams.forEach((t) => {
+      teamStats[t.name] = {
+        name: t.name,
+        logo: t.logo,
+        played: 0,
+        wins: 0,
+        draws: 0,
+        losses: 0,
+        atilan: 0,
+        yenilen: 0,
+        points: 0
+      };
+    });
+
+    const groupTeamNames = new Set(groupTeams.map((t) => normalizeTeamName(t.name).toLowerCase()));
+
+    // 2. Scan all tournament matches for group stage matches
+    allTournamentMatches.forEach((m) => {
+      if (!m.played) return;
+      const cat = String(m.category || '').toUpperCase().trim();
+      const h = String(m.hafta || '').toLowerCase().trim();
+      const r = String((m as any).round || '').toLowerCase().trim();
+
+      // Ensure it is WPC group match and not knockout/bracket match
+      const isKnockout = 
+        r.includes('qf') || 
+        r.includes('sf') || 
+        r.includes('final') || 
+        h.includes('çeyrek') || 
+        h.includes('ceyrek') || 
+        h.includes('yarı') || 
+        h.includes('yari') || 
+        h.includes('büyük final');
+      if (isKnockout) return;
+
+      const isWpcCat = cat.includes('WPC') || cat.includes('TURNUVA') || cat.includes('WORLD PEACE') || h.includes('wpc') || h.includes('world peace');
+      const isExplicitGroup = r === `group${groupLetter.toLowerCase()}` || h.includes(`${groupLetter.toLowerCase()} grubu`);
+
+      const t1Norm = normalizeTeamName(m.team1);
+      const t2Norm = normalizeTeamName(m.team2);
+      const t1InGroup = groupTeamNames.has(t1Norm.toLowerCase());
+      const t2InGroup = groupTeamNames.has(t2Norm.toLowerCase());
+
+      const belongsToThisGroup = isExplicitGroup || (isWpcCat && (t1InGroup && t2InGroup));
+      if (!belongsToThisGroup) return;
+
+      // Locate stats object
+      const t1Key = groupTeams.find((gt) => isSameTeam(gt.name, t1Norm))?.name || (t1InGroup ? t1Norm : null);
+      const t2Key = groupTeams.find((gt) => isSameTeam(gt.name, t2Norm))?.name || (t2InGroup ? t2Norm : null);
+
+      const s1 = Number(m.score1) || 0;
+      const s2 = Number(m.score2) || 0;
+
+      // Bobblica Averaj Kuralı: "Puan hesaplarken rakip takip Bobblica ise averaja yazma"
+      const hasBobblica = isBobblica(t1Norm) || isBobblica(t2Norm);
+
+      if (t1Key && teamStats[t1Key]) {
+        teamStats[t1Key].played += 1;
+        if (!hasBobblica) {
+          teamStats[t1Key].atilan += s1;
+          teamStats[t1Key].yenilen += s2;
+        }
+        if (s1 > s2) {
+          teamStats[t1Key].wins += 1;
+          teamStats[t1Key].points += 3;
+        } else if (s1 === s2) {
+          teamStats[t1Key].draws += 1;
+          teamStats[t1Key].points += 1;
+        } else {
+          teamStats[t1Key].losses += 1;
+        }
+      }
+
+      if (t2Key && teamStats[t2Key]) {
+        teamStats[t2Key].played += 1;
+        if (!hasBobblica) {
+          teamStats[t2Key].atilan += s2;
+          teamStats[t2Key].yenilen += s1;
+        }
+        if (s2 > s1) {
+          teamStats[t2Key].wins += 1;
+          teamStats[t2Key].points += 3;
+        } else if (s1 === s2) {
+          teamStats[t2Key].draws += 1;
+          teamStats[t2Key].points += 1;
+        } else {
+          teamStats[t2Key].losses += 1;
+        }
+      }
+    });
+
+    // 3. Fallback to team.kg* stats if no group matches played yet in match collection
+    const result = groupTeams.map((gt) => {
+      const stats = teamStats[gt.name] || {
+        name: gt.name,
+        logo: gt.logo,
+        played: 0,
+        wins: 0,
+        draws: 0,
+        losses: 0,
+        atilan: 0,
+        yenilen: 0,
+        points: 0
+      };
+
+      if (stats.played === 0 && ((gt as any).kgw || (gt as any).kgpuan || (gt as any).kgl || (gt as any).kgb)) {
+        stats.wins = Number((gt as any).kgw) || 0;
+        stats.draws = Number((gt as any).kgb) || 0;
+        stats.losses = Number((gt as any).kgl) || 0;
+        stats.atilan = Number((gt as any).kgatilan) || 0;
+        stats.yenilen = Number((gt as any).kgyenilen) || 0;
+        stats.points = Number((gt as any).kgpuan) || 0;
+        stats.played = stats.wins + stats.draws + stats.losses;
+      }
+
+      const gav = stats.atilan - stats.yenilen;
+      return {
+        ...gt,
+        name: gt.name,
+        logo: teamLogos[gt.name] || gt.logo || 'https://via.placeholder.com/32?text=?',
+        oynanan: stats.played,
+        gw: stats.wins,
+        gb: stats.draws,
+        gl: stats.losses,
+        atilan: stats.atilan,
+        yenilen: stats.yenilen,
+        gav,
+        gp: stats.points,
+      };
+    });
+
+    // 4. Sort: Puan, Averaj, Atılan Gol, Galibiyet, Alfabetik
+    return result.sort((a, b) => b.gp - a.gp || b.gav - a.gav || b.atilan - a.atilan || b.gw - a.gw || a.name.localeCompare(b.name));
+  };
+
+  // Helper to find a 2-legged tie match by round, id, or teams
+  const findWpcTieMatch = (tieKey: string, legNumber: 1 | 2, teamA: string, teamB: string): Match | undefined => {
+    const canonicalId = `wpc_5_${tieKey}_leg${legNumber}`;
+    const roundTag = `wpc_${tieKey}_${legNumber}`;
+
+    // 1. By canonical ID or round tag
+    const byIdOrRound = allTournamentMatches.find(m => 
+      m.id === canonicalId || 
+      (m as any).round === roundTag ||
+      (m as any).round === `${tieKey}_${legNumber}`
+    );
+    if (byIdOrRound) return byIdOrRound;
+
+    // 2. By teams and leg indicator
+    return allTournamentMatches.find(m => {
+      if (!isMatchBetweenTeams(m, teamA, teamB)) return false;
+      const h = String(m.hafta || '').toLowerCase();
+      const r = String((m as any).round || '').toLowerCase();
+      const isLeg1 = h.includes('1. maç') || r.endsWith('_1') || (!h.includes('rövanş') && !h.includes('2. maç'));
+      const isLeg2 = h.includes('rövanş') || h.includes('2. maç') || r.endsWith('_2');
+      return legNumber === 1 ? isLeg1 : isLeg2;
+    });
+  };
+
+  // Helper to calculate aggregate tie scores and winner for a 2-legged matchup
+  const computeWpcTie = (
+    tieKey: 'qf1' | 'qf2' | 'qf3' | 'qf4' | 'sf1' | 'sf2',
+    teamA: string, // Seed A (e.g. A1, A2, A3, A4, or Winner QF1/QF3)
+    teamB: string, // Seed B (e.g. B4, B3, B2, B1, or Winner QF2/QF4)
+    title: string,
+    subTitle: string
+  ) => {
+    // Leg 1: Team B (home) vs Team A (away)
+    const leg1Match = findWpcTieMatch(tieKey, 1, teamA, teamB);
+    // Leg 2: Team A (home) vs Team B (away)
+    const leg2Match = findWpcTieMatch(tieKey, 2, teamA, teamB);
+
+    let leg1ScoreA = 0;
+    let leg1ScoreB = 0;
+    if (leg1Match && leg1Match.played) {
+      const s1 = Number(leg1Match.score1) || 0;
+      const s2 = Number(leg1Match.score2) || 0;
+      if (isSameTeam(leg1Match.team1, teamA)) {
+        leg1ScoreA = s1;
+        leg1ScoreB = s2;
+      } else {
+        leg1ScoreA = s2;
+        leg1ScoreB = s1;
+      }
+    }
+
+    let leg2ScoreA = 0;
+    let leg2ScoreB = 0;
+    if (leg2Match && leg2Match.played) {
+      const s1 = Number(leg2Match.score1) || 0;
+      const s2 = Number(leg2Match.score2) || 0;
+      if (isSameTeam(leg2Match.team1, teamA)) {
+        leg2ScoreA = s1;
+        leg2ScoreB = s2;
+      } else {
+        leg2ScoreA = s2;
+        leg2ScoreB = s1;
+      }
+    }
+
+    const isLeg1Played = Boolean(leg1Match?.played);
+    const isLeg2Played = Boolean(leg2Match?.played);
+    const isCompleted = isLeg1Played && isLeg2Played;
+
+    const totalScoreA = leg1ScoreA + leg2ScoreA;
+    const totalScoreB = leg1ScoreB + leg2ScoreB;
+
+    let winner = '';
+    let isTied = false;
+    let penaltyWinner = (leg2Match as any)?.penaltyWinner || (leg1Match as any)?.penaltyWinner || bracketData[`wpc_${tieKey}_pen`];
+
+    if (isCompleted) {
+      if (totalScoreA > totalScoreB) {
+        winner = teamA;
+      } else if (totalScoreB > totalScoreA) {
+        winner = teamB;
+      } else {
+        isTied = true;
+        if (penaltyWinner) {
+          winner = penaltyWinner;
+        }
+      }
+    }
+
+    return {
+      tieKey,
+      title,
+      subTitle,
+      teamA,
+      teamB,
+      leg1Match,
+      leg2Match,
+      leg1ScoreA,
+      leg1ScoreB,
+      leg2ScoreA,
+      leg2ScoreB,
+      totalScoreA,
+      totalScoreB,
+      isLeg1Played,
+      isLeg2Played,
+      isCompleted,
+      winner,
+      isTied,
+      penaltyWinner
+    };
+  };
+
+  // Helper to compile full WPC bracket state (QF 1-4, SF 1-2, Final, Champion)
+  const getWpcBracketData = () => {
+    const groupA = getWpcGroupStandings('A');
+    const groupB = getWpcGroupStandings('B');
+
+    // Rule:
+    // QF1: A1 vs B4
+    // QF2: A2 vs B3
+    // QF3: A3 vs B2
+    // QF4: A4 vs B1
+    const a1 = groupA[0]?.name || bracketData['wpc_qf1_t1'] || 'A Grubu 1.si';
+    const a2 = groupA[1]?.name || bracketData['wpc_qf2_t1'] || 'A Grubu 2.si';
+    const a3 = groupA[2]?.name || bracketData['wpc_qf3_t1'] || 'A Grubu 3.sü';
+    const a4 = groupA[3]?.name || bracketData['wpc_qf4_t1'] || 'A Grubu 4.sü';
+
+    const b1 = groupB[0]?.name || bracketData['wpc_qf4_t2'] || 'B Grubu 1.si';
+    const b2 = groupB[1]?.name || bracketData['wpc_qf3_t2'] || 'B Grubu 2.si';
+    const b3 = groupB[2]?.name || bracketData['wpc_qf2_t2'] || 'B Grubu 3.sü';
+    const b4 = groupB[3]?.name || bracketData['wpc_qf1_t2'] || 'B Grubu 4.sü';
+
+    const qf1 = computeWpcTie('qf1', a1, b4, 'Çeyrek Final 1', 'A1 vs B4');
+    const qf2 = computeWpcTie('qf2', a2, b3, 'Çeyrek Final 2', 'A2 vs B3');
+    const qf3 = computeWpcTie('qf3', a3, b2, 'Çeyrek Final 3', 'A3 vs B2');
+    const qf4 = computeWpcTie('qf4', a4, b1, 'Çeyrek Final 4', 'A4 vs B1');
+
+    const qf1Winner = qf1.winner || bracketData['wpc_sf1_t1'] || '';
+    const qf2Winner = qf2.winner || bracketData['wpc_sf1_t2'] || '';
+    const qf3Winner = qf3.winner || bracketData['wpc_sf2_t1'] || '';
+    const qf4Winner = qf4.winner || bracketData['wpc_sf2_t2'] || '';
+
+    // Semi-Finals:
+    // SF1: Winner QF1 vs Winner QF2
+    // SF2: Winner QF3 vs Winner QF4
+    const sf1 = computeWpcTie('sf1', qf1Winner || 'ÇF 1 Galibi', qf2Winner || 'ÇF 2 Galibi', 'Yarı Final 1', 'ÇF1 Galibi vs ÇF2 Galibi');
+    const sf2 = computeWpcTie('sf2', qf3Winner || 'ÇF 3 Galibi', qf4Winner || 'ÇF 4 Galibi', 'Yarı Final 2', 'ÇF3 Galibi vs ÇF4 Galibi');
+
+    const sf1Winner = sf1.winner || bracketData['wpc_final_t1'] || '';
+    const sf2Winner = sf2.winner || bracketData['wpc_final_t2'] || '';
+
+    // Final (Single Match):
+    const finalMatch = allTournamentMatches.find(m => {
+      const r = String((m as any).round || '').toLowerCase();
+      const h = String(m.hafta || '').toLowerCase();
+      const cat = String(m.category || '').toUpperCase();
+      if (m.id === 'wpc_5_final' || r === 'wpc_final') return true;
+      if (cat.includes('WPC') || cat.includes('TURNUVA') || h.includes('wpc')) {
+        if ((r === 'final' || h.includes('büyük final')) && !h.includes('yarı') && !h.includes('çeyrek')) return true;
+        if (sf1Winner && sf2Winner && isMatchBetweenTeams(m, sf1Winner, sf2Winner) && !h.includes('yarı') && !h.includes('çeyrek')) return true;
+      }
+      return false;
+    });
+
+    let champion = '';
+    if (finalMatch && finalMatch.played) {
+      champion = getWinnerOfMatch(finalMatch);
+    } else if (bracketData['wpc_champion']) {
+      champion = bracketData['wpc_champion'];
+    }
+
+    return {
+      qf1,
+      qf2,
+      qf3,
+      qf4,
+      qf1Winner,
+      qf2Winner,
+      qf3Winner,
+      qf4Winner,
+      sf1,
+      sf2,
+      sf1Winner,
+      sf2Winner,
+      finalMatch,
+      champion
+    };
+  };
+
+  // Helper to auto-create WPC matches (QF 1-4, SF 1-2, Final)
+  const autoCreateWpcMatches = async (force: boolean = false) => {
+    const groupA = getWpcGroupStandings('A');
+    const groupB = getWpcGroupStandings('B');
+    if (groupA.length < 4 || groupB.length < 4) return;
+
+    const all5Played = groupA.length === 6 && groupB.length === 6 && groupA.every(t => t.oynanan >= 5) && groupB.every(t => t.oynanan >= 5);
+    if (!all5Played && !force) return;
+
+    // Seeds:
+    // A1 vs B4
+    // A2 vs B3
+    // A3 vs B2
+    // A4 vs B1
+    const a1 = groupA[0].name;
+    const a2 = groupA[1].name;
+    const a3 = groupA[2].name;
+    const a4 = groupA[3].name;
+
+    const b1 = groupB[0].name;
+    const b2 = groupB[1].name;
+    const b3 = groupB[2].name;
+    const b4 = groupB[3].name;
+
+    const qfPairings = [
+      { key: 'qf1', tA: a1, tB: b4, label: 'Çeyrek Final 1' },
+      { key: 'qf2', tA: a2, tB: b3, label: 'Çeyrek Final 2' },
+      { key: 'qf3', tA: a3, tB: b2, label: 'Çeyrek Final 3' },
+      { key: 'qf4', tA: a4, tB: b1, label: 'Çeyrek Final 4' },
+    ];
+
+    const todayStr = new Date().toLocaleDateString('tr-TR');
+    const now = Date.now();
+    const newMatches: Match[] = [];
+
+    qfPairings.forEach(({ key, tA, tB, label }) => {
+      // Leg 1: Team B (home) vs Team A (away)
+      const leg1Id = `wpc_5_${key}_leg1`;
+      const leg1Existing = allTournamentMatches.find(m => m.id === leg1Id || (m as any).round === `wpc_${key}_1` || (m as any).round === `${key}_1`);
+      if (!leg1Existing) {
+        newMatches.push({
+          id: leg1Id,
+          team1: tB,
+          team2: tA,
+          category: 'TURNUVA',
+          season: 5 as any,
+          round: `wpc_${key}_1`,
+          hafta: `${label} (1. Maç)`,
+          score1: '0',
+          score2: '0',
+          played: false,
+          date: todayStr,
+          datejav: now,
+          ligm: false,
+          timeline: [],
+          lineup: {}
+        });
+      }
+
+      // Leg 2: Team A (home) vs Team B (away)
+      const leg2Id = `wpc_5_${key}_leg2`;
+      const leg2Existing = allTournamentMatches.find(m => m.id === leg2Id || (m as any).round === `wpc_${key}_2` || (m as any).round === `${key}_2`);
+      if (!leg2Existing) {
+        newMatches.push({
+          id: leg2Id,
+          team1: tA,
+          team2: tB,
+          category: 'TURNUVA',
+          season: 5 as any,
+          round: `wpc_${key}_2`,
+          hafta: `${label} (Rövanş)`,
+          score1: '0',
+          score2: '0',
+          played: false,
+          date: todayStr,
+          datejav: now + 1000,
+          ligm: false,
+          timeline: [],
+          lineup: {}
+        });
+      }
+    });
+
+    if (newMatches.length > 0) {
+      setMatches(prev => {
+        const next = [...prev];
+        newMatches.forEach(nm => {
+          const idx = next.findIndex(m => m.id === nm.id);
+          if (idx >= 0) next[idx] = nm;
+          else next.push(nm);
+        });
+        return next;
+      });
+
+      for (const m of newMatches) {
+        saveStoredTournamentMatch(m);
+        try {
+          await setDoc(doc(db, 'matches', m.id), m, { merge: true });
+        } catch (e) {}
+      }
+      setToastMessage('🏆 World Peace Cup Çeyrek Final eşleşmeleri fikstüre eklendi!');
+    } else {
+      setToastMessage('ℹ️ Çeyrek Final maçları zaten fikstürde mevcut.');
+    }
+  };
+
+  // Helper to set penalty winner for tied 2-legged ties
+  const handleSetPenaltyWinner = async (tieKey: string, chosenTeam: string) => {
+    const update = { [`wpc_${tieKey}_pen`]: chosenTeam };
+    setBracketData(prev => ({ ...prev, ...update }));
+    saveStoredBracketData(update);
+    try {
+      await setDoc(doc(db, 'brackets', 'data'), update, { merge: true });
+    } catch (e) {}
+    setToastMessage(`🎯 Penaltı galibi kaydedildi: ${chosenTeam}`);
+  };
+
+  // Helper to render interactive 2-legged tie card
+  const renderWpcTieCard = (tie: ReturnType<typeof computeWpcTie>, subTitleText: string) => {
+    const isCompleted = tie.isCompleted;
+    const isTiedPendingPenalty = tie.isTied && !tie.winner;
+
+    return (
+      <div className="bg-white rounded-3xl border-2 border-brand-maroon/30 hover:border-brand-maroon shadow-md hover:shadow-xl transition-all p-4 flex flex-col justify-between gap-3 relative select-text">
+        {/* Header */}
+        <div className="flex justify-between items-center border-b border-gray-100 pb-2 text-[10px] font-black uppercase tracking-wider text-brand-maroon">
+          <div className="flex items-center gap-1.5">
+            <span>{tie.title}</span>
+            <span className="text-[9px] text-gray-400 font-bold">({subTitleText})</span>
+          </div>
+          {isCompleted ? (
+            <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full text-[8px] font-black">
+              BİTTİ
+            </span>
+          ) : tie.isLeg1Played ? (
+            <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full text-[8px] font-black">
+              1. MAÇ OYNANDI
+            </span>
+          ) : (
+            <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full text-[8px] font-black">
+              BEKLENİYOR
+            </span>
+          )}
+        </div>
+
+        {/* Aggregate Score Bar (Toplam Skor) */}
+        <div className="bg-gradient-to-r from-gray-900 via-brand-dark to-gray-900 text-white rounded-2xl p-2.5 px-3 flex items-center justify-between shadow-inner">
+          {/* Team A */}
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <img 
+              src={teamLogos[tie.teamA] || 'https://via.placeholder.com/28?text=?'} 
+              className="w-7 h-7 rounded-full object-cover border border-brand-gold bg-white shrink-0" 
+              alt={tie.teamA} 
+            />
+            <div className="truncate">
+              <span className={`text-xs font-black truncate block ${isSameTeam(tie.winner, tie.teamA) ? 'text-brand-gold' : 'text-white'}`}>
+                {tie.teamA}
+              </span>
+              {isSameTeam(tie.winner, tie.teamA) && (
+                <span className="text-[8px] font-black text-emerald-400 tracking-wider">TUR ATLADI ✓</span>
+              )}
+            </div>
+          </div>
+
+          {/* Aggregate Badge */}
+          <div className="flex flex-col items-center px-3 shrink-0">
+            <span className="text-[8px] font-black text-brand-gold/80 uppercase tracking-widest">TOPLAM</span>
+            <div className="text-sm font-black text-brand-gold tracking-widest px-2 py-0.5 bg-black/60 rounded-lg border border-brand-gold/40">
+              {tie.totalScoreA} - {tie.totalScoreB}
+            </div>
+          </div>
+
+          {/* Team B */}
+          <div className="flex items-center justify-end gap-2 min-w-0 flex-1 text-right">
+            <div className="truncate">
+              <span className={`text-xs font-black truncate block ${isSameTeam(tie.winner, tie.teamB) ? 'text-brand-gold' : 'text-white'}`}>
+                {tie.teamB}
+              </span>
+              {isSameTeam(tie.winner, tie.teamB) && (
+                <span className="text-[8px] font-black text-emerald-400 tracking-wider">TUR ATLADI ✓</span>
+              )}
+            </div>
+            <img 
+              src={teamLogos[tie.teamB] || 'https://via.placeholder.com/28?text=?'} 
+              className="w-7 h-7 rounded-full object-cover border border-brand-gold bg-white shrink-0" 
+              alt={tie.teamB} 
+            />
+          </div>
+        </div>
+
+        {/* 1. Maç & 2. Maç (Rövanş) Rows */}
+        <div className="space-y-2 text-xs">
+          {/* LEG 1 */}
+          <div className="bg-gray-50 hover:bg-gray-100 rounded-xl p-2 border border-gray-200 transition-colors flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              <span className="text-[9px] font-black text-brand-maroon bg-white px-1.5 py-0.5 rounded border border-gray-200 shrink-0">
+                1. Maç
+              </span>
+              <span className="text-[11px] font-bold text-gray-700 truncate">
+                {tie.teamB} vs {tie.teamA}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="font-black text-xs px-2 py-0.5 rounded bg-white border border-gray-300">
+                {tie.leg1Match?.played ? `${tie.leg1Match.score1} - ${tie.leg1Match.score2}` : 'VS'}
+              </span>
+              <button
+                type="button"
+                onClick={() => handleOpenQuickScore(
+                  `${tie.title} (1. Maç)`,
+                  `wpc_${tie.tieKey}_1`,
+                  'wpc',
+                  5,
+                  tie.leg1Match,
+                  tie.teamB,
+                  tie.teamA
+                )}
+                className="bg-brand-maroon hover:bg-black text-brand-gold text-[9px] font-black px-2 py-1 rounded-lg uppercase transition-colors"
+                title="1. Maç Skorunu Gir"
+              >
+                ⚡ Skor
+              </button>
+            </div>
+          </div>
+
+          {/* LEG 2 */}
+          <div className="bg-gray-50 hover:bg-gray-100 rounded-xl p-2 border border-gray-200 transition-colors flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              <span className="text-[9px] font-black text-purple-700 bg-white px-1.5 py-0.5 rounded border border-gray-200 shrink-0">
+                Rövanş
+              </span>
+              <span className="text-[11px] font-bold text-gray-700 truncate">
+                {tie.teamA} vs {tie.teamB}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="font-black text-xs px-2 py-0.5 rounded bg-white border border-gray-300">
+                {tie.leg2Match?.played ? `${tie.leg2Match.score1} - ${tie.leg2Match.score2}` : 'VS'}
+              </span>
+              <button
+                type="button"
+                onClick={() => handleOpenQuickScore(
+                  `${tie.title} (Rövanş)`,
+                  `wpc_${tie.tieKey}_2`,
+                  'wpc',
+                  5,
+                  tie.leg2Match,
+                  tie.teamA,
+                  tie.teamB
+                )}
+                className="bg-brand-maroon hover:bg-black text-brand-gold text-[9px] font-black px-2 py-1 rounded-lg uppercase transition-colors"
+                title="Rövanş Maçı Skorunu Gir"
+              >
+                ⚡ Skor
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Tie-breaker & Penalty Winner Prompt if Agrega is level */}
+        {isTiedPendingPenalty && (
+          <div className="bg-amber-50 border border-amber-300 rounded-xl p-2.5 text-center space-y-1.5 animate-pulse">
+            <span className="text-[10px] font-black text-amber-900 block">
+              ⚖️ Toplam Skor Eşit! Penaltı Atışları Galibini Belirleyiniz:
+            </span>
+            <div className="flex items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleSetPenaltyWinner(tie.tieKey, tie.teamA)}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-black text-[10px] px-2.5 py-1 rounded-lg shadow-xs"
+              >
+                🎯 {tie.teamA} Kazandı
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetPenaltyWinner(tie.tieKey, tie.teamB)}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-black text-[10px] px-2.5 py-1 rounded-lg shadow-xs"
+              >
+                🎯 {tie.teamB} Kazandı
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Penalty winner badge if won via penalties */}
+        {tie.penaltyWinner && (
+          <div className="text-[9px] font-black text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-lg text-center">
+            🎯 Penaltılar Sonucu Galip: <strong>{tie.penaltyWinner}</strong>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Helper to render interactive WPC Final Card
+  const renderWpcFinalCard = (finalMatch: Match | undefined, sf1Winner: string, sf2Winner: string) => {
+    const t1 = finalMatch?.team1 || sf1Winner || 'Yarı Final 1 Galibi';
+    const t2 = finalMatch?.team2 || sf2Winner || 'Yarı Final 2 Galibi';
+    const isPlayed = Boolean(finalMatch?.played);
+    const s1 = finalMatch ? finalMatch.score1 : '0';
+    const s2 = finalMatch ? finalMatch.score2 : '0';
+    const winner = isPlayed ? getWinnerOfMatch(finalMatch) : '';
+
+    return (
+      <div className="bg-white rounded-3xl border-3 border-brand-gold hover:border-brand-maroon shadow-xl transition-all p-4 flex flex-col justify-between gap-3 relative select-text">
+        <div className="flex justify-between items-center border-b border-gray-100 pb-2 text-[10px] font-black uppercase tracking-wider text-brand-maroon">
+          <span>🏆 BÜYÜK FİNAL</span>
+          {isPlayed ? (
+            <span className="bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full text-[8px] font-black">
+              ŞAMPİYON BELİRLENDİ
+            </span>
+          ) : sf1Winner && sf2Winner ? (
+            <span className="bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full text-[8px] font-black">
+              FİNALİSTLER HAZIR
+            </span>
+          ) : (
+            <span className="bg-gray-100 text-gray-500 px-2.5 py-0.5 rounded-full text-[8px] font-black">
+              BEKLENİYOR
+            </span>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          {/* Team 1 */}
+          <div className={`flex items-center justify-between gap-2 p-2 rounded-xl transition-colors ${isSameTeam(winner, t1) ? 'bg-brand-maroon text-brand-gold font-black' : 'bg-gray-50 text-gray-800'}`}>
+            <div className="flex items-center gap-2 truncate">
+              <img 
+                src={teamLogos[t1] || 'https://via.placeholder.com/28?text=?'} 
+                className="w-7 h-7 rounded-full object-cover border border-gray-300 bg-white shrink-0" 
+                alt={t1} 
+              />
+              <span className="text-xs font-black truncate">{t1}</span>
+            </div>
+            <span className="text-xs px-2.5 py-0.5 rounded font-black shrink-0 bg-white/20">
+              {isPlayed ? s1 : '-'}
+            </span>
+          </div>
+
+          {/* Team 2 */}
+          <div className={`flex items-center justify-between gap-2 p-2 rounded-xl transition-colors ${isSameTeam(winner, t2) ? 'bg-brand-maroon text-brand-gold font-black' : 'bg-gray-50 text-gray-800'}`}>
+            <div className="flex items-center gap-2 truncate">
+              <img 
+                src={teamLogos[t2] || 'https://via.placeholder.com/28?text=?'} 
+                className="w-7 h-7 rounded-full object-cover border border-gray-300 bg-white shrink-0" 
+                alt={t2} 
+              />
+              <span className="text-xs font-black truncate">{t2}</span>
+            </div>
+            <span className="text-xs px-2.5 py-0.5 rounded font-black shrink-0 bg-white/20">
+              {isPlayed ? s2 : '-'}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 mt-1">
+          <button
+            type="button"
+            onClick={() => handleOpenQuickScore(
+              'World Peace Cup Büyük Final',
+              'wpc_final',
+              'wpc',
+              5,
+              finalMatch,
+              t1,
+              t2
+            )}
+            className="flex-1 py-2 bg-brand-maroon hover:bg-black text-brand-gold text-[10px] font-black rounded-xl uppercase tracking-wider transition-colors shadow flex items-center justify-center gap-1.5"
+          >
+            <span>⚡</span>
+            <span>Final Skorunu Gir</span>
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // Helper to render World Peace Cup Knockout Bracket
+  const renderWpcBracket = () => {
+    const wpcData = getWpcBracketData();
+    const groupA = getWpcGroupStandings('A');
+    const groupB = getWpcGroupStandings('B');
+    const all5Played = groupA.length === 6 && groupB.length === 6 && groupA.every(t => t.oynanan >= 5) && groupB.every(t => t.oynanan >= 5);
+
+    return (
+      <div className="w-full space-y-6">
+        {/* Banner with Status & Quick Actions */}
+        <div className="bg-gradient-to-r from-purple-950 via-brand-dark to-purple-950 text-white rounded-3xl p-5 border-2 border-brand-gold/50 shadow-xl flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-brand-gold text-brand-dark flex items-center justify-center text-2xl font-black shrink-0 shadow-lg">
+              🏆
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-black text-sm md:text-base text-brand-gold uppercase tracking-wide">
+                  WORLD PEACE CUP ELEME AĞACI (BRACKET)
+                </h3>
+                <span className="text-[10px] font-black bg-purple-600/80 text-white px-2.5 py-0.5 rounded-full border border-purple-300 shadow-xs">
+                  2 MAÇ ÜZERİNDEN (RÖVANŞLI)
+                </span>
+              </div>
+              <p className="text-xs text-gray-300 mt-1">
+                {all5Played 
+                  ? '✅ Grup aşaması tamamlandı! Çeyrek Final eşleşmeleri resmi puan durumuna göre oluşturuldu.' 
+                  : '⏳ Grup aşaması devam ediyor. Takımlar 5 maçı tamamlayınca Çeyrek Finaller (A1-B4, A2-B3, A3-B2, A4-B1) otomatik kilitlenip fikstüre eklenir.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => autoCreateWpcMatches(true)}
+                className="bg-brand-gold hover:bg-amber-400 text-brand-dark font-black text-xs uppercase px-4 py-2 rounded-xl transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+                title="Puan durumundaki mevcut sıralamaya göre çeyrek finalleri fikstüre ekler"
+              >
+                <span>⚡</span>
+                <span>{wpcData.qf1.leg1Match ? 'Eşleşmeleri Yenile' : 'Fikstürü Şimdi Oluştur'}</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* BRACKET TREE */}
+        <div className="w-full overflow-x-auto py-4">
+          <div className="flex gap-6 md:gap-10 justify-center items-start min-w-[950px] max-w-7xl mx-auto select-text">
+            {/* COLUMN 1: ÇEYREK FİNALLER (4 Ties) */}
+            <div className="flex flex-col gap-4 w-72 shrink-0">
+              <div className="bg-brand-maroon text-brand-gold py-1.5 px-3 rounded-xl text-center font-black text-xs uppercase tracking-wider shadow">
+                ⚔️ ÇEYREK FİNAL (2 MAÇ)
+              </div>
+              {renderWpcTieCard(wpcData.qf1, 'A1 vs B4')}
+              {renderWpcTieCard(wpcData.qf2, 'A2 vs B3')}
+              {renderWpcTieCard(wpcData.qf3, 'A3 vs B2')}
+              {renderWpcTieCard(wpcData.qf4, 'A4 vs B1')}
+            </div>
+
+            {/* COLUMN 2: YARI FİNALLER (2 Ties) */}
+            <div className="flex flex-col gap-8 w-72 shrink-0 pt-16">
+              <div className="bg-amber-950 text-amber-200 py-1.5 px-3 rounded-xl text-center font-black text-xs uppercase tracking-wider shadow border border-amber-600/50">
+                🥈 YARI FİNAL (2 MAÇ)
+              </div>
+              {renderWpcTieCard(wpcData.sf1, 'ÇF 1 Galibi vs ÇF 2 Galibi')}
+              {renderWpcTieCard(wpcData.sf2, 'ÇF 3 Galibi vs ÇF 4 Galibi')}
+            </div>
+
+            {/* COLUMN 3: BÜYÜK FİNAL & ŞAMPİYON */}
+            <div className="flex flex-col gap-6 w-72 shrink-0 pt-28">
+              <div className="bg-gradient-to-r from-brand-maroon to-black text-brand-gold py-1.5 px-3 rounded-xl text-center font-black text-xs uppercase tracking-wider shadow border border-brand-gold">
+                🏆 BÜYÜK FİNAL (TEK MAÇ)
+              </div>
+              {renderWpcFinalCard(wpcData.finalMatch, wpcData.sf1Winner, wpcData.sf2Winner)}
+
+              {/* Champion Showcase */}
+              <div className="bg-gradient-to-b from-[#2a1a08] to-[#120b03] border-3 border-brand-gold rounded-3xl overflow-hidden shadow-2xl text-center">
+                <div className="bg-brand-gold text-brand-dark py-2 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-1.5 shadow">
+                  <span>👑</span>
+                  <span>WORLD PEACE CUP ŞAMPİYONU</span>
+                  <span>👑</span>
+                </div>
+                <div className="py-5 px-4 flex flex-col justify-center items-center min-h-[130px] gap-2">
+                  {wpcData.champion ? (
+                    <div 
+                      onClick={() => onNavigate({ type: 'team-detail', teamName: wpcData.champion })}
+                      className="cursor-pointer group flex flex-col items-center gap-2"
+                    >
+                      <img 
+                        src={teamLogos[wpcData.champion] || 'https://via.placeholder.com/64?text=?'} 
+                        className="w-16 h-16 rounded-full object-cover border-2 border-brand-gold bg-white shadow-md group-hover:scale-105 transition-transform" 
+                        alt={wpcData.champion} 
+                      />
+                      <span className="font-black text-base text-brand-gold tracking-wide leading-tight group-hover:underline">
+                        {wpcData.champion}
+                      </span>
+                      <span className="bg-brand-gold text-brand-dark font-black text-[9px] px-2.5 py-0.5 rounded-full uppercase">
+                        KUPA SAHİBİ
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-center py-4 space-y-1">
+                      <span className="text-2xl block">⏳</span>
+                      <span className="text-gray-400 font-bold text-xs block">Büyük Final Galibi Bekleniyor</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Helper to render WPC Group Standings Table
   const renderWpcGroup = (groupLetter: 'A' | 'B') => {
-    const groupTeams = teams
-      .filter((team: any) => team.kgrup === groupLetter)
-      .map((team: any) => {
-        const atilan = Number(team.kgatilan) || 0;
-        const yenilen = Number(team.kgyenilen) || 0;
-        const gav = atilan - yenilen;
-        const gw = Number(team.kgw) || 0;
-        const gb = Number(team.kgb) || 0;
-        const gl = Number(team.kgl) || 0;
-        const gp = Number(team.kgpuan) || 0;
-        const oynanan = gw + gb + gl;
-        return {
-          ...team,
-          oynanan,
-          gw,
-          gb,
-          gl,
-          gav,
-          gp,
-        };
-      })
-      .sort((a, b) => b.gp - a.gp || b.gav - a.gav);
+    const groupTeams = getWpcGroupStandings(groupLetter);
 
     const groupName = currentLang === 'tr'
       ? `${groupLetter} GRUBU`
@@ -920,8 +1869,10 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
 
     return (
       <div className="bg-[#1a1a1a] rounded-3xl overflow-hidden border border-gray-800 shadow-md">
-        <div className="bg-brand-maroon text-brand-gold py-3 px-4 text-center font-black text-sm select-none">
-          {groupName}
+        <div className="bg-brand-maroon text-brand-gold py-3 px-4 text-center font-black text-sm select-none flex items-center justify-between">
+          <span className="text-[10px] bg-brand-gold text-brand-dark px-2 py-0.5 rounded font-black">WPC</span>
+          <span className="tracking-wider">{groupName}</span>
+          <span className="text-[10px] text-brand-gold/80 font-bold">İlk 4 Çeyrek Finale Çıkar</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-white border-collapse">
@@ -929,44 +1880,64 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
               <tr className="border-b-2 border-brand-gold bg-[#262626] text-[10px] font-black uppercase tracking-wider text-gray-400">
                 <th className="py-3 px-3 text-center w-12">#</th>
                 <th className="py-3 px-3 text-left">{t.takim}</th>
-                <th className="py-3 px-2 text-center">O</th>
-                <th className="py-3 px-2 text-center">G</th>
-                <th className="py-3 px-2 text-center">B</th>
-                <th className="py-3 px-2 text-center">M</th>
-                <th className="py-3 px-2 text-center">AV</th>
-                <th className="py-3 px-3 text-center w-16">P</th>
+                <th className="py-3 px-2 text-center" title="Oynanan Maç">O</th>
+                <th className="py-3 px-2 text-center" title="Galibiyet">G</th>
+                <th className="py-3 px-2 text-center" title="Beraberlik">B</th>
+                <th className="py-3 px-2 text-center" title="Mağlubiyet">M</th>
+                <th className="py-3 px-2 text-center" title="Averaj (Bobblica hariç)">AV</th>
+                <th className="py-3 px-3 text-center w-16" title="Puan">P</th>
               </tr>
             </thead>
             <tbody>
               {groupTeams.map((team, i) => {
                 const avColor = team.gav > 0 ? 'text-green-500' : team.gav < 0 ? 'text-red-500' : 'text-gray-400';
-                const rowBg = i < 4 ? 'bg-[#a3267b]/20 hover:bg-[#a3267b]/30' : 'hover:bg-white/5';
+                // Top 4 qualify for QF!
+                const isQualifying = i < 4;
+                const rowBg = isQualifying 
+                  ? 'bg-emerald-950/20 hover:bg-emerald-900/30' 
+                  : 'bg-rose-950/15 hover:bg-rose-900/25';
+                const rankBadgeBg = isQualifying 
+                  ? 'bg-emerald-600 text-white' 
+                  : 'bg-gray-800 text-gray-400';
+                const seedTag = isQualifying ? `${groupLetter}${i + 1}` : '-';
+
                 return (
                   <tr 
                     key={team.name}
                     onClick={() => onNavigate({ type: 'team-detail', teamName: team.name })}
                     className={`border-b border-[#2a2a2a] cursor-pointer transition-colors ${rowBg}`}
                   >
-                    <td className="py-2.5 px-3 text-center font-black text-brand-gold">{i + 1}</td>
+                    <td className="py-2.5 px-3 text-center font-black">
+                      <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-black ${rankBadgeBg}`}>
+                        {i + 1}
+                      </span>
+                    </td>
                     <td className="py-2.5 px-3 text-left">
                       <div className="flex items-center gap-2">
                         <img 
-                          src={team.logo} 
+                          src={teamLogos[team.name] || team.logo || 'https://via.placeholder.com/32?text=?'} 
                           className="w-8 h-8 rounded-full bg-white object-cover border border-brand-gold shrink-0" 
                           alt="logo" 
                           onError={(e) => {
                             (e.target as HTMLImageElement).src = 'https://via.placeholder.com/32?text=?';
                           }}
                         />
-                        <span className="font-bold text-xs tracking-wide truncate w-32">{team.name}</span>
+                        <div className="truncate max-w-[140px]">
+                          <span className="font-bold text-xs tracking-wide text-white block truncate">{team.name}</span>
+                          {isQualifying && (
+                            <span className="text-[9px] font-black text-brand-gold/80 font-mono">
+                              {seedTag} Çeyrek Final
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </td>
-                    <td className="py-2.5 px-2 text-center text-xs font-bold">{team.oynanan}</td>
-                    <td className="py-2.5 px-2 text-center text-xs font-bold text-green-500">{team.gw}</td>
-                    <td className="py-2.5 px-2 text-center text-xs font-bold text-gray-400">{team.gb}</td>
-                    <td className="py-2.5 px-2 text-center text-xs font-bold text-red-500">{team.gl}</td>
-                    <td className={`py-2.5 px-2 text-center text-xs font-extrabold ${avColor}`}>
-                      {team.gav > 0 ? '+' : ''}{team.gav}
+                    <td className="py-2.5 px-2 text-center text-xs font-bold text-gray-200">{team.oynanan}</td>
+                    <td className="py-2.5 px-2 text-center text-xs font-bold text-green-400">{team.gw}</td>
+                    <td className="py-2.5 px-2 text-center text-xs font-bold text-amber-300">{team.gb}</td>
+                    <td className="py-2.5 px-2 text-center text-xs font-bold text-red-400">{team.gl}</td>
+                    <td className={`py-2.5 px-2 text-center text-xs font-black ${avColor}`}>
+                      {team.gav > 0 ? `+${team.gav}` : team.gav}
                     </td>
                     <td className="py-2.5 px-3 text-center font-black text-sm text-brand-gold">{team.gp}</td>
                   </tr>
@@ -978,6 +1949,161 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
       </div>
     );
   };
+
+  // Synchronize WPC bracket progression automatically (QF -> SF -> Final -> Champion)
+  useEffect(() => {
+    if (teams.length < 12) return;
+    const groupA = getWpcGroupStandings('A');
+    const groupB = getWpcGroupStandings('B');
+    if (groupA.length < 4 || groupB.length < 4) return;
+
+    const all5Played = groupA.length === 6 && groupB.length === 6 && groupA.every(t => t.oynanan >= 5) && groupB.every(t => t.oynanan >= 5);
+    const wpcData = getWpcBracketData();
+
+    // 1. If all group matches are played (all 12 teams have 5 matches played), auto-create 4 Quarter-Final ties if not yet created
+    if (all5Played && !wpcData.qf1.leg1Match) {
+      autoCreateWpcMatches(false);
+    }
+
+    // 2. If all 4 QF ties are completed, auto-create Semi-Finals if not yet created
+    if (wpcData.qf1Winner && wpcData.qf2Winner && wpcData.qf3Winner && wpcData.qf4Winner) {
+      const sf1_1_Id = 'wpc_5_sf1_leg1';
+      const sf1_2_Id = 'wpc_5_sf1_leg2';
+      const sf2_1_Id = 'wpc_5_sf2_leg1';
+      const sf2_2_Id = 'wpc_5_sf2_leg2';
+
+      const hasSf1 = allTournamentMatches.some(m => m.id === sf1_1_Id || (m as any).round === 'wpc_sf1_1');
+      const hasSf2 = allTournamentMatches.some(m => m.id === sf2_1_Id || (m as any).round === 'wpc_sf2_1');
+
+      if (!hasSf1 || !hasSf2) {
+        const todayStr = new Date().toLocaleDateString('tr-TR');
+        const now = Date.now();
+        const sfMatches: Match[] = [
+          {
+            id: sf1_1_Id,
+            team1: wpcData.qf2Winner,
+            team2: wpcData.qf1Winner,
+            category: 'TURNUVA',
+            season: 5 as any,
+            round: 'wpc_sf1_1',
+            hafta: 'Yarı Final 1 (1. Maç)',
+            score1: '0',
+            score2: '0',
+            played: false,
+            date: todayStr,
+            datejav: now,
+            ligm: false,
+            timeline: [],
+            lineup: {}
+          },
+          {
+            id: sf1_2_Id,
+            team1: wpcData.qf1Winner,
+            team2: wpcData.qf2Winner,
+            category: 'TURNUVA',
+            season: 5 as any,
+            round: 'wpc_sf1_2',
+            hafta: 'Yarı Final 1 (Rövanş)',
+            score1: '0',
+            score2: '0',
+            played: false,
+            date: todayStr,
+            datejav: now + 1000,
+            ligm: false,
+            timeline: [],
+            lineup: {}
+          },
+          {
+            id: sf2_1_Id,
+            team1: wpcData.qf4Winner,
+            team2: wpcData.qf3Winner,
+            category: 'TURNUVA',
+            season: 5 as any,
+            round: 'wpc_sf2_1',
+            hafta: 'Yarı Final 2 (1. Maç)',
+            score1: '0',
+            score2: '0',
+            played: false,
+            date: todayStr,
+            datejav: now + 2000,
+            ligm: false,
+            timeline: [],
+            lineup: {}
+          },
+          {
+            id: sf2_2_Id,
+            team1: wpcData.qf3Winner,
+            team2: wpcData.qf4Winner,
+            category: 'TURNUVA',
+            season: 5 as any,
+            round: 'wpc_sf2_2',
+            hafta: 'Yarı Final 2 (Rövanş)',
+            score1: '0',
+            score2: '0',
+            played: false,
+            date: todayStr,
+            datejav: now + 3000,
+            ligm: false,
+            timeline: [],
+            lineup: {}
+          }
+        ];
+
+        setMatches(prev => {
+          const next = [...prev];
+          sfMatches.forEach(sm => {
+            const idx = next.findIndex(m => m.id === sm.id);
+            if (idx >= 0) next[idx] = sm;
+            else next.push(sm);
+          });
+          return next;
+        });
+
+        sfMatches.forEach(sm => {
+          saveStoredTournamentMatch(sm);
+          setDoc(doc(db, 'matches', sm.id), sm, { merge: true }).catch(() => {});
+        });
+      }
+    }
+
+    // 3. If both Semi-Finals are completed, auto-create Büyük Final if not yet created
+    if (wpcData.sf1Winner && wpcData.sf2Winner) {
+      const finalId = 'wpc_5_final';
+      const hasFinal = allTournamentMatches.some(m => m.id === finalId || (m as any).round === 'wpc_final');
+      if (!hasFinal) {
+        const todayStr = new Date().toLocaleDateString('tr-TR');
+        const now = Date.now();
+        const fMatch: Match = {
+          id: finalId,
+          team1: wpcData.sf1Winner,
+          team2: wpcData.sf2Winner,
+          category: 'TURNUVA',
+          season: 5 as any,
+          round: 'wpc_final',
+          hafta: 'Büyük Final',
+          score1: '0',
+          score2: '0',
+          played: false,
+          date: todayStr,
+          datejav: now + 4000,
+          ligm: false,
+          timeline: [],
+          lineup: {}
+        };
+
+        setMatches(prev => {
+          const next = [...prev];
+          const idx = next.findIndex(m => m.id === finalId);
+          if (idx >= 0) next[idx] = fMatch;
+          else next.push(fMatch);
+          return next;
+        });
+
+        saveStoredTournamentMatch(fMatch);
+        setDoc(doc(db, 'matches', finalId), fMatch, { merge: true }).catch(() => {});
+      }
+    }
+  }, [allTournamentMatches, teams]);
 
   // Helper to render Bracket match card based strictly on tournament Match data
   const renderBracketMatchCard = (
@@ -1797,6 +2923,8 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
                 {renderWpcGroup('B')}
               </div>
 
+              {renderWpcBracket()}
+
               {/* WPC ELO Katsayısı Bilgi Kartı */}
               <div className="max-w-3xl mx-auto bg-gradient-to-r from-brand-maroon/5 via-brand-gold/15 to-brand-maroon/5 border-2 border-brand-gold/60 rounded-2xl p-4 shadow-sm select-text">
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
@@ -1961,9 +3089,19 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
                     <>
                       <option value="groupA">A Grubu</option>
                       <option value="groupB">B Grubu</option>
-                      <option value="semi1">Yarı Final 1</option>
-                      <option value="semi2">Yarı Final 2</option>
-                      <option value="final">Büyük Final</option>
+                      <option value="wpc_qf1_1">Çeyrek Final 1 (1. Maç)</option>
+                      <option value="wpc_qf1_2">Çeyrek Final 1 (Rövanş)</option>
+                      <option value="wpc_qf2_1">Çeyrek Final 2 (1. Maç)</option>
+                      <option value="wpc_qf2_2">Çeyrek Final 2 (Rövanş)</option>
+                      <option value="wpc_qf3_1">Çeyrek Final 3 (1. Maç)</option>
+                      <option value="wpc_qf3_2">Çeyrek Final 3 (Rövanş)</option>
+                      <option value="wpc_qf4_1">Çeyrek Final 4 (1. Maç)</option>
+                      <option value="wpc_qf4_2">Çeyrek Final 4 (Rövanş)</option>
+                      <option value="wpc_sf1_1">Yarı Final 1 (1. Maç)</option>
+                      <option value="wpc_sf1_2">Yarı Final 1 (Rövanş)</option>
+                      <option value="wpc_sf2_1">Yarı Final 2 (1. Maç)</option>
+                      <option value="wpc_sf2_2">Yarı Final 2 (Rövanş)</option>
+                      <option value="wpc_final">Büyük Final</option>
                     </>
                   ) : (
                     <>
@@ -2123,7 +3261,7 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
                     type="number"
                     min="0"
                     value={qsScore1}
-                    onChange={(e) => setQsScore1(e.target.value)}
+                    onChange={(e) => handleScore1Change(e.target.value)}
                     className="w-16 h-12 text-center text-2xl font-black bg-brand-card border-2 border-brand-maroon rounded-xl text-brand-maroon shadow-inner"
                   />
                 </div>
@@ -2172,7 +3310,7 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
                     type="number"
                     min="0"
                     value={qsScore2}
-                    onChange={(e) => setQsScore2(e.target.value)}
+                    onChange={(e) => handleScore2Change(e.target.value)}
                     className="w-16 h-12 text-center text-2xl font-black bg-brand-card border-2 border-brand-maroon rounded-xl text-brand-maroon shadow-inner"
                   />
                 </div>
@@ -2298,6 +3436,207 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
                   </div>
                 </div>
               </div>
+
+              {/* Goal Scorers & Assists Section */}
+              {(qsTeam1Goals.length > 0 || qsTeam2Goals.length > 0) && (
+                <div className="bg-white rounded-2xl p-4 border border-brand-gold/60 shadow-sm space-y-3">
+                  <div className="flex items-center justify-between border-b border-gray-150 pb-2">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-brand-maroon flex items-center gap-1.5">
+                      <span>⚽</span>
+                      <span>Gol Atan ve Asist Yapan Oyuncular</span>
+                    </span>
+                    <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                      İstatistiklere İşlenir
+                    </span>
+                  </div>
+
+                  {/* Team 1 Goals */}
+                  {qsTeam1Goals.length > 0 && (
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-black text-brand-dark uppercase block">
+                        🏠 {qsTeam1} ({qsTeam1Goals.length} Gol)
+                      </span>
+                      {qsTeam1Goals.map((g, idx) => (
+                        <div key={`t1-g-${idx}`} className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-[#f8f5ee] p-2.5 rounded-xl border border-gray-200">
+                          <div className="flex flex-col gap-0.5">
+                            <label className="text-[9px] font-black text-brand-maroon uppercase">{idx + 1}. Golü Atan</label>
+                            <select
+                              value={g.scorer}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setQsTeam1Goals(prev => {
+                                  const next = [...prev];
+                                  next[idx] = { ...next[idx], scorer: val };
+                                  return next;
+                                });
+                              }}
+                              className="bg-white border border-gray-300 rounded-lg p-1.5 text-xs font-bold text-gray-800"
+                            >
+                              <option value="">-- Golü Atan Oyuncu --</option>
+                              {(() => {
+                                const t1Lower = qsTeam1.toLowerCase().trim();
+                                const t1List = allPlayers.filter(p => (p.pteam || '').toLowerCase().trim() === t1Lower || (p.kiralikTakim || '').toLowerCase().trim() === t1Lower);
+                                const otherList = allPlayers.filter(p => !t1List.includes(p));
+                                return (
+                                  <>
+                                    {t1List.length > 0 && (
+                                      <optgroup label={`${qsTeam1} Oyuncuları`}>
+                                        {t1List.map(p => (
+                                          <option key={p.pname} value={p.pname}>{p.pname} ({qsTeam1})</option>
+                                        ))}
+                                      </optgroup>
+                                    )}
+                                    {otherList.length > 0 && (
+                                      <optgroup label="Tüm Diğer Oyuncular">
+                                        {otherList.map(p => (
+                                          <option key={p.pname} value={p.pname}>{p.pname} ({p.pteam || 'Takımsız'})</option>
+                                        ))}
+                                      </optgroup>
+                                    )}
+                                  </>
+                                );
+                              })()}
+                            </select>
+                          </div>
+                          <div className="flex flex-col gap-0.5">
+                            <label className="text-[9px] font-black text-gray-500 uppercase">Asist (İsteğe Bağlı)</label>
+                            <select
+                              value={g.assist}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setQsTeam1Goals(prev => {
+                                  const next = [...prev];
+                                  next[idx] = { ...next[idx], assist: val };
+                                  return next;
+                                });
+                              }}
+                              className="bg-white border border-gray-300 rounded-lg p-1.5 text-xs font-bold text-gray-800"
+                            >
+                              <option value="">Asist Yok (Şut)</option>
+                              {(() => {
+                                const t1Lower = qsTeam1.toLowerCase().trim();
+                                const t1List = allPlayers.filter(p => (p.pteam || '').toLowerCase().trim() === t1Lower || (p.kiralikTakim || '').toLowerCase().trim() === t1Lower);
+                                const otherList = allPlayers.filter(p => !t1List.includes(p));
+                                return (
+                                  <>
+                                    {t1List.length > 0 && (
+                                      <optgroup label={`${qsTeam1} Oyuncuları`}>
+                                        {t1List.map(p => (
+                                          <option key={p.pname} value={p.pname}>{p.pname} ({qsTeam1})</option>
+                                        ))}
+                                      </optgroup>
+                                    )}
+                                    {otherList.length > 0 && (
+                                      <optgroup label="Tüm Diğer Oyuncular">
+                                        {otherList.map(p => (
+                                          <option key={p.pname} value={p.pname}>{p.pname} ({p.pteam || 'Takımsız'})</option>
+                                        ))}
+                                      </optgroup>
+                                    )}
+                                  </>
+                                );
+                              })()}
+                            </select>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Team 2 Goals */}
+                  {qsTeam2Goals.length > 0 && (
+                    <div className="space-y-2 pt-2 border-t border-gray-150">
+                      <span className="text-[10px] font-black text-brand-dark uppercase block">
+                        🚀 {qsTeam2} ({qsTeam2Goals.length} Gol)
+                      </span>
+                      {qsTeam2Goals.map((g, idx) => (
+                        <div key={`t2-g-${idx}`} className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-[#f8f5ee] p-2.5 rounded-xl border border-gray-200">
+                          <div className="flex flex-col gap-0.5">
+                            <label className="text-[9px] font-black text-brand-maroon uppercase">{idx + 1}. Golü Atan</label>
+                            <select
+                              value={g.scorer}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setQsTeam2Goals(prev => {
+                                  const next = [...prev];
+                                  next[idx] = { ...next[idx], scorer: val };
+                                  return next;
+                                });
+                              }}
+                              className="bg-white border border-gray-300 rounded-lg p-1.5 text-xs font-bold text-gray-800"
+                            >
+                              <option value="">-- Golü Atan Oyuncu --</option>
+                              {(() => {
+                                const t2Lower = qsTeam2.toLowerCase().trim();
+                                const t2List = allPlayers.filter(p => (p.pteam || '').toLowerCase().trim() === t2Lower || (p.kiralikTakim || '').toLowerCase().trim() === t2Lower);
+                                const otherList = allPlayers.filter(p => !t2List.includes(p));
+                                return (
+                                  <>
+                                    {t2List.length > 0 && (
+                                      <optgroup label={`${qsTeam2} Oyuncuları`}>
+                                        {t2List.map(p => (
+                                          <option key={p.pname} value={p.pname}>{p.pname} ({qsTeam2})</option>
+                                        ))}
+                                      </optgroup>
+                                    )}
+                                    {otherList.length > 0 && (
+                                      <optgroup label="Tüm Diğer Oyuncular">
+                                        {otherList.map(p => (
+                                          <option key={p.pname} value={p.pname}>{p.pname} ({p.pteam || 'Takımsız'})</option>
+                                        ))}
+                                      </optgroup>
+                                    )}
+                                  </>
+                                );
+                              })()}
+                            </select>
+                          </div>
+                          <div className="flex flex-col gap-0.5">
+                            <label className="text-[9px] font-black text-gray-500 uppercase">Asist (İsteğe Bağlı)</label>
+                            <select
+                              value={g.assist}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setQsTeam2Goals(prev => {
+                                  const next = [...prev];
+                                  next[idx] = { ...next[idx], assist: val };
+                                  return next;
+                                });
+                              }}
+                              className="bg-white border border-gray-300 rounded-lg p-1.5 text-xs font-bold text-gray-800"
+                            >
+                              <option value="">Asist Yok (Şut)</option>
+                              {(() => {
+                                const t2Lower = qsTeam2.toLowerCase().trim();
+                                const t2List = allPlayers.filter(p => (p.pteam || '').toLowerCase().trim() === t2Lower || (p.kiralikTakim || '').toLowerCase().trim() === t2Lower);
+                                const otherList = allPlayers.filter(p => !t2List.includes(p));
+                                return (
+                                  <>
+                                    {t2List.length > 0 && (
+                                      <optgroup label={`${qsTeam2} Oyuncuları`}>
+                                        {t2List.map(p => (
+                                          <option key={p.pname} value={p.pname}>{p.pname} ({qsTeam2})</option>
+                                        ))}
+                                      </optgroup>
+                                    )}
+                                    {otherList.length > 0 && (
+                                      <optgroup label="Tüm Diğer Oyuncular">
+                                        {otherList.map(p => (
+                                          <option key={p.pname} value={p.pname}>{p.pname} ({p.pteam || 'Takımsız'})</option>
+                                        ))}
+                                      </optgroup>
+                                    )}
+                                  </>
+                                );
+                              })()}
+                            </select>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* ELO Notice */}
               <div className="bg-amber-50 border border-amber-300 rounded-xl p-2.5 text-center flex items-center justify-center gap-2 text-xs font-black text-amber-900 shadow-2xs">

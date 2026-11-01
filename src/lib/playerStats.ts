@@ -300,6 +300,42 @@ export function doesCandidateMatchPlayer(
   return false;
 }
 
+export function normalizeTeamNameForStats(raw?: string | null): string {
+  if (!raw) return '';
+  const s = raw.trim().toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/i̇/g, 'i')
+    .replace(/ı/g, 'i')
+    .replace(/İ/g, 'i')
+    .replace(/ğ/g, 'g')
+    .replace(/ü/g, 'u')
+    .replace(/ş/g, 's')
+    .replace(/ö/g, 'o')
+    .replace(/ç/g, 'c');
+  if (s === 'kfcelona') return 'kfcspor';
+  return s;
+}
+
+export function isSameTeamForStats(t1?: string | null, t2?: string | null): boolean {
+  if (!t1 || !t2) return false;
+  return normalizeTeamNameForStats(t1) === normalizeTeamNameForStats(t2);
+}
+
+export function isPlayerInMatchTeams(player: Player, match: Match): boolean {
+  const pTeam = player.pteam;
+  const pKiralik = player.kiralikTakim;
+  const t1 = match.team1;
+  const t2 = match.team2;
+  
+  if (pTeam && (isSameTeamForStats(pTeam, t1) || isSameTeamForStats(pTeam, t2))) {
+    return true;
+  }
+  if (player.kiralik && pKiralik && (isSameTeamForStats(pKiralik, t1) || isSameTeamForStats(pKiralik, t2))) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * Calculates comprehensive stats for a single player strictly derived from matches data.
  * Checks both player ID / doc ID and player name so renamed players maintain full statistics!
@@ -365,7 +401,30 @@ export function calculatePlayerStatsFromMatches(
   let ueclGoals = 0;
 
   matches.forEach((m) => {
-    if (!m.played) return;
+    // 0. Exclude Duels (1v1 friendly duels) as requested by user ("duello haric herseyin girmesi lazim istatistiklere")
+    const cat = String(m.category || '').toUpperCase().trim();
+    const hafta = String(m.hafta || '').toUpperCase().trim();
+    const isDuel = (
+      cat === 'DUELLO' ||
+      cat.includes('DUELLO') ||
+      cat === 'DUEL' ||
+      cat.includes('DUEL') ||
+      (m as any).isDuel === true ||
+      hafta.includes('DUELLO') ||
+      hafta.includes('1V1')
+    );
+    if (isDuel) return;
+
+    // Check if match is played:
+    // Either played === true, played === 'true', or both scores are set and not empty, or timeline has goal events
+    const isPlayed = Boolean(
+      m.played === true ||
+      (m.played as any) === 'true' ||
+      (m.score1 !== undefined && m.score1 !== null && String(m.score1).trim() !== '' &&
+       m.score2 !== undefined && m.score2 !== null && String(m.score2).trim() !== '') ||
+      (Array.isArray(m.timeline) && m.timeline.some(e => e.type === 'goal'))
+    );
+    if (!isPlayed) return;
 
     let playedInThisMatch = false;
 
@@ -823,7 +882,9 @@ export async function syncPlayerStatsToFirestore(): Promise<{ updatedCount: numb
         sariKart: stats.sari_kart,
         kirmiziKart: stats.kirmizi_kart,
         yesilKart: stats.yesil_kart,
-        mvpSayisi: stats.mvp
+        mvpSayisi: stats.mvp,
+        altin_ayakkabi: stats.goldenBoot.score,
+        goldenBootGoals: stats.goldenBoot.totalGoals
       });
 
       opCount++;

@@ -1,6 +1,7 @@
 import { collection, getDocs, doc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { getMatchCompetitionType } from './playerStats';
+import { getStoredTournamentMatches, normalizeTeamName } from './tournamentMatches';
 
 export async function recalculateStandings() {
   try {
@@ -53,14 +54,29 @@ export async function recalculateStandings() {
       };
     });
 
+    const rawMatches: any[] = [];
     matchesSnap.forEach((mdoc) => {
-      const m = mdoc.data();
+      rawMatches.push({ id: mdoc.id, ...mdoc.data() });
+    });
+
+    // Merge stored tournament matches
+    const storedTournamentM = getStoredTournamentMatches();
+    storedTournamentM.forEach((sm) => {
+      const existingIdx = rawMatches.findIndex((m) => m.id === sm.id);
+      if (existingIdx >= 0) {
+        rawMatches[existingIdx] = { ...rawMatches[existingIdx], ...sm };
+      } else {
+        rawMatches.push(sm);
+      }
+    });
+
+    rawMatches.forEach((m) => {
       if (!m.played) return;
 
       const score1 = Number(m.score1) || 0;
       const score2 = Number(m.score2) || 0;
-      const t1Display = (m.team1 || '').trim();
-      const t2Display = (m.team2 || '').trim();
+      const t1Display = normalizeTeamName((m.team1 || '').trim());
+      const t2Display = normalizeTeamName((m.team2 || '').trim());
 
       // Resolve display name to exact document ID in teams collection
       const t1 = teamDocIdMap.get(t1Display.toLowerCase()) || t1Display;
@@ -130,14 +146,14 @@ export async function recalculateStandings() {
 
       const isT1Bob = t1Display.toLowerCase().trim() === 'bobblica' || t1.toLowerCase().trim() === 'bobblica' || t1.toLowerCase().trim() === 'hiyar city';
       const isT2Bob = t2Display.toLowerCase().trim() === 'bobblica' || t2.toLowerCase().trim() === 'bobblica' || t2.toLowerCase().trim() === 'hiyar city';
-      const isBobblicaLoss = (isT1Bob && score2 > score1) || (isT2Bob && score1 > score2);
+      const hasBobblica = isT1Bob || isT2Bob;
 
       if (isLeague) {
         teamData[t1].played += 1;
         teamData[t2].played += 1;
 
-        // Bobblica yenilgilerinde sadece puan/galibiyet alınsın, averaj (atılan ve yenilen gol) eklenmesin
-        if (!isBobblicaLoss) {
+        // Rakip takım Bobblica ise veya Bobblica maçında averaja yazma (atılan ve yenilen gol eklenmez)
+        if (!hasBobblica) {
           teamData[t1].atilan += score1;
           teamData[t1].yenilen += score2;
           teamData[t2].atilan += score2;
@@ -159,7 +175,8 @@ export async function recalculateStandings() {
           teamData[t2].points += 1;
         }
       } else if (isWpc) {
-        if (!isBobblicaLoss) {
+        // Rakip takım Bobblica ise veya Bobblica maçında averaja yazma (atılan ve yenilen gol eklenmez)
+        if (!hasBobblica) {
           teamData[t1].kgatilan += score1;
           teamData[t1].kgyenilen += score2;
           teamData[t2].kgatilan += score2;
