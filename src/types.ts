@@ -86,6 +86,19 @@ export interface Player {
   noclub?: boolean;
   aliases?: string[];
   previousNames?: string[];
+  deger?: number | string;
+  degerFormatted?: string;
+  degerHistory?: MarketValuePoint[];
+}
+
+export interface MarketValuePoint {
+  id?: string;
+  date: string; // e.g. "2026-11-01" or "Kasım 2026"
+  value: number; // numeric value in owo for calculations / charting
+  formattedValue?: string; // e.g. "18,00 Milyon owo"
+  club?: string;
+  clubLogo?: string;
+  note?: string;
 }
 
 export interface MatchTimelineEvent {

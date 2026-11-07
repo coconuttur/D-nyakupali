@@ -7,6 +7,8 @@ import { TrophyDetailModal } from './TrophyDetailModal';
 import EloView from './EloView';
 import { calculatePlayerStatsFromMatches, calculateOwnGoalSummary, syncPlayerStatsToFirestore, buildPlayerAliasMap } from '../lib/playerStats';
 import { mergeTournamentMatches } from '../lib/tournamentMatches';
+import MarketValueModal from './MarketValueModal';
+import { getPlayerMarketValue, getPlayerMarketValueNumeric } from '../lib/marketValue';
 
 interface IstatistiklerProps {
   currentLang: 'tr' | 'en' | 'pt';
@@ -18,6 +20,7 @@ interface IstatistiklerProps {
 
 export type StatType = 
   | 'altin_ayakkabi'
+  | 'oyuncu_degeri'
   | 'goals' 
   | 'asistsay' 
   | 'ga'
@@ -44,6 +47,7 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTrophyId, setSelectedTrophyId] = useState<string | null>(null);
+  const [selectedMarketValuePlayer, setSelectedMarketValuePlayer] = useState<Player | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncSuccessMessage, setSyncSuccessMessage] = useState<string | null>(null);
 
@@ -106,6 +110,7 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
 
   const labels: Record<string, string> = {
     altin_ayakkabi: 'Altın Ayakkabı Puanı',
+    oyuncu_degeri: 'Piyasa Değeri (owo)',
     goals: `${t.gol} ${t.kral}`,
     asistsay: `${t.asist} ${t.kral}`,
     ga: 'G+A (Gol + Asist)',
@@ -157,10 +162,19 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
         const isNoClub = p.noclub === true;
         const effectiveTeam = isNoClub ? 'Takımsız' : p.pteam;
 
+        const mv = getPlayerMarketValue(p);
+        const marketVal = mv.currentNum;
+        const marketValFormatted = mv.hasValue ? mv.formatted : '-';
+        const hasMarketValue = mv.hasValue;
+
         return {
           ...p,
           pteam: effectiveTeam,
           isNoClub,
+          marketVal,
+          marketValFormatted,
+          hasMarketValue,
+          oyuncu_degeri: marketVal,
           // All performance metrics strictly derived from matches data
           goals: stats.goals,
           ownGoals: stats.ownGoals,
@@ -187,6 +201,13 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
       });
 
     return list.sort((a, b) => {
+      if (activeStat === 'oyuncu_degeri') {
+        if (b.hasMarketValue !== a.hasMarketValue) return (b.hasMarketValue ? 1 : 0) - (a.hasMarketValue ? 1 : 0);
+        if (b.marketVal !== a.marketVal) return b.marketVal - a.marketVal;
+        if (b.gen !== a.gen) return b.gen - a.gen;
+        if (b.goals !== a.goals) return b.goals - a.goals;
+        return a.pname.localeCompare(b.pname);
+      }
       if (activeStat === 'altin_ayakkabi') {
         // En çok gol katsayısına (puanına) ulaşan oyuncu lider
         if (b.goldenBoot.score !== a.goldenBoot.score) return b.goldenBoot.score - a.goldenBoot.score;
@@ -283,6 +304,7 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
 
   const tabConfigs: { id: StatType; label: string; icon: string }[] = [
     { id: 'altin_ayakkabi', label: '🏆 Altın Ayakkabı', icon: '👟' },
+    { id: 'oyuncu_degeri', label: '💎 Oyuncu Değeri', icon: '💰' },
     { id: 'goals', label: `${t.gol} ${t.kral}`, icon: '⚽' },
     { id: 'asistsay', label: `${t.asist} ${t.kral}`, icon: '👟' },
     { id: 'ga', label: 'G+A Lideri', icon: '🔥' },
@@ -1057,6 +1079,10 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
                 displayVal = p.gen;
                 subInfo = `${p.goals} Gol • ${p.mac} Maç`;
                 break;
+              case 'oyuncu_degeri':
+                displayVal = p.marketValFormatted;
+                subInfo = `${p.gen} GEN • ${p.goals} Gol • ${p.mac} Maç`;
+                break;
               default:
                 displayVal = (p as any)[activeStat] || 0;
                 break;
@@ -1147,6 +1173,7 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
                       {activeStat === 'kirmizi_kart' && <span className="text-base mr-1">🟥</span>}
                       {activeStat === 'yesil_kart' && <span className="text-base mr-1">🟩</span>}
                       {activeStat === 'mvp' && <span className="text-base mr-1">🏆</span>}
+                      {activeStat === 'oyuncu_degeri' && <span className="text-base mr-1">💎</span>}
                       {displayVal}
                     </span>
                     {activeStat === 'mvp' && p.tournamentMvp > 0 && (
@@ -1160,9 +1187,25 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
                       </span>
                     )}
                   </div>
-                  <span className="text-[9px] md:text-[10px] font-black uppercase text-gray-400 tracking-wider block mt-0.5">
-                    {labels[activeStat]}
-                  </span>
+                  <div className="flex items-center justify-end gap-2 mt-0.5">
+                    <span className="text-[9px] md:text-[10px] font-black uppercase text-gray-400 tracking-wider block">
+                      {labels[activeStat]}
+                    </span>
+                    {activeStat === 'oyuncu_degeri' && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedMarketValuePlayer(p);
+                        }}
+                        className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded shadow-xs transition-transform hover:scale-105 cursor-pointer"
+                        title="Piyasa Değeri Gelişim Grafiğini Gör / Düzenle"
+                      >
+                        <span>📈</span>
+                        <span>Grafik</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -1178,6 +1221,28 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
         currentUser={currentUser}
         onNavigate={onNavigate}
       />
+
+      {/* Market Value Graph & Valuation Modal */}
+      {selectedMarketValuePlayer && (
+        <MarketValueModal
+          isOpen={selectedMarketValuePlayer !== null}
+          onClose={() => setSelectedMarketValuePlayer(null)}
+          player={selectedMarketValuePlayer}
+          playerId={selectedMarketValuePlayer.id || (selectedMarketValuePlayer as any).docId || ''}
+          isAdmin={!!currentUser?.admin}
+          teamLogos={teamLogos}
+          onSaveSuccess={(updated) => {
+            setPlayers((prev) =>
+              prev.map((pl) =>
+                pl.id === selectedMarketValuePlayer.id || (pl as any).docId === selectedMarketValuePlayer.id
+                  ? { ...pl, ...updated }
+                  : pl
+              )
+            );
+            setSelectedMarketValuePlayer((prev) => (prev ? { ...prev, ...updated } : null));
+          }}
+        />
+      )}
     </div>
   );
 }

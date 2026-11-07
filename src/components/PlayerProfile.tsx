@@ -3,6 +3,8 @@ import { collection, onSnapshot, query, where, doc, getDoc, getDocs, updateDoc, 
 import { db } from '../firebase';
 import { Player, Match, UserProfile } from '../types';
 import { TrophiesShowcase, TrophyAdminModal } from './TrophiesShowcase';
+import MarketValueModal from './MarketValueModal';
+import { getPlayerMarketValue } from '../lib/marketValue';
 import { calculatePlayerStatsFromMatches, buildPlayerAliasMap, getPlayerIdentifierSet, doesCandidateMatchPlayer, normalizePlayerName, stripAllDiacritics } from '../lib/playerStats';
 import { mergeTournamentMatches } from '../lib/tournamentMatches';
 
@@ -26,6 +28,7 @@ export default function PlayerProfile({ playerName, playerId, currentUser, curre
   const [teamLogos, setTeamLogos] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [trophyModalOpen, setTrophyModalOpen] = useState(false);
+  const [marketValueModalOpen, setMarketValueModalOpen] = useState(false);
 
   // Voting states
   const [votersModalOpen, setVotersModalOpen] = useState(false);
@@ -294,6 +297,29 @@ export default function PlayerProfile({ playerName, playerId, currentUser, curre
                 <div className="flex items-center gap-3 bg-white py-1.5 px-4 rounded-full border border-gray-150 shadow-sm shrink-0">
                   {countryLogo && <img src={countryLogo} className="w-8 h-5 object-cover rounded border" alt="flag" />}
                   <span className="text-xs font-black text-brand-dark uppercase tracking-wider">{player.pülke || '-'}</span>
+                </div>
+
+                {/* Market Value (Değer) Badge in owo */}
+                <div 
+                  onClick={() => setMarketValueModalOpen(true)}
+                  className="flex items-center gap-3 bg-gradient-to-r from-emerald-50 via-white to-teal-50 hover:from-emerald-100 hover:to-teal-100 py-1.5 px-4 rounded-full border border-emerald-300 shadow-sm shrink-0 cursor-pointer hover:scale-103 transition-transform group"
+                  title="Piyasa Değeri Gelişim Grafiğini Gör / Düzenle"
+                >
+                  <span className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center font-black text-xs shadow-sm shrink-0">
+                    💎
+                  </span>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider">Değer:</span>
+                    <span className="text-xs font-black text-brand-dark uppercase tracking-wider group-hover:text-emerald-700">
+                      {getPlayerMarketValue(player).formatted}
+                    </span>
+                  </div>
+                  <span className="text-xs text-emerald-600 opacity-80 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all">📈</span>
+                  {currentUser?.admin && (
+                    <span className="text-[9px] bg-emerald-600 text-white px-1.5 py-0.5 rounded-full font-black uppercase tracking-wider ml-0.5">
+                      Yaz / Düzenle
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -665,6 +691,21 @@ export default function PlayerProfile({ playerName, playerId, currentUser, curre
           await updateDoc(doc(db, 'players', docId), { kupalar: updated });
         }}
       />
+
+      {/* MARKET VALUE (DEĞER & GRAFİK) MODAL */}
+      {player && (
+        <MarketValueModal
+          isOpen={marketValueModalOpen}
+          onClose={() => setMarketValueModalOpen(false)}
+          player={player}
+          playerId={docId || player.id || (player as any).docId || ''}
+          isAdmin={!!currentUser?.admin}
+          teamLogos={teamLogos}
+          onSaveSuccess={(updated) => {
+            setPlayer((prev) => (prev ? { ...prev, ...updated } : null));
+          }}
+        />
+      )}
     </div>
   );
 }

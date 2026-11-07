@@ -1787,67 +1787,97 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
           </div>
         </div>
 
-        {/* BRACKET TREE */}
+        {/* BRACKET TREE - SYMMETRICAL LAYOUT */}
         <div className="w-full overflow-x-auto py-4">
-          <div className="flex gap-6 md:gap-10 justify-center items-start min-w-[950px] max-w-7xl mx-auto select-text">
-            {/* COLUMN 1: ÇEYREK FİNALLER (4 Ties) */}
-            <div className="flex flex-col gap-4 w-72 shrink-0">
-              <div className="bg-brand-maroon text-brand-gold py-1.5 px-3 rounded-xl text-center font-black text-xs uppercase tracking-wider shadow">
+          <div className="flex gap-6 md:gap-10 justify-center items-stretch min-w-[950px] max-w-7xl mx-auto select-text">
+            {/* COLUMN 1: ÇEYREK FİNALLER (4 Ties: QF1 & QF2 on top, QF3 & QF4 on bottom) */}
+            <div className="flex flex-col w-72 shrink-0">
+              <div className="bg-brand-maroon text-brand-gold py-1.5 px-3 rounded-xl text-center font-black text-xs uppercase tracking-wider shadow mb-4">
                 ⚔️ ÇEYREK FİNAL (2 MAÇ)
               </div>
-              {renderWpcTieCard(wpcData.qf1, 'A1 vs B4')}
-              {renderWpcTieCard(wpcData.qf2, 'A2 vs B3')}
-              {renderWpcTieCard(wpcData.qf3, 'A3 vs B2')}
-              {renderWpcTieCard(wpcData.qf4, 'A4 vs B1')}
+              
+              {/* Top Half: QF 1 & QF 2 */}
+              <div className="flex flex-col gap-4">
+                {renderWpcTieCard(wpcData.qf1, 'A1 vs B4')}
+                {renderWpcTieCard(wpcData.qf2, 'A2 vs B3')}
+              </div>
+
+              {/* Symmetrical Middle Divider */}
+              <div className="my-6 flex items-center justify-center px-4">
+                <div className="h-0.5 w-full bg-gradient-to-r from-transparent via-brand-gold/40 to-transparent"></div>
+              </div>
+
+              {/* Bottom Half: QF 3 & QF 4 */}
+              <div className="flex flex-col gap-4">
+                {renderWpcTieCard(wpcData.qf3, 'A3 vs B2')}
+                {renderWpcTieCard(wpcData.qf4, 'A4 vs B1')}
+              </div>
             </div>
 
-            {/* COLUMN 2: YARI FİNALLER (2 Ties) */}
-            <div className="flex flex-col gap-8 w-72 shrink-0 pt-16">
-              <div className="bg-amber-950 text-amber-200 py-1.5 px-3 rounded-xl text-center font-black text-xs uppercase tracking-wider shadow border border-amber-600/50">
+            {/* COLUMN 2: YARI FİNALLER (SF 1 centered against QF 1&2, SF 2 centered against QF 3&4) */}
+            <div className="flex flex-col w-72 shrink-0">
+              <div className="bg-amber-950 text-amber-200 py-1.5 px-3 rounded-xl text-center font-black text-xs uppercase tracking-wider shadow border border-amber-600/50 mb-4">
                 🥈 YARI FİNAL (2 MAÇ)
               </div>
-              {renderWpcTieCard(wpcData.sf1, 'ÇF 1 Galibi vs ÇF 2 Galibi')}
-              {renderWpcTieCard(wpcData.sf2, 'ÇF 3 Galibi vs ÇF 4 Galibi')}
+              
+              {/* SF 1 Slot: Perfectly centered between QF 1 & QF 2 */}
+              <div className="flex-1 flex flex-col justify-center items-center">
+                {renderWpcTieCard(wpcData.sf1, 'ÇF 1 Galibi vs ÇF 2 Galibi')}
+              </div>
+
+              {/* Middle Spacer matching Column 1 divider */}
+              <div className="my-6 h-0.5"></div>
+
+              {/* SF 2 Slot: Perfectly centered between QF 3 & QF 4 */}
+              <div className="flex-1 flex flex-col justify-center items-center">
+                {renderWpcTieCard(wpcData.sf2, 'ÇF 3 Galibi vs ÇF 4 Galibi')}
+              </div>
             </div>
 
-            {/* COLUMN 3: BÜYÜK FİNAL & ŞAMPİYON */}
-            <div className="flex flex-col gap-6 w-72 shrink-0 pt-28">
-              <div className="bg-gradient-to-r from-brand-maroon to-black text-brand-gold py-1.5 px-3 rounded-xl text-center font-black text-xs uppercase tracking-wider shadow border border-brand-gold">
+            {/* COLUMN 3: BÜYÜK FİNAL & ŞAMPİYON (Centered vertically between SF 1 and SF 2) */}
+            <div className="flex flex-col w-72 shrink-0">
+              <div className="bg-gradient-to-r from-brand-maroon to-black text-brand-gold py-1.5 px-3 rounded-xl text-center font-black text-xs uppercase tracking-wider shadow border border-brand-gold mb-4">
                 🏆 BÜYÜK FİNAL (TEK MAÇ)
               </div>
-              {renderWpcFinalCard(wpcData.finalMatch, wpcData.sf1Winner, wpcData.sf2Winner)}
-
-              {/* Champion Showcase */}
-              <div className="bg-gradient-to-b from-[#2a1a08] to-[#120b03] border-3 border-brand-gold rounded-3xl overflow-hidden shadow-2xl text-center">
-                <div className="bg-brand-gold text-brand-dark py-2 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-1.5 shadow">
-                  <span>👑</span>
-                  <span>WORLD PEACE CUP ŞAMPİYONU</span>
-                  <span>👑</span>
+              
+              {/* Perfectly centered vertically in the middle of the bracket tree */}
+              <div className="flex-1 flex flex-col justify-center items-center gap-6">
+                <div className="w-full">
+                  {renderWpcFinalCard(wpcData.finalMatch, wpcData.sf1Winner, wpcData.sf2Winner)}
                 </div>
-                <div className="py-5 px-4 flex flex-col justify-center items-center min-h-[130px] gap-2">
-                  {wpcData.champion ? (
-                    <div 
-                      onClick={() => onNavigate({ type: 'team-detail', teamName: wpcData.champion })}
-                      className="cursor-pointer group flex flex-col items-center gap-2"
-                    >
-                      <img 
-                        src={teamLogos[wpcData.champion] || 'https://via.placeholder.com/64?text=?'} 
-                        className="w-16 h-16 rounded-full object-cover border-2 border-brand-gold bg-white shadow-md group-hover:scale-105 transition-transform" 
-                        alt={wpcData.champion} 
-                      />
-                      <span className="font-black text-base text-brand-gold tracking-wide leading-tight group-hover:underline">
-                        {wpcData.champion}
-                      </span>
-                      <span className="bg-brand-gold text-brand-dark font-black text-[9px] px-2.5 py-0.5 rounded-full uppercase">
-                        KUPA SAHİBİ
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="text-center py-4 space-y-1">
-                      <span className="text-2xl block">⏳</span>
-                      <span className="text-gray-400 font-bold text-xs block">Büyük Final Galibi Bekleniyor</span>
-                    </div>
-                  )}
+
+                {/* Champion Showcase */}
+                <div className="w-full bg-gradient-to-b from-[#2a1a08] to-[#120b03] border-3 border-brand-gold rounded-3xl overflow-hidden shadow-2xl text-center">
+                  <div className="bg-brand-gold text-brand-dark py-2 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-1.5 shadow">
+                    <span>👑</span>
+                    <span>WORLD PEACE CUP ŞAMPİYONU</span>
+                    <span>👑</span>
+                  </div>
+                  <div className="py-5 px-4 flex flex-col justify-center items-center min-h-[130px] gap-2">
+                    {wpcData.champion ? (
+                      <div 
+                        onClick={() => onNavigate({ type: 'team-detail', teamName: wpcData.champion })}
+                        className="cursor-pointer group flex flex-col items-center gap-2"
+                      >
+                        <img 
+                          src={teamLogos[wpcData.champion] || 'https://via.placeholder.com/64?text=?'} 
+                          className="w-16 h-16 rounded-full object-cover border-2 border-brand-gold bg-white shadow-md group-hover:scale-105 transition-transform" 
+                          alt={wpcData.champion} 
+                        />
+                        <span className="font-black text-base text-brand-gold tracking-wide leading-tight group-hover:underline">
+                          {wpcData.champion}
+                        </span>
+                        <span className="bg-brand-gold text-brand-dark font-black text-[9px] px-2.5 py-0.5 rounded-full uppercase">
+                          KUPA SAHİBİ
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="text-center py-4 space-y-1">
+                        <span className="text-2xl block">⏳</span>
+                        <span className="text-gray-400 font-bold text-xs block">Büyük Final Galibi Bekleniyor</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
