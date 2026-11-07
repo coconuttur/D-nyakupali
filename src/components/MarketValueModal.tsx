@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Player, UserProfile, MarketValuePoint } from '../types';
-import { getPlayerMarketValue, parseOwoValue, formatOwoValue } from '../lib/marketValue';
+import { getPlayerMarketValue, parseOwoValue, formatOwoValue, sortHistoryByDate } from '../lib/marketValue';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
@@ -32,7 +32,8 @@ export default function MarketValueModal({
   const isAdmin = propIsAdmin !== undefined ? propIsAdmin : (currentUser?.admin === true);
   const mvData = getPlayerMarketValue(player);
 
-  const points = mvData.history;
+  // Guarantee strictly chronological order from past to present
+  const points = sortHistoryByDate(mvData.history);
 
   const [activePointIndex, setActivePointIndex] = useState<number | null>(
     points.length > 0 ? points.length - 1 : null
@@ -123,7 +124,9 @@ export default function MarketValueModal({
 
     try {
       const parsed = parseOwoValue(newValueInput);
-      const dateText = newDateInput.trim() || new Date().toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
+      const now = new Date();
+      const defaultDateStr = `${String(now.getDate()).padStart(2, '0')}.${String(now.getMonth() + 1).padStart(2, '0')}.${now.getFullYear()}`;
+      const dateText = newDateInput.trim() || defaultDateStr;
       const clubName = newClubInput.trim() || player.pteam || '';
       const clubLogo = teamLogos[clubName] || '';
 
@@ -136,19 +139,21 @@ export default function MarketValueModal({
         clubLogo: clubLogo
       };
 
-      const updatedHistory = [...points, newPoint];
+      // Always sort history strictly chronologically (past -> present)
+      const updatedHistory = sortHistoryByDate([...points, newPoint]);
+      const latestPoint = updatedHistory[updatedHistory.length - 1];
 
       const ref = doc(db, 'players', docId);
       await updateDoc(ref, {
-        deger: parsed.num,
-        degerFormatted: parsed.formatted,
+        deger: latestPoint.value,
+        degerFormatted: latestPoint.formattedValue || formatOwoValue(latestPoint.value),
         degerHistory: updatedHistory
       });
 
       const updatedPlayer: Player = {
         ...player,
-        deger: parsed.num,
-        degerFormatted: parsed.formatted,
+        deger: latestPoint.value,
+        degerFormatted: latestPoint.formattedValue || formatOwoValue(latestPoint.value),
         degerHistory: updatedHistory
       };
 
@@ -160,7 +165,9 @@ export default function MarketValueModal({
       setShowAdminForm(false);
       setSuccessMsg(`✅ Değer (${parsed.formatted}) başarıyla kaydedildi!`);
       setTimeout(() => setSuccessMsg(null), 3000);
-      setActivePointIndex(updatedHistory.length - 1);
+
+      const newIdx = updatedHistory.findIndex((pt) => pt.id === newPoint.id);
+      setActivePointIndex(newIdx !== -1 ? newIdx : updatedHistory.length - 1);
     } catch (err: any) {
       console.error('Error saving market value:', err);
       setErrorMsg('Kayıt başarısız: ' + (err?.message || 'Bilinmeyen hata'));
@@ -178,10 +185,11 @@ export default function MarketValueModal({
     setErrorMsg(null);
 
     try {
-      const updatedHistory = points.filter((_, idx) => idx !== indexToDelete);
-      const lastPoint = updatedHistory.length > 0 ? updatedHistory[updatedHistory.length - 1] : null;
-      const newCurrentNum = lastPoint ? lastPoint.value : 0;
-      const newFormatted = lastPoint ? lastPoint.formattedValue || formatOwoValue(lastPoint.value) : '';
+      // Sort after filtering to preserve chronological consistency
+      const updatedHistory = sortHistoryByDate(points.filter((_, idx) => idx !== indexToDelete));
+      const latestPoint = updatedHistory.length > 0 ? updatedHistory[updatedHistory.length - 1] : null;
+      const newCurrentNum = latestPoint ? latestPoint.value : 0;
+      const newFormatted = latestPoint ? latestPoint.formattedValue || formatOwoValue(latestPoint.value) : '';
 
       const ref = doc(db, 'players', docId);
       await updateDoc(ref, {
@@ -725,7 +733,7 @@ export default function MarketValueModal({
                         type="text" 
                         value={newDateInput}
                         onChange={(e) => setNewDateInput(e.target.value)}
-                        placeholder="Örn: Kasım 2026, 03.06.2026"
+                        placeholder="Örn: 01.01.2026, 17.01.2026, Ocak 2026"
                         className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs font-bold text-gray-800 focus:border-brand-maroon focus:outline-hidden"
                       />
                     </div>
