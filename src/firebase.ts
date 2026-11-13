@@ -11,9 +11,9 @@ const firebaseConfig = {
   appId: "1:566665011913:web:4e2570f7291f82fdb76318"
 };
 
-const app = initializeApp(firebaseConfig);
+export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
-export const auth = getAuth();
+export const auth = getAuth(app);
 
 // Standard handleFirestoreError helper as instructed by our rules
 export enum OperationType {

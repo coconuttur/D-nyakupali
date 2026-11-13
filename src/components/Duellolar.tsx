@@ -9,6 +9,7 @@ import {
   DuelEloMatchDelta,
   INITIAL_DUEL_ELO
 } from '../lib/duelElo';
+import { sendPushNotificationEvent } from '../lib/notifications';
 
 interface DuellolarProps {
   currentLang: 'tr' | 'en' | 'pt';
@@ -396,6 +397,14 @@ export default function Duellolar({
       } catch (fbErr: any) {
         console.warn('Firestore duels write notice (saved locally):', fbErr);
       }
+
+      sendPushNotificationEvent({
+        title: `⚔️ Düello Sonucu (#${finalMatchNum})`,
+        body: `${player1Name} ${sc1} - ${sc2} ${player2Name}`,
+        type: 'duel',
+        tag: `duel_${docId}`,
+        url: '/'
+      }).catch(() => {});
 
       setToastMessage(`⚔️ Düello #${finalMatchNum} kaydedildi: ${player1Name} ${sc1} - ${sc2} ${player2Name}`);
       setScore1('0');

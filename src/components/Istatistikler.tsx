@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Player, Team, Match, UserProfile } from '../types';
 import { TROPHIES_LIST, TROPHY_MAP } from '../lib/trophies';
@@ -8,7 +8,7 @@ import EloView from './EloView';
 import { calculatePlayerStatsFromMatches, calculateOwnGoalSummary, syncPlayerStatsToFirestore, buildPlayerAliasMap } from '../lib/playerStats';
 import { mergeTournamentMatches } from '../lib/tournamentMatches';
 import MarketValueModal from './MarketValueModal';
-import { getPlayerMarketValue, getPlayerMarketValueNumeric } from '../lib/marketValue';
+import { getPlayerMarketValue, getPlayerMarketValueNumeric, calculatePerformanceMarketValue, VALUATION_TODAY_DATE, sortHistoryByDate } from '../lib/marketValue';
 
 interface IstatistiklerProps {
   currentLang: 'tr' | 'en' | 'pt';
@@ -50,6 +50,8 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
   const [selectedMarketValuePlayer, setSelectedMarketValuePlayer] = useState<Player | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncSuccessMessage, setSyncSuccessMessage] = useState<string | null>(null);
+  const [syncingValues, setSyncingValues] = useState(false);
+  const [valueSyncMessage, setValueSyncMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribeP = onSnapshot(collection(db, 'players'), (snap) => {
@@ -144,6 +146,54 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
     }
   };
 
+  const handleSyncPerformanceMarketValues = async () => {
+    if (syncingValues) return;
+    try {
+      setSyncingValues(true);
+      const aliasMap = buildPlayerAliasMap(players);
+      let updatedCount = 0;
+
+      for (const p of players) {
+        if (p.notactive) continue;
+        const docId = p.id || (p as any).docId;
+        if (!docId) continue;
+
+        const stats = calculatePlayerStatsFromMatches(p, matches, aliasMap);
+        const perf = calculatePerformanceMarketValue(p, { computedStats: stats });
+        const mv = getPlayerMarketValue(p, { computedStats: stats });
+
+        const newPoint = {
+          id: `mv_${Date.now()}_${p.pname.replace(/\s+/g, '_')}`,
+          date: VALUATION_TODAY_DATE,
+          value: perf.num,
+          formattedValue: perf.formatted,
+          club: p.pteam || '',
+          clubLogo: teamLogos[p.pteam] || (p as any).teamLogo || ''
+        };
+
+        const filtered = mv.history.filter((pt) => pt.date !== VALUATION_TODAY_DATE);
+        const updatedHistory = sortHistoryByDate([...filtered, newPoint]);
+        const latestPoint = updatedHistory[updatedHistory.length - 1];
+
+        const ref = doc(db, 'players', docId);
+        await updateDoc(ref, {
+          deger: latestPoint.value,
+          degerFormatted: latestPoint.formattedValue,
+          degerHistory: updatedHistory
+        });
+        updatedCount++;
+      }
+
+      setValueSyncMessage(`✅ ${updatedCount} oyuncunun 08.11.2026 piyasa değeri başarıyla güncellendi!`);
+      setTimeout(() => setValueSyncMessage(null), 5000);
+    } catch (err: any) {
+      console.error(err);
+      alert('Piyasa değerleri eşitlenirken hata oluştu: ' + (err?.message || 'Bilinmeyen hata'));
+    } finally {
+      setSyncingValues(false);
+    }
+  };
+
   const getTotalTrophies = (kupalar?: Record<string, number>) => {
     if (!kupalar) return 0;
     return Object.values(kupalar).reduce((acc, count) => acc + (Number(count) || 0), 0);
@@ -162,10 +212,11 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
         const isNoClub = p.noclub === true;
         const effectiveTeam = isNoClub ? 'Takımsız' : p.pteam;
 
-        const mv = getPlayerMarketValue(p);
+        const mv = getPlayerMarketValue(p, { computedStats: stats });
         const marketVal = mv.currentNum;
-        const marketValFormatted = mv.hasValue ? mv.formatted : '-';
+        const marketValFormatted = mv.formatted;
         const hasMarketValue = mv.hasValue;
+        const performanceEstimate = mv.performanceEstimate;
 
         return {
           ...p,
@@ -174,6 +225,7 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
           marketVal,
           marketValFormatted,
           hasMarketValue,
+          performanceEstimate,
           oyuncu_degeri: marketVal,
           // All performance metrics strictly derived from matches data
           goals: stats.goals,
@@ -1007,6 +1059,180 @@ export default function Istatistikler({ currentLang, translations, onNavigate, t
                           ⚽ {gb.totalGoals} Toplam Gol
                         </span>
                       </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : activeStat === 'oyuncu_degeri' ? (
+        <div className="max-w-3xl mx-auto space-y-6 animate-fade-in select-text">
+          {/* Admin Sync Button (Visible ONLY to Admin) */}
+          {currentUser?.admin && (
+            <div className="flex items-center justify-between bg-amber-50 border border-amber-200 px-4 py-2 rounded-xl text-xs">
+              <span className="font-bold text-amber-900">👑 Admin:</span>
+              <button
+                type="button"
+                onClick={handleSyncPerformanceMarketValues}
+                disabled={syncingValues}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-black text-[11px] uppercase px-3 py-1.5 rounded-lg shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                {syncingValues ? '⏳ Eşitleniyor...' : '⚡ 08.11.2026 Değerleri Eşitle'}
+              </button>
+            </div>
+          )}
+          {valueSyncMessage && (
+            <div className="bg-emerald-100 border border-emerald-400 text-emerald-900 px-3 py-2 rounded-xl text-xs font-bold text-center">
+              {valueSyncMessage}
+            </div>
+          )}
+
+          {/* Player Ranking List */}
+          {sortedList.length === 0 ? (
+            <h3 className="text-center text-gray-500 font-bold">Oyuncu verisi bulunamadı.</h3>
+          ) : (
+            <div className="space-y-3">
+              {sortedList.slice(0, 50).map((p, idx) => {
+                const isNoClub = p.isNoClub || p.pteam === 'Takımsız';
+                const logo = isNoClub
+                  ? 'https://via.placeholder.com/32?text=%E2%9A%BD'
+                  : (teamLogos[p.pteam] || 'https://via.placeholder.com/32?text=?');
+
+                const isLeader = idx === 0;
+                const isSecond = idx === 1;
+                const isThird = idx === 2;
+
+                const borderClass = isLeader
+                  ? 'border-l-12 border-emerald-400 bg-gradient-to-r from-emerald-500/10 via-brand-card to-brand-card ring-2 ring-emerald-400/50 shadow-md'
+                  : isSecond
+                  ? 'border-l-12 border-gray-400 bg-brand-card shadow-sm'
+                  : isThird
+                  ? 'border-l-12 border-amber-700 bg-brand-card shadow-xs'
+                  : 'border-l-12 border-brand-maroon/70 bg-brand-card shadow-xs';
+
+                return (
+                  <div
+                    key={p.pname}
+                    onClick={() => onNavigate({ type: 'player-profile', playerName: p.pname, playerId: p.id || (p as any).docId })}
+                    className={`p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition-all hover:translate-x-1 cursor-pointer ${borderClass}`}
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0 w-full sm:w-auto">
+                      <div className="w-10 text-center shrink-0">
+                        {isLeader ? (
+                          <div className="flex flex-col items-center">
+                            <span className="text-xl">👑</span>
+                            <span className="text-sm font-black text-emerald-600 leading-none">#1</span>
+                          </div>
+                        ) : isSecond ? (
+                          <div className="flex flex-col items-center">
+                            <span className="text-lg">🥈</span>
+                            <span className="text-xs font-black text-gray-500 leading-none">#2</span>
+                          </div>
+                        ) : isThird ? (
+                          <div className="flex flex-col items-center">
+                            <span className="text-lg">🥉</span>
+                            <span className="text-xs font-black text-amber-700 leading-none">#3</span>
+                          </div>
+                        ) : (
+                          <span className="text-base font-black text-brand-maroon">{idx + 1}.</span>
+                        )}
+                      </div>
+
+                      {/* Team Logo */}
+                      <img
+                        src={logo}
+                        onClick={(e) => {
+                          if (!isNoClub) {
+                            e.stopPropagation();
+                            onNavigate({ type: 'team-detail', teamName: p.pteam });
+                          }
+                        }}
+                        className="w-9 h-9 rounded-full border-2 border-brand-maroon bg-white object-cover shrink-0 cursor-pointer shadow-xs hover:scale-105 transition-transform"
+                        alt={p.pteam}
+                        title={p.pteam}
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = 'https://via.placeholder.com/32?text=?';
+                        }}
+                      />
+
+                      {/* Player Photo */}
+                      <img
+                        src={p.foto}
+                        className="w-14 h-14 rounded-2xl object-cover shrink-0 border-2 border-white shadow-md bg-white hover:scale-105 transition-transform"
+                        alt={p.pname}
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(p.pname)}&background=800000&color=fff&size=56`;
+                        }}
+                      />
+
+                      {/* Player Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="font-extrabold text-sm md:text-base text-brand-dark uppercase truncate">
+                            {p.pname}
+                          </h4>
+                          <span className="bg-brand-gold text-brand-dark px-1.5 py-0.2 rounded text-[9px] font-black">
+                            GEN {p.gen || '0'}
+                          </span>
+                          {isNoClub && (
+                            <span className="text-[9px] font-black text-gray-700 bg-gray-200 border border-gray-300 px-1.5 py-0.2 rounded uppercase">
+                              Takımsız
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span
+                            onClick={(e) => {
+                              if (!isNoClub) {
+                                e.stopPropagation();
+                                onNavigate({ type: 'team-detail', teamName: p.pteam });
+                              }
+                            }}
+                            className={`text-xs font-bold uppercase truncate ${
+                              isNoClub ? 'text-gray-400 italic' : 'text-gray-500 hover:text-brand-maroon'
+                            }`}
+                          >
+                            {p.pteam}
+                          </span>
+                        </div>
+
+                        {/* Performance Details */}
+                        <div className="flex items-center gap-1.5 flex-wrap mt-1 text-[10px] font-semibold text-gray-500">
+                          <span>⚽ {p.goals} Gol</span>
+                          <span>•</span>
+                          <span>👟 {p.asistsay} Asist</span>
+                          <span>•</span>
+                          <span>⭐ {p.ratingoyFormatted || Number(p.ratingoy).toFixed(2)}</span>
+                          <span>•</span>
+                          <span>🏆 {p.mvp} MVP</span>
+                          <span>•</span>
+                          <span>🏃 {p.mac} Maç</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right side: Market Value and Graph button */}
+                    <div className="w-full sm:w-auto flex sm:flex-col items-center sm:items-end justify-between sm:justify-center border-t sm:border-t-0 pt-2 sm:pt-0 border-gray-200 shrink-0 gap-1.5">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-xl sm:text-2xl font-black text-[#0f4c81] leading-none">
+                          {p.marketValFormatted}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedMarketValuePlayer(p);
+                        }}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase px-2.5 py-1 rounded-lg shadow-xs transition-transform hover:scale-105 cursor-pointer flex items-center gap-1"
+                        title="Transfermarkt Değer Gelişim Grafiğini Gör"
+                      >
+                        <span>📈</span>
+                        <span>Grafik</span>
+                      </button>
                     </div>
                   </div>
                 );

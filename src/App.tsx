@@ -1,9 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail, confirmPasswordReset } from 'firebase/auth';
 import { doc, onSnapshot, setDoc, getDoc, collection, getDocs, updateDoc } from 'firebase/firestore';
-import { Mail, KeyRound, CheckCircle, ArrowLeft, Eye, EyeOff, ShieldCheck, RefreshCw, Copy, Check } from 'lucide-react';
+import { Mail, KeyRound, CheckCircle, ArrowLeft, Eye, EyeOff, ShieldCheck, RefreshCw, Copy, Check, Bell, BellOff, BellRing, X } from 'lucide-react';
 import { auth, db } from './firebase';
 import { UserProfile } from './types';
+import {
+  enablePushNotifications,
+  disablePushNotifications,
+  getNotificationsEnabledPreference,
+  initForegroundFcmListener,
+  subscribeToLivePushEvents,
+  sendPushNotificationEvent,
+  showBrowserNotification,
+  type LiveNotificationPayload
+} from './lib/notifications';
 
 // Importing views components
 import Haberler from './components/Haberler';
@@ -190,6 +200,97 @@ export default function App() {
 
   // Cache list of logos
   const [teamLogos, setTeamLogos] = useState<Record<string, string>>({});
+
+  // Push Notification states
+  const [pushEnabled, setPushEnabled] = useState<boolean>(() => getNotificationsEnabledPreference());
+  const [pushLoading, setPushLoading] = useState(false);
+  const [pushModalOpen, setPushModalOpen] = useState(false);
+  const [pushFeedback, setPushFeedback] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [liveNotifToast, setLiveNotifToast] = useState<LiveNotificationPayload | null>(null);
+
+  useEffect(() => {
+    const showIncomingToast = (notif: LiveNotificationPayload) => {
+      setLiveNotifToast(notif);
+      setTimeout(() => {
+        setLiveNotifToast((curr) => (curr?.id === notif.id ? null : curr));
+      }, 6000);
+    };
+
+    const unsubLive = subscribeToLivePushEvents(showIncomingToast);
+    const unsubFcm = initForegroundFcmListener(showIncomingToast);
+
+    return () => {
+      unsubLive();
+      unsubFcm();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (getNotificationsEnabledPreference()) {
+      enablePushNotifications(userProfile).then((res) => {
+        if (res.ok) setPushEnabled(true);
+      }).catch(() => {});
+    }
+  }, [userProfile?.uid]);
+
+  const handleToggleNotifications = async () => {
+    setPushLoading(true);
+    setPushFeedback(null);
+    try {
+      if (pushEnabled) {
+        await disablePushNotifications();
+        setPushEnabled(false);
+        setPushFeedback({ text: 'Bildirimler kapatıldı.', type: 'success' });
+      } else {
+        const res = await enablePushNotifications(userProfile);
+        if (res.ok) {
+          setPushEnabled(true);
+          setPushFeedback({
+            text: res.mode === 'fcm'
+              ? 'Anlık bildirimler (FCM) başarıyla aktifleştirildi!'
+              : 'Canlı tarayıcı bildirimleri açıldı!',
+            type: 'success'
+          });
+        } else {
+          setPushFeedback({ text: res.error || 'Bildirimler açılamadı.', type: 'error' });
+        }
+      }
+    } finally {
+      setPushLoading(false);
+    }
+  };
+
+  const handleSendTestPush = async () => {
+    setPushLoading(true);
+    setPushFeedback(null);
+    const testPayload: LiveNotificationPayload = {
+      id: `test_${Date.now()}`,
+      title: '🔔 Bobblekolik Test Bildirimi',
+      body: 'Haberler, goller, kartlar, değişiklikler ve düello sonuçları artık anlık bildirilecek!',
+      type: 'test',
+      tag: `test_${Date.now()}`,
+      timestamp: Date.now()
+    };
+
+    setLiveNotifToast(testPayload);
+    await showBrowserNotification(testPayload);
+    const res = await sendPushNotificationEvent({
+      title: testPayload.title,
+      body: testPayload.body,
+      type: 'test',
+      tag: testPayload.tag,
+      url: '/'
+    });
+    setPushLoading(false);
+
+    if (res.ok) {
+      setPushFeedback({ text: `Test bildirimi ${res.sent || 0} cihaza gönderildi!`, type: 'success' });
+    } else if (res.skipped) {
+      setPushFeedback({ text: 'Canlı tarayıcı bildirimi test edildi.', type: 'success' });
+    } else {
+      setPushFeedback({ text: res.error || 'Test bildirimi gönderilemedi.', type: 'error' });
+    }
+  };
 
   // 1. Sync Authentication state
   useEffect(() => {
@@ -677,8 +778,25 @@ export default function App() {
             </div>
           </div>
 
-          {/* User authentication stats banner in header */}
-          <div className="flex items-center gap-4">
+          {/* User authentication stats banner & Push Bell in header */}
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setPushFeedback(null);
+                setPushModalOpen(true);
+              }}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl font-black text-[11px] uppercase cursor-pointer transition-all border shrink-0 shadow-sm ${
+                pushEnabled
+                  ? 'bg-emerald-500/20 text-emerald-200 border-emerald-400/50 hover:bg-emerald-500/30'
+                  : 'bg-black/25 text-brand-gold border-brand-gold/30 hover:bg-black/40'
+              }`}
+              title={pushEnabled ? 'Anlık Bildirimler Açık' : 'Anlık Bildirimleri Aç'}
+            >
+              {pushEnabled ? <BellRing className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
+              <span className="hidden md:inline">{pushEnabled ? 'Bildirimler Açık' : 'Bildirimleri Aç'}</span>
+            </button>
+
             {userProfile ? (
               <div className="flex items-center gap-3 bg-black/25 py-2 px-4 rounded-2xl border border-white/10 shrink-0">
                 <img 
@@ -1313,6 +1431,109 @@ export default function App() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Live Incoming Event Notification Toast */}
+      {liveNotifToast && (
+        <div className="fixed bottom-5 right-5 z-[110] max-w-sm w-[calc(100%-2.5rem)] bg-brand-dark text-white border-2 border-brand-gold rounded-2xl p-4 shadow-2xl flex items-start gap-3 animate-fade-in">
+          <div className="w-9 h-9 rounded-xl bg-brand-gold text-brand-maroon flex items-center justify-center shrink-0 font-black">
+            <BellRing className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h4 className="font-black text-xs text-brand-gold leading-snug">
+              {liveNotifToast.title}
+            </h4>
+            <p className="text-xs text-gray-100 mt-1 leading-relaxed break-words">
+              {liveNotifToast.body}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setLiveNotifToast(null)}
+            className="text-gray-400 hover:text-white cursor-pointer shrink-0"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Notification Preferences Modal */}
+      {pushModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[105] flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-brand-card max-w-md w-full rounded-3xl p-6 border-4 border-brand-maroon shadow-2xl relative text-brand-dark">
+            <button
+              type="button"
+              onClick={() => setPushModalOpen(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-black font-black text-lg cursor-pointer"
+            >
+              ✕
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-11 h-11 rounded-2xl bg-brand-maroon text-brand-gold flex items-center justify-center shrink-0">
+                {pushEnabled ? <BellRing className="w-6 h-6" /> : <BellOff className="w-6 h-6" />}
+              </div>
+              <div>
+                <h2 className="text-lg font-black uppercase text-brand-maroon leading-none">
+                  Anlık Bildirimler
+                </h2>
+                <p className="text-xs font-bold text-gray-500 mt-1">
+                  Haberler, goller, kartlar, değişiklikler ve düellolar
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-white/80 rounded-2xl p-3.5 border border-brand-maroon/15 space-y-1.5 text-xs font-bold text-gray-700 mb-4">
+              <div>📰 Yeni haber eklendiğinde</div>
+              <div>⚽ Her gol atıldığında</div>
+              <div>🟨 Her sarı, kırmızı veya yeşil kartta</div>
+              <div>🔄 Her oyuncu değişikliğinde</div>
+              <div>⚔️ Her düello sonucu girildiğinde</div>
+            </div>
+
+            {pushFeedback && (
+              <div
+                className={`mb-4 p-3 rounded-xl text-xs font-bold border ${
+                  pushFeedback.type === 'error'
+                    ? 'bg-red-50 text-red-700 border-red-200'
+                    : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                }`}
+              >
+                {pushFeedback.text}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-2.5">
+              <button
+                type="button"
+                onClick={handleToggleNotifications}
+                disabled={pushLoading}
+                className={`w-full py-3 rounded-2xl font-black text-xs uppercase tracking-wider cursor-pointer transition-all shadow ${
+                  pushEnabled
+                    ? 'bg-gray-200 hover:bg-gray-300 text-gray-800'
+                    : 'bg-brand-maroon hover:bg-[#600000] text-brand-gold border-b-2 border-black'
+                }`}
+              >
+                {pushLoading
+                  ? 'İşleniyor...'
+                  : pushEnabled
+                  ? '🔕 Bildirimleri Kapat'
+                  : '🔔 Bildirimleri Aç'}
+              </button>
+
+              {userProfile?.admin && (
+                <button
+                  type="button"
+                  onClick={handleSendTestPush}
+                  disabled={pushLoading}
+                  className="w-full py-2.5 rounded-xl font-black text-xs uppercase bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 cursor-pointer"
+                >
+                  🧪 Admin: Test Bildirimi Gönder
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

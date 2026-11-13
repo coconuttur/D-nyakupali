@@ -5,6 +5,7 @@ import { Match, MatchTimelineEvent, Player, Team, UserProfile } from '../types';
 import { recalculateStandings, recalculatePlayerRatings } from '../lib/standings';
 import { syncPlayerStatsToFirestore } from '../lib/playerStats';
 import { getStoredTournamentMatches, DEFAULT_TOURNAMENT_MATCHES, saveStoredTournamentMatch, saveStoredBracketData, normalizeCupKey } from '../lib/tournamentMatches';
+import { sendPushNotificationEvent } from '../lib/notifications';
 
 interface MatchDetailProps {
   matchId: string; // "team1-vs-team2-datejav" representation or tournament id
@@ -717,6 +718,21 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
     const updated = [...(match?.timeline || []), newEvt];
     try {
       await handleSaveTimeline(updated);
+
+      const newS1 = updated.filter((e) => e.type === 'goal' && e.team === 'team1').length;
+      const newS2 = updated.filter((e) => e.type === 'goal' && e.team === 'team2').length;
+      const t1 = effectiveTeam1 || 'Takım 1';
+      const t2 = effectiveTeam2 || 'Takım 2';
+      const assistInfo = selectedAssist && selectedAssist !== 'Şut' ? ` • Asist: ${selectedAssist}` : '';
+
+      sendPushNotificationEvent({
+        title: isKKGoal ? `🥅 Kendi Kalesine Gol! (${scoringTeamName})` : `⚽ GOL! (${scoringTeamName})`,
+        body: `${selectedScorer} (${min})${assistInfo} • Skor: ${t1} ${newS1}-${newS2} ${t2}`,
+        type: 'goal',
+        tag: `evt_${newEvt.id}`,
+        url: '/'
+      }).catch(() => {});
+
       setGoalMinute('');
       showToast('Gol başarıyla kaydedildi!', 'success');
     } catch (err) {
@@ -770,6 +786,19 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
     const updated = [...(match?.timeline || []), newEvt];
     try {
       await handleSaveTimeline(updated);
+
+      const cardTeamName = selectedCardTeam === 'team1' ? (effectiveTeam1 || 'Takım 1') : (effectiveTeam2 || 'Takım 2');
+      const cardEmoji = cardColor === 'Kırmızı' ? '🟥' : cardColor === 'Yeşil' ? '🟩' : '🟨';
+      const reasonInfo = cardReason.trim() ? ` - ${cardReason.trim()}` : '';
+
+      sendPushNotificationEvent({
+        title: `${cardEmoji} ${cardColor} Kart! (${cardTeamName})`,
+        body: `${selectedCardPlayer} (${min})${reasonInfo}`,
+        type: 'card',
+        tag: `evt_${newEvt.id}`,
+        url: '/'
+      }).catch(() => {});
+
       setCardMinute('');
       setCardReason('');
       showToast('Kart başarıyla kaydedildi!', 'success');
@@ -835,6 +864,20 @@ export default function MatchDetail({ matchId, initialMatch, currentUser, curren
 
     try {
       await handleSaveTimeline(updated, updatedLineup);
+
+      const subTeamName = selectedSubTeam === 'team1' ? (effectiveTeam1 || 'Takım 1') : (effectiveTeam2 || 'Takım 2');
+      const parts: string[] = [];
+      if (subInTrimmed) parts.push(`🟢 Giren: ${subInTrimmed}`);
+      if (subOutTrimmed) parts.push(`🔴 Çıkan: ${subOutTrimmed}`);
+
+      sendPushNotificationEvent({
+        title: `🔄 Oyuncu Değişikliği (${subTeamName})`,
+        body: `${parts.join(' | ')} (${min})`,
+        type: 'sub',
+        tag: `evt_${newEvt.id}`,
+        url: '/'
+      }).catch(() => {});
+
       setSubMinute('');
       setSelectedSubOut('');
       setSelectedSubIn('');

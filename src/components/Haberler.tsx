@@ -3,6 +3,7 @@ import { collection, query, orderBy, limit, onSnapshot, addDoc, doc, updateDoc, 
 import { db, auth } from '../firebase';
 import { News, NewsComment, UserProfile } from '../types';
 import UserHoverCard from './UserHoverCard';
+import { sendPushNotificationEvent } from '../lib/notifications';
 import { 
   MoreVertical, 
   Trash2, 

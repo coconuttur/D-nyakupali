@@ -5,6 +5,7 @@ import { db } from '../firebase';
 import { Team, UserProfile, Match, Player, MatchTimelineEvent } from '../types';
 import WorldCup from './WorldCup';
 import { recalculateStandings, recalculatePlayerStats } from '../lib/standings';
+import { sendPushNotificationEvent } from '../lib/notifications';
 
 interface TurnuvalarProps {
   currentLang: 'tr' | 'en' | 'pt';
@@ -831,6 +832,23 @@ export default function Turnuvalar({ currentLang, translations, onNavigate, team
         await recalculateStandings().catch(console.error);
         await recalculatePlayerStats().catch(console.error);
         window.dispatchEvent(new CustomEvent('tournament_matches_updated', { detail: matchPayload }));
+
+        const prevGoalsCount = (existingMatch?.timeline || []).filter((e) => e.type === 'goal').length;
+        const newGoals = generatedTimeline.filter((e) => e.type === 'goal');
+        if (newGoals.length > prevGoalsCount) {
+          const addedGoals = newGoals.slice(prevGoalsCount);
+          addedGoals.forEach((g) => {
+            const teamLabel = g.team === 'team1' ? qsTeam1 : qsTeam2;
+            const assistTxt = g.assist && g.assist !== 'Şut' ? ` • Asist: ${g.assist}` : '';
+            sendPushNotificationEvent({
+              title: `⚽ GOL! (${teamLabel})`,
+              body: `${g.scorer || 'Oyuncu'} (${g.minute || ''})${assistTxt} • Skor: ${qsTeam1} ${qsScore1}-${qsScore2} ${qsTeam2}`,
+              type: 'goal',
+              tag: `evt_${g.id}`,
+              url: '/'
+            }).catch(() => {});
+          });
+        }
       } catch (fbErr: any) {
         console.warn('Firestore write notice (saved locally):', fbErr);
       }

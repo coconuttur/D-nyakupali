@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Player, UserProfile, MarketValuePoint } from '../types';
-import { getPlayerMarketValue, parseOwoValue, formatOwoValue, sortHistoryByDate } from '../lib/marketValue';
+import { getPlayerMarketValue, parseOwoValue, formatOwoValue, sortHistoryByDate, VALUATION_TODAY_DATE, calculatePerformanceMarketValue } from '../lib/marketValue';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
@@ -43,12 +43,15 @@ export default function MarketValueModal({
   const [showAdminForm, setShowAdminForm] = useState(false);
   const [showHistoryManager, setShowHistoryManager] = useState(false);
   const [newValueInput, setNewValueInput] = useState<string>('');
-  const [newDateInput, setNewDateInput] = useState<string>('');
+  const [newDateInput, setNewDateInput] = useState<string>(VALUATION_TODAY_DATE);
   const [newClubInput, setNewClubInput] = useState<string>(player.pteam || '');
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+
+  // Performance-based valuation calculation for 08.11.2026
+  const perfValuation = calculatePerformanceMarketValue(player);
 
   // Chart dimensions & scaling
   const width = 640;
@@ -176,7 +179,64 @@ export default function MarketValueModal({
     }
   };
 
-  // Delete an individual valuation point
+  // 1-Click apply performance-calculated value for 08.11.2026
+  const handleApplyPerformanceValue = async () => {
+    const docId = playerId || player.docId || player.id;
+    if (!docId) {
+      setErrorMsg('Oyuncu kimliği bulunamadı.');
+      return;
+    }
+
+    setSaving(true);
+    setErrorMsg(null);
+
+    try {
+      const clubName = player.pteam || '';
+      const clubLogo = teamLogos[clubName] || (player as any).teamLogo || '';
+
+      const newPoint: MarketValuePoint = {
+        id: `mv_${Date.now()}`,
+        date: VALUATION_TODAY_DATE,
+        value: perfValuation.num,
+        formattedValue: perfValuation.formatted,
+        club: clubName,
+        clubLogo: clubLogo
+      };
+
+      // Filter out previous today points to replace with fresh calculation if existing
+      const filtered = points.filter((pt) => pt.date !== VALUATION_TODAY_DATE);
+      const updatedHistory = sortHistoryByDate([...filtered, newPoint]);
+      const latestPoint = updatedHistory[updatedHistory.length - 1];
+
+      const ref = doc(db, 'players', docId);
+      await updateDoc(ref, {
+        deger: latestPoint.value,
+        degerFormatted: latestPoint.formattedValue || formatOwoValue(latestPoint.value),
+        degerHistory: updatedHistory
+      });
+
+      const updatedPlayer: Player = {
+        ...player,
+        deger: latestPoint.value,
+        degerFormatted: latestPoint.formattedValue || formatOwoValue(latestPoint.value),
+        degerHistory: updatedHistory
+      };
+
+      if (onPlayerUpdated) onPlayerUpdated(updatedPlayer);
+      if (onSaveSuccess) onSaveSuccess(updatedPlayer);
+
+      setSuccessMsg(`✅ 08.11.2026 Değeri (${perfValuation.formatted}) başarıyla kaydedildi!`);
+      setTimeout(() => setSuccessMsg(null), 3000);
+
+      const newIdx = updatedHistory.findIndex((pt) => pt.id === newPoint.id);
+      setActivePointIndex(newIdx !== -1 ? newIdx : updatedHistory.length - 1);
+    } catch (err: any) {
+      console.error('Error applying performance market value:', err);
+      setErrorMsg('Değer uygulanamadı: ' + (err?.message || 'Bilinmeyen hata'));
+    } finally {
+      setSaving(false);
+    }
+  };
   const handleDeletePoint = async (indexToDelete: number) => {
     const docId = playerId || player.docId || player.id;
     if (!docId) return;
@@ -613,6 +673,16 @@ export default function MarketValueModal({
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleApplyPerformanceValue}
+                    disabled={saving}
+                    className="bg-emerald-700 hover:bg-emerald-800 text-white text-[10px] font-black uppercase px-2.5 py-1 rounded-lg transition-colors cursor-pointer shadow-xs disabled:opacity-50 flex items-center gap-1"
+                    title={`Önerilen 08.11.2026 Değeri: ${perfValuation.formatted}`}
+                  >
+                    <span>⚡</span>
+                    <span>08.11.2026 Değeri Uygula</span>
+                  </button>
                   {points.length > 0 && (
                     <button
                       type="button"
