@@ -30,12 +30,13 @@ interface StoredTokenEntry {
 let cachedGoogleToken: { accessToken: string; expiresAt: number } | null = null;
 
 function loadServiceAccount(): ServiceAccount | null {
-  const rawEnv = process.env.FIREBASE_SERVICE_ACCOUNT?.trim();
+  const rawEnv = (process.env.FIREBASE_SERVICE_ACCOUNT || process.env.FCM_SERVICE_ACCOUNT)?.trim();
   if (rawEnv) {
     try {
-      const jsonStr = rawEnv.startsWith('{')
-        ? rawEnv
-        : Buffer.from(rawEnv, 'base64').toString('utf8');
+      const cleaned = rawEnv.replace(/^['"]|['"]$/g, '');
+      const jsonStr = cleaned.startsWith('{')
+        ? cleaned
+        : Buffer.from(cleaned, 'base64').toString('utf8');
       const parsed = JSON.parse(jsonStr) as ServiceAccount;
       if (parsed.client_email && parsed.private_key) {
         return {
@@ -44,8 +45,18 @@ function loadServiceAccount(): ServiceAccount | null {
         };
       }
     } catch (err) {
-      console.warn('Invalid FIREBASE_SERVICE_ACCOUNT JSON:', err);
+      console.warn('Invalid service account JSON:', err);
     }
+  }
+
+  const clientEmail = process.env.FCM_CLIENT_EMAIL?.trim().replace(/^['"]|['"]$/g, '');
+  const privateKey = process.env.FCM_PRIVATE_KEY?.trim().replace(/^['"]|['"]$/g, '');
+  if (clientEmail && privateKey) {
+    return {
+      project_id: process.env.FCM_PROJECT_ID?.trim() || FIREBASE_PROJECT_ID,
+      client_email: clientEmail,
+      private_key: privateKey.replace(/\\n/g, '\n')
+    };
   }
 
   const keyPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH?.trim();

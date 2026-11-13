@@ -21,7 +21,7 @@ interface StoredTokenEntry {
 let cachedGoogleToken: { accessToken: string; expiresAt: number } | null = null;
 
 function loadServiceAccount(): ServiceAccount | null {
-  const rawEnv = process.env.FIREBASE_SERVICE_ACCOUNT?.trim();
+  const rawEnv = (process.env.FIREBASE_SERVICE_ACCOUNT || process.env.FCM_SERVICE_ACCOUNT)?.trim();
   if (rawEnv) {
     try {
       const cleaned = rawEnv.replace(/^['"]|['"]$/g, '');
@@ -36,9 +36,20 @@ function loadServiceAccount(): ServiceAccount | null {
         };
       }
     } catch (err) {
-      console.warn('Invalid FIREBASE_SERVICE_ACCOUNT JSON:', err);
+      console.warn('Invalid service account JSON:', err);
     }
   }
+
+  const clientEmail = process.env.FCM_CLIENT_EMAIL?.trim().replace(/^['"]|['"]$/g, '');
+  const privateKey = process.env.FCM_PRIVATE_KEY?.trim().replace(/^['"]|['"]$/g, '');
+  if (clientEmail && privateKey) {
+    return {
+      project_id: process.env.FCM_PROJECT_ID?.trim() || FIREBASE_PROJECT_ID,
+      client_email: clientEmail,
+      private_key: privateKey.replace(/\\n/g, '\n')
+    };
+  }
+
   return null;
 }
 
