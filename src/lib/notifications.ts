@@ -30,8 +30,26 @@ function rememberTag(tag: string): boolean {
   return true;
 }
 
+let cachedServerVapidKey = '';
+
 export function getVapidKey(): string {
-  return ((import.meta as any).env?.VITE_FIREBASE_VAPID_KEY || '').trim();
+  return ((import.meta as any).env?.VITE_FIREBASE_VAPID_KEY || cachedServerVapidKey || '').trim();
+}
+
+export async function resolveVapidKey(): Promise<string> {
+  const existing = getVapidKey();
+  if (existing) return existing;
+  try {
+    const res = await fetch('/api/push/status');
+    if (res.ok) {
+      const data = (await res.json()) as { vapidPublicKey?: string };
+      if (data?.vapidPublicKey) {
+        cachedServerVapidKey = data.vapidPublicKey.trim();
+        return cachedServerVapidKey;
+      }
+    }
+  } catch {}
+  return '';
 }
 
 export function isPushSupported(): boolean {
@@ -130,7 +148,7 @@ export async function enablePushNotifications(userProfile: UserProfile | null): 
     const swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/' });
     await navigator.serviceWorker.ready;
 
-    const vapidKey = getVapidKey();
+    const vapidKey = await resolveVapidKey();
     const fcmSupported = await isSupported().catch(() => false);
 
     if (vapidKey && fcmSupported) {
@@ -183,7 +201,8 @@ export async function disablePushNotifications() {
 
     try {
       const fcmSupported = await isSupported().catch(() => false);
-      if (fcmSupported && getVapidKey()) {
+      const vapidKey = await resolveVapidKey();
+      if (fcmSupported && vapidKey) {
         const messaging = getMessaging(app);
         await deleteToken(messaging).catch(() => {});
       }
@@ -223,35 +242,35 @@ export function initForegroundFcmListener(onNotify: (notif: LiveNotificationPayl
   let unsubFcm: (() => void) | null = null;
   let cancelled = false;
 
-  if (getVapidKey()) {
-    isSupported()
-      .then((supported) => {
-        if (!supported || cancelled) return;
-        const messaging = getMessaging(app);
-        unsubFcm = onMessage(messaging, (payload) => {
-          const title = payload.notification?.title || payload.data?.title || 'Bobblekolik';
-          const body = payload.notification?.body || payload.data?.body || '';
-          const type = (payload.data?.type as PushEventType) || 'news';
-          const tag = payload.data?.tag || `fcm_${Date.now()}`;
+  resolveVapidKey()
+    .then(async (vapidKey) => {
+      if (!vapidKey || cancelled) return;
+      const supported = await isSupported().catch(() => false);
+      if (!supported || cancelled) return;
+      const messaging = getMessaging(app);
+      unsubFcm = onMessage(messaging, (payload) => {
+        const title = payload.notification?.title || payload.data?.title || 'Bobblekolik';
+        const body = payload.notification?.body || payload.data?.body || '';
+        const type = (payload.data?.type as PushEventType) || 'news';
+        const tag = payload.data?.tag || `fcm_${Date.now()}`;
 
-          if (!rememberTag(tag)) return;
+        if (!rememberTag(tag)) return;
 
-          const notif: LiveNotificationPayload = {
-            id: tag,
-            title,
-            body,
-            type,
-            tag,
-            timestamp: Date.now(),
-            url: payload.data?.url || '/'
-          };
+        const notif: LiveNotificationPayload = {
+          id: tag,
+          title,
+          body,
+          type,
+          tag,
+          timestamp: Date.now(),
+          url: payload.data?.url || '/'
+        };
 
-          onNotify(notif);
-          showBrowserNotification(notif);
-        });
-      })
-      .catch(() => {});
-  }
+        onNotify(notif);
+        showBrowserNotification(notif);
+      });
+    })
+    .catch(() => {});
 
   return () => {
     cancelled = true;

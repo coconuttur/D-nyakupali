@@ -279,9 +279,13 @@ async function startServer() {
         console.warn('Status token count error:', err);
       }
     }
+    const vapidPublicKey = (process.env.VITE_FIREBASE_VAPID_KEY || process.env.FIREBASE_VAPID_KEY || '')
+      .trim()
+      .replace(/^['"]|['"]$/g, '');
     res.json({
       fcmConfigured: Boolean(sa),
-      vapidConfigured: Boolean(process.env.VITE_FIREBASE_VAPID_KEY),
+      vapidConfigured: Boolean(vapidPublicKey),
+      vapidPublicKey,
       subscriberCount: count,
       projectId: sa?.project_id || FIREBASE_PROJECT_ID
     });
