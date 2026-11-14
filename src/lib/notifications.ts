@@ -114,6 +114,7 @@ export async function enablePushNotifications(userProfile: UserProfile | null): 
   ok: boolean;
   mode?: 'fcm' | 'live-browser';
   token?: string | null;
+  fcmError?: string;
   error?: string;
 }> {
   if (!isPushSupported()) {
@@ -163,7 +164,7 @@ export async function enablePushNotifications(userProfile: UserProfile | null): 
           localStorage.setItem(TOKEN_KEY, token);
         } catch {}
 
-        await fetch('/api/push/register', {
+        const regRes = await fetch('/api/push/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -171,16 +172,44 @@ export async function enablePushNotifications(userProfile: UserProfile | null): 
             uid: userProfile?.uid || auth.currentUser?.uid || null,
             displayName: userProfile?.displayName || auth.currentUser?.displayName || null
           })
-        }).catch(() => {});
+        });
+        const regData = await regRes.json().catch(() => ({}));
+        if (!regRes.ok || (regData.fcmConfigured && regData.firestoreSaved === false)) {
+          return {
+            ok: true,
+            mode: 'live-browser',
+            token,
+            fcmError: regData.firestoreError || regData.error || 'Token sunucuya kaydedilemedi.'
+          };
+        }
 
         return { ok: true, mode: 'fcm', token };
       }
     }
 
-    return { ok: true, mode: 'live-browser', token: null };
+    return {
+      ok: true,
+      mode: 'live-browser',
+      token: null,
+      fcmError: !vapidKey
+        ? 'VAPID anahtarı sunucudan alınamadı.'
+        : 'Bu tarayıcı FCM push token servisini desteklemiyor.'
+    };
   } catch (err: any) {
+    const rawMsg = String(err?.message || err || '');
     console.warn('FCM setup fallback to live browser notifications:', err);
-    return { ok: true, mode: 'live-browser', token: null };
+    const isPushServiceBlocked =
+      rawMsg.toLowerCase().includes('push service') ||
+      rawMsg.toLowerCase().includes('aborterror') ||
+      rawMsg.toLowerCase().includes('registration failed');
+    return {
+      ok: true,
+      mode: 'live-browser',
+      token: null,
+      fcmError: isPushServiceBlocked
+        ? 'Tarayıcı push servisi engelli. Brave kullanıyorsan: brave://settings/privacy > "Anlık mesajlaşma için Google hizmetlerini kullan" ayarını aç (veya Chrome/Edge/Android kullan).'
+        : `FCM token alınamadı: ${rawMsg}`
+    };
   }
 }
 
@@ -216,7 +245,7 @@ export async function sendPushNotificationEvent(payload: {
   type: PushEventType;
   tag: string;
   url?: string;
-}): Promise<{ ok: boolean; sent?: number; skipped?: boolean; error?: string }> {
+}): Promise<{ ok: boolean; sent?: number; failed?: number; lastError?: string; skipped?: boolean; error?: string }> {
   try {
     const idToken = await auth.currentUser?.getIdToken().catch(() => '');
     if (!idToken) return { ok: false, error: 'Oturum token alınamadı.' };

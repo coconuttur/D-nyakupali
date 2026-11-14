@@ -28,7 +28,7 @@ self.addEventListener('push', (event) => {
 
   const title = notificationData.title || customData.title || 'Bobblekolik';
   const body = notificationData.body || customData.body || '';
-  const icon = notificationData.icon || customData.icon || '/favicon.ico';
+  const icon = notificationData.icon || customData.icon || '';
   const tag = customData.tag || notificationData.tag || 'bobblekolik-push';
   const url =
     customData.url ||
@@ -37,8 +37,7 @@ self.addEventListener('push', (event) => {
 
   const options = {
     body,
-    icon,
-    badge: icon,
+    ...(icon ? { icon, badge: icon } : {}),
     tag,
     renotify: true,
     vibrate: [180, 80, 180],

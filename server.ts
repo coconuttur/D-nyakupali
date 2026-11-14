@@ -168,7 +168,7 @@ async function saveTokenToFirestore(sa: ServiceAccount, entry: StoredTokenEntry)
   if (entry.uid) fields.uid = { stringValue: entry.uid };
   if (entry.displayName) fields.displayName = { stringValue: entry.displayName };
 
-  await fetch(url, {
+  const res = await fetch(url, {
     method: 'PATCH',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -176,6 +176,10 @@ async function saveTokenToFirestore(sa: ServiceAccount, entry: StoredTokenEntry)
     },
     body: JSON.stringify({ fields })
   });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`Firestore write failed (${res.status}): ${errText}`);
+  }
 }
 
 async function deleteTokenFromFirestore(sa: ServiceAccount, token: string) {
@@ -311,15 +315,19 @@ async function startServer() {
     writeLocalTokens(localMap);
 
     const sa = loadServiceAccount();
+    let firestoreSaved = false;
+    let firestoreError = '';
     if (sa) {
       try {
         await saveTokenToFirestore(sa, entry);
-      } catch (err) {
-        console.warn('Firestore fcmTokens write error:', err);
+        firestoreSaved = true;
+      } catch (err: any) {
+        firestoreError = err?.message || 'Firestore token yazma hatası';
+        console.warn('Firestore fcmTokens write error:', firestoreError);
       }
     }
 
-    res.json({ ok: true, fcmConfigured: Boolean(sa) });
+    res.json({ ok: true, fcmConfigured: Boolean(sa), firestoreSaved, firestoreError });
   });
 
   app.post('/api/push/unregister', async (req: Request, res: Response) => {
@@ -394,13 +402,41 @@ async function startServer() {
       const projectId = sa.project_id || FIREBASE_PROJECT_ID;
       const fcmEndpoint = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
 
+      const protoHeader = String(req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
+      const hostHeader = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+      let httpsLink: string | undefined;
+      if (targetUrl.startsWith('https://')) {
+        httpsLink = targetUrl;
+      } else if (hostHeader && protoHeader === 'https') {
+        try {
+          httpsLink = new URL(targetUrl, `https://${hostHeader}`).toString();
+        } catch {}
+      }
+
       let sent = 0;
       let failed = 0;
       let pruned = 0;
+      let lastError = '';
       const updatedLocal = readLocalTokens();
 
       await Promise.all(
         tokens.map(async (deviceToken) => {
+          const webpushPayload: Record<string, unknown> = {
+            headers: {
+              Urgency: 'high',
+              TTL: '86400'
+            },
+            notification: {
+              title,
+              body: msgBody,
+              tag,
+              renotify: true
+            }
+          };
+          if (httpsLink) {
+            webpushPayload.fcm_options = { link: httpsLink };
+          }
+
           const fcmRes = await fetch(fcmEndpoint, {
             method: 'POST',
             headers: {
@@ -414,21 +450,7 @@ async function startServer() {
                   title,
                   body: msgBody
                 },
-                webpush: {
-                  headers: {
-                    Urgency: 'high',
-                    TTL: '86400'
-                  },
-                  notification: {
-                    title,
-                    body: msgBody,
-                    tag,
-                    renotify: true
-                  },
-                  fcm_options: {
-                    link: targetUrl
-                  }
-                },
+                webpush: webpushPayload,
                 data: {
                   title,
                   body: msgBody,
@@ -445,6 +467,7 @@ async function startServer() {
           } else {
             failed++;
             const errText = await fcmRes.text();
+            lastError = errText.slice(0, 200);
             if (errText.includes('UNREGISTERED') || errText.includes('NOT_FOUND')) {
               pruned++;
               delete updatedLocal[hashTokenId(deviceToken)];
@@ -458,7 +481,7 @@ async function startServer() {
         writeLocalTokens(updatedLocal);
       }
 
-      res.json({ ok: true, sent, failed, pruned });
+      res.json({ ok: true, sent, failed, pruned, ...(lastError ? { lastError } : {}) });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Bilinmeyen hata';
       console.error('Push send error:', msg);

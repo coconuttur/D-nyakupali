@@ -245,12 +245,17 @@ export default function App() {
         const res = await enablePushNotifications(userProfile);
         if (res.ok) {
           setPushEnabled(true);
-          setPushFeedback({
-            text: res.mode === 'fcm'
-              ? 'Anlık bildirimler (FCM) başarıyla aktifleştirildi!'
-              : 'Canlı tarayıcı bildirimleri açıldı!',
-            type: 'success'
-          });
+          if (res.mode === 'fcm') {
+            setPushFeedback({
+              text: 'Anlık bildirimler (FCM) başarıyla aktifleştirildi!',
+              type: 'success'
+            });
+          } else {
+            setPushFeedback({
+              text: res.fcmError || 'Canlı tarayıcı bildirimleri açıldı (FCM token alınamadı).',
+              type: res.fcmError ? 'error' : 'success'
+            });
+          }
         } else {
           setPushFeedback({ text: res.error || 'Bildirimler açılamadı.', type: 'error' });
         }
@@ -284,7 +289,22 @@ export default function App() {
     setPushLoading(false);
 
     if (res.ok) {
-      setPushFeedback({ text: `Test bildirimi ${res.sent || 0} cihaza gönderildi!`, type: 'success' });
+      const sentCount = res.sent || 0;
+      if (sentCount === 0) {
+        if ((res.failed || 0) > 0 && res.lastError) {
+          setPushFeedback({
+            text: `FCM gönderimi reddedildi: ${res.lastError}`,
+            type: 'error'
+          });
+        } else {
+          setPushFeedback({
+            text: '0 cihaza gönderildi: Henüz kayıtlı FCM cihazı yok. "Bildirimleri Kapat" > "Bildirimleri Aç" yap (Brave kullanıyorsan brave://settings/privacy içinde "Anlık mesajlaşma için Google hizmetlerini kullan" ayarını aç).',
+            type: 'error'
+          });
+        }
+      } else {
+        setPushFeedback({ text: `Test bildirimi ${sentCount} cihaza gönderildi!`, type: 'success' });
+      }
     } else if (res.skipped) {
       setPushFeedback({ text: 'Canlı tarayıcı bildirimi test edildi.', type: 'success' });
     } else {
